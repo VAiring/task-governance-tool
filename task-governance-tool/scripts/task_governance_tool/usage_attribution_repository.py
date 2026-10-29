@@ -8,6 +8,7 @@ No host discovery or setup activation is performed by this module.
 from __future__ import annotations
 
 from contextlib import nullcontext
+import json
 
 from task_governance_tool.usage_repository import UsageRepository, _DDL
 from task_governance_tool.usage_turn_adapter import TurnObservation, OperationObservation
@@ -49,11 +50,13 @@ _ATTRIBUTION_DDL = (
 )
 
 
-def core_transitions(connection, project_id: str) -> tuple[Transition, ...]:
+def core_transitions(connection, project_id: str, *, task_ids=None) -> tuple[Transition, ...]:
     """Use an already admitted core read transaction, not a numerical writer."""
+    selection = "" if task_ids is None else " AND task_id IN (SELECT value FROM json_each(?))"
+    parameters = (project_id,) if task_ids is None else (project_id, json.dumps(sorted(task_ids)))
     return tuple(Transition(**{name: row[name] for name in Transition.__dataclass_fields__ if name in row.keys()})
                  for row in connection.execute(
-                     "SELECT * FROM task_owner_transitions WHERE project_id=? ORDER BY rowid", (project_id,)))
+                     "SELECT * FROM task_owner_transitions WHERE project_id=?" + selection + " ORDER BY rowid", parameters))
 
 
 def registered_participants(connection, project_id: str) -> frozenset[str]:
@@ -94,6 +97,42 @@ def resolve_operation(connection, operation: OperationObservation) -> str | None
         (operation.project_id, operation.task_id, operation.generation, operation.status, operation.thread_id),
     ).fetchall()
     return matches[0]["transition_id"] if len(matches) == 1 and matches[0]["created_at"] == event["created_at"] else None
+
+
+def resolve_operations(connection, operations, *, check_budget=lambda: None):
+    """Resolve an exact selection in bounded batches within the caller's read.
+
+    Match count includes transitions with a different timestamp: selecting only
+    the matching time would hide an ambiguous acknowledgement. No result is
+    retained on the repository or reused by a later capture/guard.
+    """
+    selected = tuple(dict.fromkeys(operations))
+    resolved = {}
+    for start in range(0, len(selected), 128):
+        check_budget()
+        batch = selected[start:start + 128]
+        arguments = json.dumps([
+            [item.event_id, item.project_id, item.task_id, item.generation, item.status, item.thread_id]
+            for item in batch
+        ])
+        matches = {index: [] for index in range(len(batch))}
+        for row in connection.execute(
+            "SELECT request.key AS ordinal,event.task_event_id AS event_id,event.created_at AS event_time,"
+            "transition.transition_id,transition.created_at AS transition_time FROM json_each(?) request "
+            "LEFT JOIN task_events event ON event.task_event_id=json_extract(request.value,'$[0]') "
+            "AND event.project_id=json_extract(request.value,'$[1]') AND event.task_id=json_extract(request.value,'$[2]') "
+            "LEFT JOIN task_owner_transitions transition ON transition.project_id=json_extract(request.value,'$[1]') "
+            "AND transition.task_id=json_extract(request.value,'$[2]') AND transition.generation=json_extract(request.value,'$[3]') "
+            "AND transition.current_status=json_extract(request.value,'$[4]') AND transition.actor_session_id=json_extract(request.value,'$[5]')",
+            (arguments,),
+        ):
+            matches[row["ordinal"]].append(row)
+        for index, operation in enumerate(batch):
+            rows = matches[index]
+            row = rows[0] if len(rows) == 1 else None
+            resolved[operation] = (row["transition_id"] if row is not None and row["event_id"] is not None
+                and row["transition_id"] is not None and row["transition_time"] == row["event_time"] else None)
+    return resolved
 
 
 class UsageAttributionRepository(UsageRepository):
@@ -196,8 +235,9 @@ class UsageAttributionRepository(UsageRepository):
             observations = [OperationObservation(**dict(row)) for row in connection.execute(
                 "SELECT thread_id,turn_id,project_id,task_id,event_id,generation,status FROM usage_operation_turns "
                 "WHERE event_id NOT IN (SELECT event_id FROM usage_operation_conflicts)")]
+            resolutions = resolve_operations(core_connection, observations)
             for observation in observations:
-                transition = resolve_operation(core_connection, observation)
+                transition = resolutions[observation]
                 if transition is None:
                     unresolved.add(observation.event_id)
                     continue

@@ -49,7 +49,10 @@ def setup_usage(inspection, core_result, *, read_only: bool) -> dict:
     """Separate numerical outcome after core setup/preview, never a core gate."""
     from task_governance_tool.storage import SCHEMA_VERSION
     repository_type = UsageRepository
-    if SCHEMA_VERSION >= 25:
+    if SCHEMA_VERSION >= 34:
+        from task_governance_tool.usage_reconciliation_repository import UsageReconciliationRepository
+        repository_type = UsageReconciliationRepository
+    elif SCHEMA_VERSION >= 25:
         from task_governance_tool.usage_work_order_repository import UsageWorkOrderRepository
         repository_type = UsageWorkOrderRepository
     result = {"status": "not_attempted", "schema_to": repository_type.migrations[-1][0],

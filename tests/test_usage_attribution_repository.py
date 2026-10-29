@@ -3,6 +3,7 @@
 from contextlib import closing
 from dataclasses import replace
 import sqlite3
+import unittest
 from unittest import mock
 
 from tests import test_usage_collection as collection_tests
@@ -10,7 +11,7 @@ from tests.test_usage_collection import event, usage, THREAD, TURN
 from tests.test_usage_turn_adapter import acknowledgement, tool_record, TASK, EVENT
 from tests.test_usage_attribution import turn
 from task_governance_tool.usage_adapter import read_batch
-from task_governance_tool.usage_attribution_repository import UsageAttributionRepository, resolve_operation
+from task_governance_tool.usage_attribution_repository import UsageAttributionRepository, resolve_operation, resolve_operations
 from task_governance_tool.usage_repository import UsageRepository
 from task_governance_tool.usage_turn_adapter import OperationObservation, TurnObservation
 from task_governance_tool.usage_values import UsageError
@@ -123,3 +124,63 @@ class UsageAttributionRepositoryTests(collection_tests.UsageCollectionTests):
             self.assertIsNone(resolve_operation(core, replace(observed, generation=2)))
             core.execute("DELETE FROM task_events")
             self.assertIsNone(resolve_operation(core, observed))
+
+
+class OperationBatchResolutionTests(unittest.TestCase):
+    def setUp(self):
+        self.core = sqlite3.connect(":memory:")
+        self.addCleanup(self.core.close)
+        self.core.row_factory = sqlite3.Row
+        self.core.executescript("""CREATE TABLE task_events(task_event_id PRIMARY KEY,project_id,task_id,created_at);
+            CREATE TABLE task_owner_transitions(transition_id PRIMARY KEY,project_id,task_id,generation,current_status,actor_session_id,created_at);
+            CREATE INDEX transition_lookup ON task_owner_transitions(project_id,task_id,generation,current_status,actor_session_id);""")
+
+    def operation(self, number):
+        operation = OperationObservation(THREAD, TURN, "project", f"tg_task_{number:016x}",
+                                         f"tg_event_{number:016x}", 1, "in_progress")
+        self.core.execute("INSERT INTO task_events VALUES (?,?,?,?)",
+                          (operation.event_id, operation.project_id, operation.task_id, "same-time"))
+        self.core.execute("INSERT INTO task_owner_transitions VALUES (?,?,?,?,?,?,?)",
+                          (f"transition-{number}", operation.project_id, operation.task_id, 1, "in_progress", THREAD, "same-time"))
+        return operation
+
+    def test_batch_matches_individual_lookup_with_ambiguous_missing_and_foreign_relations(self):
+        valid, missing, ambiguous, wrong_time = [self.operation(n) for n in range(4)]
+        self.core.execute("DELETE FROM task_events WHERE task_event_id=?", (missing.event_id,))
+        # A second match at a different time must still make the relation ambiguous.
+        self.core.execute("INSERT INTO task_owner_transitions VALUES (?,?,?,?,?,?,?)",
+                          ("duplicate", "project", ambiguous.task_id, 1, "in_progress", THREAD, "different-time"))
+        self.core.execute("UPDATE task_owner_transitions SET created_at='later' WHERE task_id=?", (wrong_time.task_id,))
+        operations = [valid, valid, missing, ambiguous, wrong_time, replace(valid, generation=2),
+                      replace(valid, project_id="foreign"), replace(valid, task_id=missing.task_id),
+                      replace(valid, thread_id="11234567-89ab-7cde-8fab-0123456789ab"), replace(valid, status="done")]
+        expected = {item: resolve_operation(self.core, item) for item in operations}
+        self.assertEqual(resolve_operations(self.core, operations), expected)
+        self.assertEqual(expected[valid], "transition-0")
+        self.assertTrue(all(value is None for item, value in expected.items() if item != valid))
+
+    def test_selected_work_is_batched_without_history_growth_or_acceptance_truncation(self):
+        selected = [self.operation(n) for n in range(257)]
+        for n in range(257, 1257):
+            self.operation(n)
+        statements = []
+        self.core.set_trace_callback(statements.append)
+        self.assertEqual(len(resolve_operations(self.core, selected + selected)), 257)
+        self.assertEqual(len(statements), 3)
+        statements.clear()
+        self.assertEqual(resolve_operations(self.core, [selected[0]]), {selected[0]: "transition-0"})
+        self.assertEqual(len(statements), 1)
+        statements.clear()
+        self.assertEqual(resolve_operations(self.core, []), {})
+        self.assertEqual(statements, [])
+
+    def test_later_read_rechecks_restore_and_budget_checks_each_batch(self):
+        selected = [self.operation(n) for n in range(129)]
+        budget = mock.Mock()
+        resolve_operations(self.core, selected, check_budget=budget)
+        self.assertEqual(budget.call_count, 2)
+        self.core.execute("DELETE FROM task_owner_transitions WHERE transition_id='transition-0'")
+        self.assertIsNone(resolve_operations(self.core, selected)[selected[0]])
+        budget = mock.Mock(side_effect=[None, UsageError("usage_pending")])
+        with self.assertRaises(UsageError):
+            resolve_operations(self.core, selected, check_budget=budget)

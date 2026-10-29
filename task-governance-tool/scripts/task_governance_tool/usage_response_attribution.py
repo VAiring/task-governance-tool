@@ -8,6 +8,7 @@ An uncertain endpoint never becomes a guessed interval or measured zero.
 from collections import defaultdict
 
 from task_governance_tool.usage_attribution import _models, _coverage
+from task_governance_tool.usage_response_ownership import allocate_turn, apply_actions
 
 
 ALGORITHM = "response-partitions-v6"
@@ -47,14 +48,22 @@ def response_order(positions, turns, conflicting_turns=frozenset()):
         if turn not in starts or turn in conflicts:
             unknown.update(keys)
             continue
+        incoming, successors = dict.fromkeys(keys, 0), defaultdict(set)
+        for left, right in edges[turn]:
+            successors[left].add(right)
+            incoming[right] += 1
+        roots = {key for key, count in incoming.items() if count == 0}
         while remaining:
-            roots = remaining - {right for left, right in edges[turn] if left in remaining and right in remaining}
             if len(roots) != 1:
                 unknown.update(keys)
                 break
             current = roots.pop()
             result.append(current)
             remaining.remove(current)
+            for next_key in successors[current]:
+                incoming[next_key] -= 1
+                if incoming[next_key] == 0:
+                    roots.add(next_key)
         else:
             ordered[turn] = result
     return starts, ordered, unknown
@@ -224,75 +233,19 @@ def project_responses(transitions, bindings, checks, positions, turns, responses
             else:
                 unknown.update(affected)
                 execution_gaps[execution].add("response_binding_unknown")
+    execution_tasks = {identity: change.task_id for identity, change in executions.items()}
     for thread, timelines in per_thread.items():
-        active, completed, completion_turn, pending_checks = None, None, None, []
-        state_before = {}
+        active, state_before = None, {}
         for _, turn, keys in sorted(timelines):
-            if completion_turn != turn:
-                completed, pending_checks = None, []
-            for key in keys:
-                state_before[key] = {owner for owner in (active, completed) if owner is not None}
-                row_events = sorted(events[key])
-                beginning = []
-                for _, change in row_events:
-                    covered = change.current_status == "in_progress" or (
-                        change.policy_version == 1 and change.current_status == "review_pending")
-                    previous_covered = change.previous_status == "in_progress" or (
-                        change.policy_version == 1 and change.previous_status == "review_pending")
-                    if covered and not previous_covered:
-                        beginning.append(change.execution_id)
-                beginning = list(dict.fromkeys(beginning))
-                if beginning:
-                    # A prior valid check series in this turn belongs wholly to
-                    # the chosen start, even if it inspected another candidate.
-                    for earlier in pending_checks:
-                        owners[earlier].difference_update({completed} if completed else set())
-                        owners[earlier].add(beginning[0])
-                    pending_checks = []
-                    owners[key].update(beginning)
-                elif active is not None:
-                    owners[key].add(active)
-                elif completed is not None:
-                    owners[key].add(completed)
-                if not beginning and key in check_keys and active is None:
-                    pending_checks.append(key)
-                elif not beginning and pending_checks and active is None:
-                    # The origin is the earliest check, not just the check
-                    # records; intermediate numerical responses are included.
-                    pending_checks.append(key)
-                for _, change in row_events:
-                    if change.current_status in {"in_progress", "review_pending"}:
-                        # Apply core order after whole-response allocation.
-                        # In particular stop/resume of the same execution in
-                        # one response must leave its final state active.
-                        active, completed, completion_turn = change.execution_id, None, None
-                    elif change.current_status == "done":
-                        if not beginning and (active is None or active == change.execution_id):
-                            owners[key].add(change.execution_id)
-                        if active == change.execution_id or active is None:
-                            active, completed, completion_turn = None, change.execution_id, turn
-                    elif change.current_status in {"paused", "blocked", "ready", "cancelled"}:
-                        active_match = active is not None and (active == change.execution_id or (
-                            change.execution_id is None and executions[active].task_id == change.task_id))
-                        completed_match = completed is not None and (completed == change.execution_id or (
-                            change.execution_id is None and executions[completed].task_id == change.task_id))
-                        if not beginning and change.current_status in {"paused", "blocked"} and change.execution_id is not None:
-                            owners[key].add(change.execution_id)
-                            if len(owners[key]) > 1:
-                                unknown.add(key)
-                            # A successful stop is an intervening work boundary,
-                            # including a recovery performed by another actor.
-                            pending_checks = []
-                        if active_match:
-                            active = None
-                        if completed_match:
-                            completed = None
-                        if active_match or completed_match:
-                            pending_checks = []
-                if active is not None:
-                    # Retain diagnostics for active work even when its only
-                    # numerical observation is missing or conflicting.
-                    execution_gaps[active].update((thread_diagnostics or {}).get(thread, ()))
+            allocated = allocate_turn(active, keys, events, check_keys, execution_tasks,
+                                      (thread_diagnostics or {}).get(thread, ()))
+            active = allocated.active
+            state_before.update(allocated.state_before)
+            for key, actions in allocated.actions.items():
+                if apply_actions(owners[key], actions):
+                    unknown.add(key)
+            for execution, gaps in allocated.gaps.items():
+                execution_gaps[execution].update(gaps)
 
         keys = [key for _, _, sequence in sorted(timelines) for key in sequence]
         for first in pending_origins[thread]:

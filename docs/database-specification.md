@@ -844,9 +844,9 @@ or general migration framework is added.
 
 ## Numerical Usage Store
 
-Numerical collection uses independent schema 9 in the resolver-owned
+Numerical collection uses independent schema 10 in the resolver-owned
 `current/taskgov-usage.sqlite`, not the main schema sequence. Explicit setup
-initializes an absent store, migrates exact schema 1 through 8, and validates
+initializes an absent store, migrates exact schema 1 through 9, and validates
 current state. Normal reads and
 collection never initialize, migrate or repair it. Incompatible structure,
 WAL, corruption, contention or project/binding mismatch produces unavailable
@@ -864,6 +864,27 @@ there is no separately cached counter. Migration preserves existing IDs,
 observations, attempt numbers and schema-6-and-later continuations; schemas 1–5
 retain their existing contextual replay rule. Old DDL and migration identities
 remain frozen, and ordinary access never performs the upgrade.
+
+Schema 10 adds transaction-bound change generations and resumable reconciliation.
+Every consumed numerical update records its old/new affected identities in the
+same writer. Core Task revisions separately identify changed ownership, cycles,
+operations and actual-reviewer relations, including delayed bindings without new
+numbers. Only affected Tasks, turns, original keys and old/new participation
+ranges are reclassified. Unchanged histories in the same session are not an
+unconditional dependency. The exact response partition, diagnostic provenance,
+original-key deduplication and immutable evidence meanings remain unchanged.
+
+Each committed work unit retains its progress for a later lifecycle event;
+pending work or a changed capture fence cannot be published as current. Binding,
+schema, algorithm or database epoch/physical identity changes and regressed or
+missing tracking require reestablishment, never reuse of an obsolete capture.
+Migration preserves numerical originals, existing continuations and immutable
+history; its new reconciliation epoch starts with an unestablished baseline.
+The existing deadline and rotating snapshot/file audit remain in force.
+Fresh physical/schema/binding admission and transaction-bound revision checks
+fence display and final publication. They do not claim detection of an external
+rewrite that bypasses and then restores the tracking protocol; whole-state
+diagnosis and the existing immutable audit retain their separate responsibilities.
 
 The internal collector accepts one registered participant session and one
 explicit physical segment under its allowed local source root. Header thread,
@@ -994,8 +1015,10 @@ Selection includes old/new overlap for merges and splits; completion periods sta
 separate. Unchanged numerical aggregates are reused. Catch-up has the same
 response-key unions, model totals, diagnostics and period association as full
 projection for the same admitted input/basis. Global diagnostic changes may
-require broad recomputation. Structural selection remains a full metadata pass;
-no claim that every path is proportional only to appended bytes is made.
+require broad recomputation. The retained schema-5 through schema-9 full-replay
+implementations select structural metadata in a full pass. Current schema-10
+selection uses [reconciliation tracking](database-design.md#usage-reconciliation-tracking);
+necessary dependency expansion is not limited to appended bytes.
 
 Current capture shares member/original lookups and overlap indexes within its
 one admitted read state. This is transaction-local reuse, not a persisted
@@ -1003,8 +1026,10 @@ validation result; selected Task reads and the independent final-publication
 guard retain the boundaries in [immutable usage evidence](#immutable-usage-evidence).
 Within one response-attribution call, the geometry classification uses the same
 response identity rows for boundary matching and typed response
-identities. Full attribution still reads all response columns separately, and a
-fresh publication guard obtains its own response observation.
+identities. Retained full attribution reads all response columns separately and
+its publication guard obtains its own response observation. Current schema-10
+publication instead checks fresh admission, generations and pending work under
+the [reconciliation fence](database-design.md#usage-reconciliation-tracking).
 
 Stored snapshot shape/digest, exact membership, original counters, supersession
 and published immutable bytes are checked by the rotating publication audit
@@ -1142,17 +1167,18 @@ cycle links and publishes successors through the existing mechanism. There is
 no core or numerical schema migration, extra reviewer action, host query, Task
 replay or change to completion gates.
 
-Within one numerical refresh and its admitted core read transaction, validated
-review identities and endpoints may be shared by capture-basis calculation and
-attribution. This removes duplicate retrieval and validation without changing
-their identity checks or the captured input. The shared value contains only
-typed metadata, not answer bodies. It is local to that update: a later update,
-standalone read or publication guard obtains and validates fresh input. No
-persistent verification cache or cross-transaction reuse is permitted.
-Fresh input includes every consumed actual reviewer binding, including direct
-registration and legacy handoff Receipts, not only collected-answer endpoints.
-Their Receipt, Evidence Reference, execution and session relationships must be
-validated before treating a capture basis as current or adopting an index.
+Review identities and endpoints shared inside one admitted transaction contain
+only typed metadata, not answer bodies. Every selected actual-reviewer binding
+requires its Receipt, Evidence Reference, execution and session checks,
+including direct registration and legacy handoff Receipts as well as collected
+endpoints. Endpoint-only validation cannot replace those relationship checks.
+The full-replay implementation obtains these inputs afresh per capture/read.
+Current schema-10 reconciliation retains only the validated structural inputs
+with their consumed core revision. Later registration or a changed revision
+invalidates the capture until selected revalidation completes. Standalone reads
+and final publication use fresh physical/schema/binding admission and the
+[reconciliation fence](database-design.md#usage-reconciliation-tracking), never
+an unconditional saved verification result or an earlier endpoint alone.
 
 ### Response-Boundary Attribution
 
@@ -1500,7 +1526,9 @@ not exclusive Task cost, all intervention or billing accuracy.
 
 Capture reads an admitted core snapshot after acquiring the numerical writer;
 it performs no core write, log I/O or file publication under that writer.
-Capture and display revalidate immutable execution/cycle/reviewer identities.
+Capture validates changed immutable execution/cycle/reviewer identities;
+display checks the fresh admitted capture fence and its selected immutable
+snapshot inputs. Unreconciled changes remain unavailable.
 A core-basis mismatch after restore or later transitions returns unavailable
 until replay; missing references are never rebound to the newest Task cycle.
 Restored numerical state with a different project/path binding stays unavailable.
@@ -1588,10 +1616,13 @@ earlier files may be detected only on that next sweep. No mtime/size check or
 saved cursor is accepted as proof of unchanged bytes. Until a sweep finishes,
 last-good output remains intact; without later events there is no progress or
 detection guarantee. For finite stable input and enough budget to perform a
-capture, one audit step and its checkpoint, repeated events reach publication
-instead of restarting the same history prefix. Metadata classification and
-current-component validation remain whole passes, and each snapshot/file is
-still bounded to 16 MiB; this is not a universal latency guarantee.
+reconciliation unit, one audit step and their checkpoints, repeated events reach
+publication instead of restarting the same history prefix. Schema 10 retains
+reconciliation progress between finite units and validates changed components;
+index metadata serialization still lists the immutable IDs and cycle links.
+Each snapshot/file remains bounded to 16 MiB. These are cooperative progress
+boundaries, not a universal latency guarantee for an individual Task, turn or
+component.
 
 Within one admitted numerical transaction, capture and display may share bulk
 member/original reads and validated snapshot facts. Reuse never survives that
@@ -1599,7 +1630,9 @@ transaction, a new connection or event, and never replaces the fresh final
 publication guard. Internal batch requests are bounded separately: combining
 individually admissible snapshots must not apply one document's byte limit to
 their original-key union. The existing per-snapshot/file limits remain unchanged.
-Capture still validates all current components. Explicit audit/internal usage detail
+Schema-10 capture validates selected components and admits unchanged derived
+results only under the current transaction-bound reconciliation fence. The
+retained full-replay repositories validate all current components. Explicit audit/internal usage detail
 validates all current snapshot metadata before selecting by execution identity;
 it then validates exact members, original counters and predecessor edges only
 for components containing this Task's executions, including shared components

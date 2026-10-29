@@ -211,3 +211,65 @@ def read_bindings(connection: sqlite3.Connection, *, receipt_ids: set[str] | Non
             raise _inconsistent()
         result[receipt_id] = binding
     return result
+
+
+def read_binding_targets(connection: sqlite3.Connection, receipt_ids: set[str]):
+    """Batch the selected immutable relations in the caller's current read.
+
+    Keep alias detection against all receipts for each selected basis, including
+    aliases outside the requested IDs. A second recorded Reference is still an
+    error, even when its values agree with the first. Unbound legacy receipts
+    remain absent, exactly as in ``read_bindings``.
+    """
+    if not connection.in_transaction:
+        raise RuntimeError("review bindings require an existing read")
+    selected, result = sorted(receipt_ids), []
+    for offset in range(0, len(selected), 128):
+        rows = connection.execute("""
+            SELECT binding.*, receipt.project_id,receipt.task_id,receipt.reviewer_key,
+              receipt.target_kind,receipt.target_value,receipt.target_base_revision,
+              receipt.target_generation,reference.contract_revision,
+              reference.project_id AS reference_project,reference.task_id AS reference_task,
+              reference.target_kind AS reference_kind,reference.target_value AS reference_value,
+              reference.target_base_revision AS reference_base,reference.target_generation AS reference_generation,
+              execution.project_id AS execution_project,execution.task_id AS execution_task,
+              EXISTS(SELECT 1 FROM review_receipt_sessions other
+                JOIN review_receipts alias ON alias.review_receipt_id=other.review_receipt_id
+                JOIN evidence_references ref ON ref.source_id=alias.review_receipt_id
+                  AND ref.source_kind='review_receipt' AND ref.source_state='recorded'
+                WHERE other.session_id=binding.session_id
+                  AND alias.project_id=receipt.project_id AND alias.task_id=receipt.task_id
+                  AND ref.contract_revision=reference.contract_revision
+                  AND alias.target_kind=receipt.target_kind AND alias.target_value=receipt.target_value
+                  AND alias.target_base_revision=receipt.target_base_revision
+                  AND alias.target_generation=receipt.target_generation
+                  AND alias.reviewer_key!=receipt.reviewer_key) AS has_alias
+            FROM review_receipt_sessions binding
+            LEFT JOIN review_receipts receipt ON receipt.review_receipt_id=binding.review_receipt_id
+            LEFT JOIN task_executions execution ON execution.execution_id=binding.execution_id
+            LEFT JOIN evidence_references reference ON reference.source_id=binding.review_receipt_id
+              AND reference.source_kind='review_receipt' AND reference.source_state='recorded'
+            WHERE binding.review_receipt_id IN (SELECT value FROM json_each(?))
+            ORDER BY binding.review_receipt_id
+            """, (json.dumps(selected[offset:offset + 128]),)).fetchall()
+        seen = set()
+        for row in rows:
+            identity = row["review_receipt_id"]
+            if identity in seen or not _identifier(identity, "tg_review_receipt_"):
+                raise _inconsistent()
+            seen.add(identity)
+            try:
+                binding = ReviewSessionBinding(**{key: row[key] for key in ReviewSessionBinding.__dataclass_fields__})
+            except TaskValidationError as exc:
+                raise _inconsistent() from exc
+            target = ReviewSessionTarget(**{key: row[key] for key in ReviewSessionTarget.__dataclass_fields__})
+            if (type(target.contract_revision) is not int or target.contract_revision < 0
+                    or (row["reference_project"], row["reference_task"], row["reference_kind"], row["reference_value"],
+                        row["reference_base"], row["reference_generation"])
+                    != (target.project_id, target.task_id, target.target_kind, target.target_value,
+                        target.target_base_revision, target.target_generation)
+                    or (row["execution_project"], row["execution_task"]) != (target.project_id, target.task_id)
+                    or row["has_alias"]):
+                raise _inconsistent()
+            result.append((identity, target, binding))
+    return tuple(result)

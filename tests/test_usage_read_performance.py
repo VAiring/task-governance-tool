@@ -63,6 +63,14 @@ class UsageReadPerformanceTests(unittest.TestCase):
             rows += self.response_rows(f"end{i}", i + 1, end)
         self.path.write_bytes(b"".join(json.dumps(row).encode() + b"\n" for row in rows))
         initial = self.event("SessionStart")
+        # Initial reconciliation is checkpointed across the existing lifecycle
+        # budget. Finite stable input must reach publication on later events;
+        # the measured steady-state operations below still each use one event.
+        for _ in range(3):
+            if "evidence_verification_deferred" in initial["diagnostics"]:
+                break
+            self.assertEqual(initial["diagnostics"], ["usage_unavailable"], initial)
+            initial = self.event()
         self.assertIn("evidence_verification_deferred", initial["diagnostics"], initial)
         index = json.loads(self.target.resolved_usage_index.read_bytes())
         self.assertEqual(len(index["current_snapshot_ids"]), count)

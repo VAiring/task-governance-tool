@@ -11,13 +11,14 @@ import json
 
 from task_governance_tool.usage_incremental_repository import UsageIncrementalRepository, _PREVIOUS
 from task_governance_tool.usage_attribution_repository import (
-    UsageAttributionRepository, core_transitions, resolve_operation,
+    UsageAttributionRepository, core_transitions, resolve_operations,
 )
 from task_governance_tool.usage_repository import _response
 from task_governance_tool.usage_turn_adapter import OperationObservation, TurnObservation
 from task_governance_tool.usage_review_attribution import ReviewBoundary, ReviewReceiptTurn, reviewer_intervals
 from task_governance_tool.usage_response_adapter import ResponsePosition, ResponseBoundary, ResponseTracker, CHECKS
 from task_governance_tool.usage_response_attribution import project_responses, ALGORITHM
+from task_governance_tool.usage_response_binding import qualify_responses
 from task_governance_tool.usage_attribution import owner_segments, _models
 from task_governance_tool.usage_evidence import digest, encode, RESPONSE_FORMAT
 from task_governance_tool.usage_values import UsageError
@@ -66,9 +67,34 @@ class _RelationInputs:
     history: tuple
 
 
+@dataclass(frozen=True)
+class _OperationInputs:
+    """Exact resolutions, scoped to this pair of admitted read transactions."""
+
+    core: object
+    numerical: object
+    all: tuple
+    active: tuple
+    resolved: dict
+
+
 def component_identity(component):
     return digest([component.get("format", RESPONSE_FORMAT), component.get("algorithm", ALGORITHM),
                    component["executions"], component.get("assignment", "legacy")])
+
+
+def _decode_boundary_relation(row):
+    try:
+        body = json.loads(row["document"])
+        fields = set(ResponseBoundary.__dataclass_fields__)
+        if not isinstance(body, dict) or set(body) not in (fields, fields - {"origin_version"}):
+            raise UsageError("usage_schema_invalid")
+        item = ResponseBoundary(**({"origin_version": 1, **body}))
+        if digest(body) != row["observation_id"] or item.thread_id != row["source_thread"]:
+            raise UsageError("usage_schema_invalid")
+    except (ValueError, TypeError, KeyError):
+        raise UsageError("usage_schema_invalid") from None
+    return row["source_id"], row["incarnation"], item
 
 
 class UsageResponseRepository(UsageIncrementalRepository):
@@ -137,7 +163,7 @@ class UsageResponseRepository(UsageIncrementalRepository):
     def _load_relations(self, connection, *, history):
         positions, current, boundaries = [], [], []
         for row in connection.execute("SELECT position.*,source.thread_id AS source_thread FROM usage_response_positions position JOIN usage_sources source "
-                                      "ON source.source_id=position.source_id AND source.incarnation=position.incarnation"):
+                                      "ON source.source_id=position.source_id AND source.incarnation=position.incarnation ORDER BY position.rowid"):
             item = ResponsePosition(**{name: row[name] for name in ResponsePosition.__dataclass_fields__})
             if item.thread_id != row["source_thread"]:
                 raise UsageError("usage_schema_invalid")
@@ -145,18 +171,8 @@ class UsageResponseRepository(UsageIncrementalRepository):
         for row in connection.execute("SELECT boundary.*,source.thread_id AS source_thread,source.incarnation AS current_incarnation "
                                       "FROM usage_response_boundaries boundary JOIN usage_sources source "
                                       "ON source.source_id=boundary.source_id" + ("" if history else
-                                      " AND source.incarnation=boundary.incarnation")):
-            try:
-                body = json.loads(row["document"])
-                fields = set(ResponseBoundary.__dataclass_fields__)
-                if not isinstance(body, dict) or set(body) not in (fields, fields - {"origin_version"}):
-                    raise UsageError("usage_schema_invalid")
-                item = ResponseBoundary(**({"origin_version": 1, **body}))
-                if digest(body) != row["observation_id"] or item.thread_id != row["source_thread"]:
-                    raise UsageError("usage_schema_invalid")
-            except (ValueError, TypeError, KeyError):
-                raise UsageError("usage_schema_invalid") from None
-            relation = (row["source_id"], row["incarnation"], item)
+                                      " AND source.incarnation=boundary.incarnation") + " ORDER BY boundary.rowid"):
+            relation = _decode_boundary_relation(row)
             boundaries.append(relation)
             if row["incarnation"] == row["current_incarnation"]:
                 current.append(relation)
@@ -171,7 +187,24 @@ class UsageResponseRepository(UsageIncrementalRepository):
             "SELECT review_receipt_id FROM review_receipts WHERE project_id=?", (self.basis[0],))}
         return read_collected_review_endpoints(core, receipt_ids=receipts)
 
-    def _core_basis(self, core, connection, *, _review_inputs=None, _relation_inputs=None):
+    def _operation_inputs(self, core, connection, relations, inputs=None):
+        if (not core.in_transaction or not connection.in_transaction
+                or inputs is not None and (inputs.core is not core or inputs.numerical is not connection)):
+            raise UsageError("usage_schema_invalid")
+        if inputs is not None:
+            return inputs
+        rows = connection.execute("SELECT operation.*,conflict.event_id AS conflicting FROM usage_operation_turns operation "
+                                  "LEFT JOIN usage_operation_conflicts conflict USING(event_id) ORDER BY operation.rowid").fetchall()
+        originals = tuple(OperationObservation(**{key: row[key] for key in OperationObservation.__dataclass_fields__}) for row in rows)
+        active = tuple(item for item, row in zip(originals, rows) if row["conflicting"] is None)
+        boundaries = tuple(OperationObservation(item.thread_id, item.turn_id, item.project_id, item.task_id,
+                                               item.event_id, item.generation, item.status)
+                           for _, _, item in relations.history if item.event_id is not None)
+        all_operations = originals + boundaries
+        resolved = resolve_operations(core, all_operations, check_budget=self.check_budget)
+        return _OperationInputs(core, connection, all_operations, active, resolved)
+
+    def _core_basis(self, core, connection, *, _review_inputs=None, _relation_inputs=None, _operation_inputs=None):
         if _review_inputs is None:
             from task_governance_tool.review_answer_repository import _read_usage_review_inputs
 
@@ -183,10 +216,12 @@ class UsageResponseRepository(UsageIncrementalRepository):
         positions, boundaries = inputs.positions, inputs.history
         relations = [[source, incarnation, asdict(item)] for source, incarnation, item in positions + boundaries]
         contexts = []
-        for row in connection.execute("SELECT source_id,document FROM usage_response_context WHERE lane='ingest' ORDER BY source_id"):
+        for row in connection.execute("SELECT context.source_id,context.document,source.thread_id FROM usage_response_context context "
+                                      "LEFT JOIN usage_sources source USING(source_id) WHERE context.lane='ingest' ORDER BY context.source_id"):
+            if row["thread_id"] is None:
+                raise UsageError("usage_schema_invalid")
             value = json.loads(row["document"])
-            thread = connection.execute("SELECT thread_id FROM usage_sources WHERE source_id=?", (row["source_id"],)).fetchone()[0]
-            value = ResponseTracker(thread, "validation", value).state
+            value = ResponseTracker(row["thread_id"], "validation", value).state
             contexts.append((row["source_id"], value))
         sources = list(map(tuple, connection.execute("SELECT source_id,thread_id,incarnation,offset,pending FROM usage_sources ORDER BY source_id")))
         endpoints = [asdict(item) for item in _review_inputs.collected_endpoints]
@@ -195,63 +230,19 @@ class UsageResponseRepository(UsageIncrementalRepository):
                        [_COLLECTED_ENDPOINT_BASIS, endpoints]]), periods
 
     def attribution(self, core_connection, *, numerical_connection=None, geometry_only=False, _review_inputs=None,
-                    _relation_inputs=None):
+                    _relation_inputs=None, _operation_inputs=None):
         with (self.connection() if numerical_connection is None else nullcontext(numerical_connection)) as connection:
             transitions = core_transitions(core_connection, self.basis[0])
             inputs = self._relation_inputs(connection, _relation_inputs)
             positions, boundaries, historic = inputs.positions, inputs.current, inputs.history
-            origins, call_origins = {}, {}
-            for _, _, item in historic:
-                if item.origin_version == 2 and item.response_id is not None:
-                    origin = (item.thread_id, item.turn_id, item.provider, item.response_id)
-                    if item.event_id is not None:
-                        origins.setdefault(item.event_id, set()).add(origin)
-                    call_origins.setdefault((item.thread_id, item.call_id), set()).add(origin)
-            by_event, checks, unresolved = {}, [], set()
-            first_positions = {(source, incarnation, item.provider, item.response_id): item
-                               for source, incarnation, item in positions}
             identity_rows = tuple(connection.execute(
                 "SELECT provider,response_id,thread_id,turn_id FROM usage_responses"))
             numerical = {(row["provider"], row["response_id"]): (row["thread_id"], row["turn_id"])
                          for row in identity_rows}
-            anchored = []
-            for source, incarnation, item in boundaries:
-                if item.project_id != self.basis[0]:
-                    continue
-                position = first_positions.get((source, incarnation, item.provider, item.response_id))
-                same_numerical = numerical.get((item.provider, item.response_id), (item.thread_id, item.turn_id)) == (
-                    item.thread_id, item.turn_id)
-                qualified = (item.origin_version == 2 and item.response_id is not None and same_numerical
-                    and len(origins.get(item.event_id, ())) <= 1
-                    and len(call_origins.get((item.thread_id, item.call_id), ())) <= 1 and (
-                    (position is None and item.method == "explicit") or (position is not None
-                     and position.thread_id == item.thread_id and position.turn_id == item.turn_id
-                     and position.record_order >= item.record_order)))
-                if not qualified:
-                    item = replace(item, response_id=None, method="unavailable")
-                if item.command in CHECKS:
-                    checks.append(item)
-                else:
-                    operation = OperationObservation(item.thread_id, item.turn_id, item.project_id, item.task_id,
-                                                     item.event_id, item.generation, item.status)
-                    transition = resolve_operation(core_connection, operation)
-                    if transition is None:
-                        unresolved.add(item.event_id)
-                        continue
-                    by_event.setdefault(transition, []).append(item)
-                if item.response_id is not None:
-                    anchored.append((source, incarnation, ResponsePosition(item.thread_id, item.turn_id, item.provider,
-                                                                           item.response_id, item.record_order)))
-            bindings = {}
-            for transition, items in by_event.items():
-                identities = {(item.thread_id, item.turn_id, item.provider, item.response_id) for item in items}
-                if len(identities) == 1 and next(iter(identities))[-1] is not None:
-                    bindings[transition] = items[0]
-                else:
-                    unresolved.update(item.event_id for item in items)
-            anchor_keys = {(source, incarnation, item.provider, item.response_id) for source, incarnation, item in anchored}
-            positions = [entry for entry in positions if (entry[0], entry[1], entry[2].provider, entry[2].response_id)
-                         not in anchor_keys] + anchored
+            operations = self._operation_inputs(core_connection, connection, inputs, _operation_inputs)
+            old_operations, resolutions = operations.active, operations.resolved
+            qualified = qualify_responses(self.basis[0], positions, boundaries, historic, numerical, resolutions)
+            bindings, checks, positions, unresolved = qualified.bindings, qualified.checks, qualified.positions, qualified.unresolved
             turns = tuple(TurnObservation(**dict(row)) for row in connection.execute("SELECT * FROM usage_turns"))
             # The geometry pass needs exactly the identity rows already used for
             # boundary validation. Full attribution still reads all columns.
@@ -271,11 +262,8 @@ class UsageResponseRepository(UsageIncrementalRepository):
                     codes.add("collection_pending")
                 elif row["pending"] != "none":
                     raise UsageError("usage_schema_invalid")
-            old_operations = [OperationObservation(**dict(row)) for row in connection.execute(
-                "SELECT thread_id,turn_id,project_id,task_id,event_id,generation,status FROM usage_operation_turns "
-                "WHERE event_id NOT IN (SELECT event_id FROM usage_operation_conflicts)")]
             old_bindings = {identity: (item.thread_id, item.turn_id) for item in old_operations
-                            if (identity := resolve_operation(core_connection, item)) is not None}
+                            if (identity := resolutions[item]) is not None}
             segments = owner_segments(transitions, old_bindings)
             owners = tuple(interval for interval, _, _ in segments)
             turn_conflicts = frozenset(tuple(row) for row in connection.execute("SELECT * FROM usage_turn_conflicts"))
@@ -326,16 +314,19 @@ class UsageResponseRepository(UsageIncrementalRepository):
         # The final publication guard opens and validates its own fresh read.
         reviews = _read_usage_review_inputs(core, project_id=self.basis[0])
         relations = self._relation_inputs(connection)
-        fingerprint, periods = self._core_basis(core, connection, _review_inputs=reviews, _relation_inputs=relations)
+        operations = self._operation_inputs(core, connection, relations)
+        fingerprint, periods = self._core_basis(core, connection, _review_inputs=reviews, _relation_inputs=relations,
+                                               _operation_inputs=operations)
         read = self._snapshot_read(connection, current=True)
         previous = read.documents
         projected = self._project_for_refresh(core, connection, previous, _review_inputs=reviews,
-                                              _relation_inputs=relations, read=read)
+                                              _relation_inputs=relations, _operation_inputs=operations, read=read)
         return fingerprint, periods, previous, projected, read
 
-    def _project_for_refresh(self, core, connection, previous, *, _review_inputs=None, _relation_inputs=None, read=None):
+    def _project_for_refresh(self, core, connection, previous, *, _review_inputs=None, _relation_inputs=None,
+                             _operation_inputs=None, read=None):
         geometry = self.attribution(core, numerical_connection=connection, geometry_only=True,
-                                    _review_inputs=_review_inputs, _relation_inputs=_relation_inputs)
+                                    _review_inputs=_review_inputs, _relation_inputs=_relation_inputs, _operation_inputs=_operation_inputs)
         dirty = {tuple(row) for row in connection.execute("SELECT * FROM usage_dirty_turns")}
         cached = {row["component_id"]: dict(row) for row in connection.execute("SELECT * FROM usage_component_basis")}
         snapshots = {item["snapshot_id"]: item for item in previous}
@@ -371,17 +362,13 @@ class UsageResponseRepository(UsageIncrementalRepository):
 
     def read(self, core, *, task_id=None, audit=False, numerical_connection=None):
         with (self.connection() if numerical_connection is None else nullcontext(numerical_connection)) as connection:
-            relations = self._relation_inputs(connection)
-            basis = self._core_basis(core, connection, _relation_inputs=relations)
+            basis, relations = self._display_basis(core, connection)
             result, current, periods, read = self._read(core, connection, task_id=task_id, audit=audit, _basis=basis)
             current = [item for item in current if item["format"] == RESPONSE_FORMAT]
             if task_id is None:
-                classification = self.attribution(core, numerical_connection=connection, geometry_only=True,
-                                                  _relation_inputs=relations)
                 result["format"] = "taskgov-usage-index-v2"
                 result["attribution"] = ALGORITHM
-                result["unattributed"] = {kind: self._totals(connection, classification[field], read=read) for kind, field in
-                    (("unknown", "unknown_response_keys"), ("unassigned", "unassigned_response_keys"))}
+                result["unattributed"] = self._display_unattributed(core, connection, relations, read)
                 return result
             units = {execution for period in periods if period["task_id"] == task_id for execution in period["executions"]}
             all_keys = {key for item in current if units.intersection(item["executions"])
@@ -404,6 +391,16 @@ class UsageResponseRepository(UsageIncrementalRepository):
                                 **self._totals(connection, read.members[part["snapshot_id"]], read=read)})
                     period["work_units"].append(unit)
             return result
+
+    def _display_basis(self, core, connection):
+        relations = self._relation_inputs(connection)
+        return self._core_basis(core, connection, _relation_inputs=relations), relations
+
+    def _display_unattributed(self, core, connection, relations, read):
+        classification = self.attribution(core, numerical_connection=connection, geometry_only=True,
+                                          _relation_inputs=relations)
+        return {kind: self._totals(connection, classification[field], read=read) for kind, field in
+            (("unknown", "unknown_response_keys"), ("unassigned", "unassigned_response_keys"))}
 
     def _totals(self, connection, keys, *, read=None):
         keys = set(map(tuple, keys))

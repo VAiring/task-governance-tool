@@ -130,13 +130,11 @@ def read_collected_review_endpoints(connection, *, receipt_ids):
 
 
 def _read_usage_reviews(connection, receipt_ids):
-    from .review_session_repository import read_bindings, _receipt_target
+    from .review_session_repository import read_binding_targets
 
     # Preserve the complete binding/target/alias validation performed by both
     # existing readers. Only repeated calls from one capture are eliminated.
-    bindings = read_bindings(connection, receipt_ids=receipt_ids)
-    return tuple((receipt_id, _receipt_target(connection, receipt_id)[0], binding)
-                 for receipt_id, binding in bindings.items())
+    return read_binding_targets(connection, receipt_ids)
 
 
 def _collected_usage_endpoints(connection, rows, reviews):
@@ -157,7 +155,7 @@ def _collected_usage_endpoints(connection, rows, reviews):
     return tuple(result)
 
 
-def _read_usage_review_inputs(connection, *, project_id):
+def _read_usage_review_inputs(connection, *, project_id, task_ids=None):
     """Read once for one capture; never expose an unvalidated-input option.
 
     The owning usage capture passes the returned typed values explicitly to
@@ -171,9 +169,11 @@ def _read_usage_review_inputs(connection, *, project_id):
     version = current_schema_version(connection)
     if version < 25:
         return _UsageReviewInputs((), ())
+    selection = "" if task_ids is None else " AND task_id IN (SELECT value FROM json_each(?))"
+    parameters = (project_id,) if task_ids is None else (project_id, json.dumps(sorted(task_ids)))
     rows = connection.execute(
-        "SELECT * FROM review_receipts WHERE project_id=? ORDER BY review_receipt_id",
-        (project_id,),
+        "SELECT * FROM review_receipts WHERE project_id=?" + selection + " ORDER BY review_receipt_id",
+        parameters,
     ).fetchall()
     reviews = _read_usage_reviews(connection, {row["review_receipt_id"] for row in rows})
     collected = [row for row in rows if row["review_provenance_basis_version"] == 2] if version >= 30 else []

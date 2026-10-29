@@ -32,7 +32,6 @@ class UsageReviewInputValidationTests(unittest.TestCase):
         # Match the real lifecycle/publication admission, not the global audit
         # which would hide a missing relationship check in the usage consumer.
         with closing(storage.connect_initialized_readonly(self.target, operation_local=True)) as core:
-            validate_storage_rows(core)
             yield core
 
     @contextmanager
@@ -49,6 +48,13 @@ class UsageReviewInputValidationTests(unittest.TestCase):
                 core.execute(change + " WHERE source_kind='review_receipt' AND source_id=?", (self.receipt_id,))
                 for _, sql in triggers:
                     core.execute(sql)
+                # Supported core writers mark affected Tasks in the same
+                # transaction. Keep that protocol while injecting invalid
+                # domain data; a raw edit evading/restoring tracking is not a
+                # supported freshness input for incremental reconciliation.
+                from task_governance_tool.viewer_projection_repository import mark_tasks_locked
+                core.row_factory = sqlite3.Row
+                mark_tasks_locked(core, self.target.project.project_id, (self.task,))
             yield
         finally:
             self.install.db_path.write_bytes(original)
@@ -75,9 +81,10 @@ class UsageReviewInputValidationTests(unittest.TestCase):
             self.assertEqual(repository.read(core, task_id=self.task)["status"], "pending")
             for audit in (False, True):
                 expected = repository.read(core, task_id=self.task, audit=audit)
-                with mock.patch.object(service, "validate_usage_ownership", wraps=validate_storage_rows) as validate:
+                with mock.patch("task_governance_tool.usage_reconciliation_core.read_task_inputs",
+                                side_effect=AssertionError("read-only display cannot reconcile")) as validate:
                     self.assertEqual(service.read_task_usage(self.target, core, self.task, audit=audit), expected)
-                validate.assert_called_once_with(core)
+                validate.assert_not_called()
         with repository.publication_guard(self.reader, index, state):
             pass
 
@@ -146,7 +153,7 @@ class UsageUnavailableAdmissionTests(unittest.TestCase):
                     target = SimpleNamespace()
                     core = object()
                     with mock.patch.object(service, "repository_for", return_value=repository), \
-                            mock.patch.object(service, "validate_usage_ownership", wraps=validate_storage_rows) as validate:
+                            mock.patch.object(repository, "read", wraps=repository.read) as validate:
                         for audit in (False, True):
                             self.assertEqual(service.read_task_usage(target, core, "task", audit=audit),
                                 {"status": "unknown", "coverage": "registered_only", "periods": [],

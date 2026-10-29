@@ -174,8 +174,10 @@ The nested `usage_hooks` result and text notice describe preparation and the
 user's remaining trust action independently of core success. Failure is
 non-gating and does not rerun or roll back core or numerical setup.
 
-`registered_participants` in the attribution repository reads committed owner
-acquisitions and actual Receipt-session bindings. `UsageRepository` exposes the
+The schema-10 reconciliation repository discovers participants through finite
+pages of changed Tasks' committed owner acquisitions and actual Receipt-session
+bindings. `registered_participants` remains the full-replay oracle.
+`UsageRepository` exposes the
 existing session/source registry and best-effort same-caller registration used
 after successful bound review save. Save preserves its original response even
 when registration fails. The conditional wait-decision helper uses the same
@@ -198,19 +200,21 @@ remain unknown for possible retained-original registration. It performs no core
 write or all-Task/preparation-history enumeration.
 
 For a hint whose session is absent from the numerical registry, the legacy
-participant-history query runs only in residual inventory, after known direct
+participant-discovery phase runs only in residual inventory, after known direct
 work and with the remaining event budget. If this snapshot admits the session,
 its hint is saved and attempted before directory discovery. No short preliminary
 history query or repeated query is added. Publication retains its fresh guards.
 
 The lifecycle's resolver and core readers use operation-local physical/schema/
 binding admission rather than whole-project review-history validation.
-Participant discovery and each fresh publication core read validate the ownership
-and completion-cycle history they consume; the usage repository separately
-validates actual Receipt/session/collected-answer relationships for its shared
-capture basis. Task detail keeps that common basis check as well. These checks
-are not reusable across connections, and the final publication guard still opens
-fresh admitted core and numerical reads.
+Participant discovery and the selected change consumer validate the ownership,
+completion-cycle and actual Receipt/session/collected-answer relationships of
+affected Tasks. They save structural inputs with their transaction-bound
+revision frontier. Task detail and publication compare that frontier against
+fresh admitted core and numerical state; stale or incomplete work remains
+unknown. [Reconciliation tracking](database-design.md#usage-reconciliation-tracking)
+owns reset, overlap expansion and interruptible progress. There is no
+cross-connection physical-admission cache.
 
 `usage_sources.py` locates only registered session IDs in the legacy
 `rollout-<prefix>-<session-uuid>.jsonl` and segmented
@@ -302,7 +306,7 @@ operations, one bounded record, current-component validation and metadata passes
 wall time; there is no universal host-timeout guarantee. The same
 compare-and-commit cursor/continuation rule handles interruption, followed by
 `refresh_usage` for exact-cycle capture and snapshot-first publication. Its
-schema-7 publication cursor, preserved by schemas 8 and 9, continues the rotating history audit across events; a completed
+schema-7 publication cursor, preserved by schemas 8 through 10, continues the rotating history audit across events; a completed
 sweep retains explicit deferred-integrity status. It uses
 the existing canonical paths above; no daemon, timer, process, model call,
 post-commit Task callback or host-settings writer is added. A later same-project

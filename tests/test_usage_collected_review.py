@@ -110,9 +110,11 @@ class CollectedReviewUsageTests(unittest.TestCase):
                 with mock.patch.object(review_answer_repository, "validate_provenance_relation",
                         wraps=review_answer_repository.validate_provenance_relation) as provenance, \
                         mock.patch.object(review_session_repository, "read_bindings",
-                        wraps=review_session_repository.read_bindings) as bindings:
+                        wraps=review_session_repository.read_bindings) as bindings, \
+                        mock.patch.object(review_session_repository, "read_binding_targets",
+                        wraps=review_session_repository.read_binding_targets) as targets:
                     yield core
-                    observations.append((provenance.call_count, bindings.call_count))
+                    observations.append((provenance.call_count, bindings.call_count + targets.call_count))
         (operation or self.repository.refresh)(reader)
         return observations
 

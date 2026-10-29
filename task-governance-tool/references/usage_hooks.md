@@ -105,7 +105,7 @@ remains read-only, and a saved review counts only after its core binding exists.
 Only a retained legacy supervisor uses the
 [wait-decision marker](cli_contracts.md#record-review-wait-decision); normal
 deterministic waiting creates no supervisor usage turn. Actual parent/reviewer
-usage and existing marker history remain intact. Numerical schema 9 requires
+usage and existing marker history remain intact. Numerical schema 10 requires
 explicit setup to initialize or migrate; ordinary helpers and hooks never
 upgrade old stores. Usage unavailability does not prevent review or Task
 completion, and a marker does not prove collection.

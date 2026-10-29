@@ -150,8 +150,10 @@ numerical schema-3 replay/links, and isolated publication/Task-detail reading,
 as specified in [immutable usage persistence](database-design.md#immutable-usage-persistence).
 Core completion never invokes that worker or opens its store.
 
-Current numerical factories select the schema-9 work-order repository, whose
-indexed attempt ordering and retained locators are owned by
+Current numerical factories select the schema-10 reconciliation repository,
+whose selected change propagation is owned by
+[reconciliation tracking](database-design.md#usage-reconciliation-tracking).
+Its preserved indexed attempt ordering and retained locators are owned by
 [numerical persistence](database-design.md#numerical-collection-persistence).
 Its preserved schema-7 resumable publication audit is owned by
 [immutable usage persistence](database-design.md#immutable-usage-persistence). Closed

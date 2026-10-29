@@ -924,9 +924,9 @@ locator repository with numerical schema 9 (`indexed_work_order`) and
 `usage_work_order_by_attempt ON usage_work_order(last_attempt)`. The existing
 `MAX(last_attempt)` statements in `_record_attempt` and `commit_discovery` use
 that index; their writer, cursor/discovery CAS and rollback boundaries do not
-change. No persisted counter or validated-state cache is introduced. Current
-factories select this subclass. Explicit Setup creates it or upgrades exact
-schemas 1–8 atomically through the existing engine. Schema 8 retains every
+change. This schema-9 layer introduces no persisted counter or validated-state
+cache. Its retained migration engine creates the index or upgrades exact
+schemas 1–8 atomically. Schema 8 retains every
 existing row and continuation; earlier versions use their existing migration
 policy. The old schema statements remain unchanged. Failure rolls back the
 index and marker; reentry validates rather than repairs.
@@ -987,10 +987,11 @@ Schema 6 likewise retains its collection contexts; schemas 1-5 use the existing
 response-format replay rule. The exact predecessor admitted under the migration
 writer selects this behavior. Failure rolls back the delta, and normal reads
 or Hook events neither initialize nor migrate it. Current factories select
-`UsageWorkOrderRepository`, which extends this locator layer without replacing
-the publication repository's existing audit behavior.
+`UsageReconciliationRepository`, which inherits the indexed work-order and
+locator layers. Its [selected reconciliation](#usage-reconciliation-tracking)
+retains the publication repository's existing audit behavior.
 
-`usage_incremental_projection.py` reevaluates structural interval geometry and
+The retained full-replay `usage_incremental_projection.py` reevaluates structural interval geometry and
 diagnostics using the admitted core and numerical snapshot. A component basis
 captures its execution/turn/gap set and unresolved-operation state. A changed
 basis or dirty response turn loads and sums only that component's original
@@ -998,8 +999,9 @@ responses; unchanged components reuse validated snapshots. New graph geometry
 and immutable predecessor overlap handle splits/merges without summing old
 totals. Dirty marks and bases are adopted with snapshots, cycle links and capture
 fingerprint. Core restore or delayed boundaries/reviewer/receipt bindings cannot
-reuse a different geometry. The structural pass is still global; current
-snapshot validation still reads membership/counters. Historical Evidence and
+reuse a different geometry. That retained structural pass is global; current
+schema-10 [reconciliation](#usage-reconciliation-tracking) selects changed inputs
+and their dependencies. Selected snapshot validation still reads membership/counters. Historical Evidence and
 file integrity use the resumable publication sweep below. Test work counters
 distinguish aggregation from these integrity operations.
 
@@ -1015,6 +1017,182 @@ adapter runs after core setup, reports a separate outcome and never changes
 core success. Host integration belongs to the
 [lifecycle adapter](setup-state-design.md#lifecycle-usage-hook), not this module;
 no Task operation, completion callback or host-settings writer is added here.
+
+<a id="usage-reconciliation-tracking"></a>
+
+### Reconciliation Change Tracking
+
+The numerical reconciliation extension is separate from collection cursors,
+fair source discovery, immutable snapshots and the publication-audit cursor.
+`usage_reconciliation_repository.py` owns its schema-10 migration and dirty-work
+repository, selected by the current Setup and lifecycle factories. It requires
+the core schema-34 Task revision inventory; ordinary collection never migrates.
+
+Its `usage_reconcile_state` stores one random database epoch and a nonnegative
+integer generation. `usage_reconcile_changes` coalesces the latest generation
+for each closed `(kind,key1,key2)` identity. Kinds are thread, turn, Task,
+source, original response, boundary, context, event/call origin, clock and
+Receipt. No numerical values, source locations, context
+documents, answer bodies or diagnostic text are copied into that queue.
+The generation index selects finite ordered work pages; page size is a work
+allowance, never a limit that discards remaining changes.
+
+Every consumed numerical input has insert/update/delete notifications in its
+existing transaction. The input inventory includes participation, source and
+incarnation, original responses and observation/conflict links, source gaps,
+turn ordering/conflicts, successful operations/conflicts, review boundaries and
+Receipt turns, wait turns, response positions/boundaries, and ingest context and
+scan state. Audit-only context, locator/attempt queues and derived publication
+metadata do not create attribution work. Equal updates do not advance the
+generation. Identity changes mark both the old and new affected identities;
+diagnostic removal is a change even when no response was added. Missing tracking
+or generation overflow aborts the numerical writer rather than losing the mark.
+
+Progress consumes only exact captured dirty rows under the same numerical
+writer that adopts their derived result. A changed generation rejects a stale
+acknowledgement. An interruption before commit rolls back both progress and
+derived results; an interruption after commit leaves later pages pending.
+Neither operation removes numerical observations or immutable evidence.
+Fresh initialization and exact predecessor migration create a new epoch and
+require establishing derived reconciliation state. Migration preserves existing
+schema-9 rows and cursors; older schemas retain their established replay rules.
+Ordinary reads and Hook events never create or migrate this tracking state.
+
+The integration consumes core changes through the existing transaction-bound
+Task revision/epoch contract only after checking that all numerical dependencies
+are covered by that writer inventory. Numerical and core watermarks are separate:
+no new numbers cannot establish unchanged ownership, review or completion
+relations. Selection expands through old and new participation intervals and
+shared original-response membership. A thread ID alone is not evidence that all
+its historical Tasks share work. Missing boundaries require conservative
+expansion or an unknown result, never dropping the affected suffix.
+
+Core discovery is a separate resumable phase. A bounded revision page validates
+only its selected Tasks' complete ownership histories, exact execution/cycle
+relations and registered review inputs. It stores closed structural projections
+(transition identities/statuses, periods, actual reviewer bindings/endpoints)
+and their digests, never Task prose or review bodies. Every selected mark
+enqueues that Task's exact operation/wait-anchor checks, even when those closed
+structural projections are equal: a new event or manifest can resolve an old
+numerical observation. Only an actually changed resolved input propagates
+geometry work. Cursor and projections commit together. Coalesced revisions
+which move beyond the current capture fence are consumed in the next fence;
+neither a page limit nor a deadline acknowledges unseen revisions. Participant
+discovery reuses these admitted projections and retains existing registered
+sessions. An incomplete baseline cannot certify a current numerical publication.
+
+The selection phase keeps old participation ranges until replacement is
+adopted. Changed Task histories and numerical identities seed old/new ranges;
+overlap through response identity or actual interval coverage expands the
+selected set. A missing/reordered operation boundary also includes the prior
+and next independently located boundary needed by the attribution algorithm.
+These are context edges, not unconditional edges between every Task in a
+session. The base owner allocation is evaluated by a shared whole-turn kernel.
+Only its active execution carries to the next distinct turn; completion tails
+and preparation checks remain within a turn. Changed turns replay from the
+saved predecessor state and propagate until their exit state converges.
+Each turn retains ordered add/remove/ambiguity-check effects for each original
+response key. `usage_reconciliation_owner_effects.py` folds only affected keys
+across their occurrences, rather than unioning turn-local owner sets. A later
+preparation removes the completed owner from earlier occurrences too; a later
+addition can restore it. An ambiguity observed before removal remains unknown.
+Qualified raw-position and anchor insertion ordinals retain the full classifier's
+thread encounter order. Unavailable boundaries remain unresolved input and never
+create positional metadata from a missing response identity. Indexed per-turn
+encounter minima avoid a history read;
+when a thread's minimum changes, only keys shared with another thread are
+queued. The base-key queue is part of the fresh input fence. Replacing a key's
+base result invalidates its pending/uncertainty/fallback consumers, preserving
+independent review membership and diagnostic origins.
+Pending-call reset selection uses owners at the end of that session's encounter
+phase, including earlier sessions but excluding later ones. Its indexed fold is
+limited to the pending origin's original key. A changed prefix invalidates the
+pending rule even when later effects leave final membership unchanged.
+Fallback and parent-receipt trimming instead read the final global base owners
+for their selected keys, then apply their own ordered interval contributions.
+Missing-order uncertainty tests each good numerical original against the
+global union of ordered occurrences using its indexed response key. An
+explicitly unorderable occurrence remains an independent uncertainty origin,
+even when another occurrence is ordered. Numerical/conflict and position
+changes queue this reduction, including removal of the last ordered occurrence.
+Fallback compares candidate keys and entry/exit anchors at their last position
+across the interval's thread, not just the numerical original's turn. Moving
+a candidate invalidates that original turn; moving an anchor requeues only
+fallback intervals using that transition. Parent-receipt trimming retains its
+own exact-turn sequence. All these queues survive restart and fence publication.
+Uncertainty endpoints retain last-occurrence lookup, but range membership tests
+every ordered occurrence and unions original keys. An earlier occurrence cannot
+lose its uncertainty merely because the same key occurs later outside the range.
+Pending/missing/reversed/displaced boundaries have separate old/new uncertainty
+work: base-state convergence must not acknowledge those overlays. Their phase
+order remains allocation, uncertainty, fallback, additional participation,
+then diagnostic propagation. Selected turn processing may encounter another
+occurrence's uncertainty later. Every base/order/uncertainty key addition or
+removal, and every base-owner addition or removal even with equal uncertainty,
+therefore requeues the numerical record's dependent fallback turn, including
+an already processed or unorderable turn without a retained position. This
+dependency is attached to contribution replacement; fallback/additional owners
+do not feed it back. Equal contributions create no new work;
+the existing queue fence requires this dependency work to drain before response
+classification or publication, preserving full-replay semantics across restart.
+Response-level contributions are retained outside
+the changed range; partition identity still groups every matching owner set
+across disjoint turns. Execution diagnostics retain their separate origins so
+removing one origin cannot erase another equal diagnostic.
+
+The reverse dependencies also include historical event/call origins, timestamp
+peers and reviewer-session turn conflicts. A zero/nonzero unresolved-operation
+change affects all component diagnostics without requiring whole geometry
+reclassification. Source diagnostic/incarnation changes affect all admitted participants
+of that source, while advancing an ingest offset alone does not expand to its
+historical Tasks. Selected ranges retain complete endpoint turns, shared
+partitions and necessary unresolved suffixes. The exact response classifier
+remains the oracle; cached summaries never invent an interval boundary.
+
+Reconciliation state is invalidated by a changed binding, schema or attribution
+algorithm, database epoch/physical replacement, a regressed watermark or missing
+tracking. Reestablishment must retain committed progress within the existing
+Hook deadline. Until that basis is established, prior immutable files remain
+last-good history and cannot be labelled current. The final publication guard
+opens fresh admitted reads and compares captured source generations and pending
+work; a prior successful classification is not a substitute for that guard.
+The separately required rotating snapshot/file audit remains unchanged.
+
+`usage_reconciliation_runtime.py` composes ordered initial, effect and capture
+phases. Core/changes/source pages, selected Task operations and intervals, turn
+input/allocation, contribution replacement, uncertainty/pending/range overlays,
+response totals, diagnostics and selected snapshots commit as separate units.
+Read transactions open after the numerical writer; no core write occurs.
+The pure whole-turn allocator is shared with the full attribution oracle.
+Only active execution state crosses a turn boundary. Persisted positions and
+reverse event/call/key indexes propagate repeated original keys and late
+boundaries to every affected occurrence; last-position semantics remain those
+of the original classifier. Range bins find actual interval consumers without
+scanning every historical interval in the session.
+
+Current partition indexes contain active response/empty membership only.
+Retiring a partition keeps its one-time snapshot work but removes its derived
+execution reverse index, so past sharing combinations do not accumulate in
+later diagnostic selection. Immutable snapshot heads and lineage are separate.
+Snapshot work freezes its old heads while producing all successors. If inputs
+change or an epoch is reset after a partial split, the unfinished round's
+immutable predecessor obligations survive independently of those current heads.
+Uncovered keys and the existing empty/legacy/retired execution-overlap rules
+select those predecessors; selected bodies, membership and counters are checked
+again. Final adoption clears only the finished obligations. No original
+snapshot, member, supersession or cycle link is removed.
+
+Per-key unknown/unassigned contributions update nullable per-model totals by
+old/new delta. Selected snapshots validate and aggregate their complete actual
+partition, including disjoint windows. `usage_reconciliation_publication.py`
+builds index metadata without another classification pass. Its final guard
+compares fresh core/numerical identities and generations, pending work, capture,
+publication cursor and immutable append generation while holding admitted reads
+through adoption. Read-only display uses this fence and the existing selected
+snapshot reader; it neither drains work nor reloads all response relations.
+External writes that evade and restore the tracking protocol are outside this
+incremental freshness proof. Exact DDL/migration/binding admission and the
+separate immutable audit remain required.
 
 <a id="conditional-turn-attribution-structure"></a>
 
@@ -1051,9 +1229,9 @@ Turn observations, response observations and source cursor commit atomically.
 `usage_review_boundaries` and `usage_review_receipt_turns`
 to numerical schema 1. Explicit initialization migrates the migration-marker
 table and adds the new relations in one short transaction, recording version 2
-last. No ordinary read or collector migrates. The setup factory selects schema 9
+last. No ordinary read or collector migrates. The setup factory selects schema 10
 for the current package. Preview returns `migration_required` and planned `usage_migrate` for
-an exact schema-1 through schema-8 store; explicit setup returns `migrated` and that completed
+an exact schema-1 through schema-9 store; explicit setup returns `migrated` and that completed
 write on success. Fresh-store creation keeps `usage_initialize`. Failure remains
 a separate numerical outcome, not rollback or rejection of core setup.
 
@@ -1062,6 +1240,15 @@ project/Task/generation/status/actor tuple. Equal creation time is only an
 additional consistency check, never a proximity selector. Missing core rows
 after restore remain unresolved. The numerical store neither supplies core
 state acceptance nor bypasses existing selected/global validation.
+The numerical repository resolves selected acknowledgements in parameter
+batches of at most 128, without truncating a larger selection. A transition
+with a different timestamp still counts toward ambiguity; filtering by time
+before counting matches would incorrectly admit a duplicated identity.
+Response capture shares these resolutions between basis and classification
+only within its one core/numerical transaction pair. Standalone calls and the
+fresh publication guard resolve again. Source identity for saved response
+contexts is joined in the same read rather than fetched once per context;
+an orphan context still fails closed.
 
 `usage_attribution.py` builds inclusive intervals from admitted append-order
 core transitions. It unions turn and response membership before summing, builds
@@ -1127,7 +1314,7 @@ Changed geometry uses existing component invalidation and immutable
 snapshot successors; old numerical readers and stored history retain their
 meaning. The integration adds no persisted table, host operation or core write.
 
-The response repository's refresh capture obtains one immutable review-input
+The retained full-replay response repository's refresh capture obtains one immutable review-input
 value containing the validated Receipt/session/target relationships and native
 endpoints. It passes this value explicitly to capture-basis and attribution
 calculation within the same admitted core read transaction. The answer repository
@@ -1142,6 +1329,14 @@ The basis reader uses the same complete review-input reader when no capture-loca
 value is supplied. It validates direct and legacy handoff bindings as well as
 native collected endpoints; endpoint-only validation cannot stand in for the
 Receipt-to-Reference and execution/session checks required by the basis.
+
+The current schema-10 consumer applies that complete reader to its changed
+Task set and persists only closed structural metadata under the consumed core
+revision. Its endpoint/legacy-policy versions participate in the reconciliation
+identity. Read-only display and final publication compare fresh admitted
+revisions rather than repeating all historical relationship reads; pending or
+invalidated input cannot become current. Its lifetime and reset rules are owned
+by [reconciliation tracking](#usage-reconciliation-tracking).
 
 ### Response Relation And Partition Structure
 
@@ -1382,7 +1577,9 @@ per admitted numerical read, using it for both boundary identity comparison and
 `geometry_only` typed identities. The full path keeps its separate all-column
 response read. This local reuse does not cross a call, connection, or the fresh
 publication guard.
-The geometry pass remains global. Exact partition identity, metadata basis and
+In the retained full-replay implementation the geometry pass remains global;
+current schema-10 selection follows [reconciliation tracking](#usage-reconciliation-tracking).
+Exact partition identity, metadata basis and
 dirty turns select model aggregation; validated unchanged snapshots reuse their
 totals. Changed partitions preserve predecessor overlap through original keys.
 The capture basis includes closed ingest continuation and source cursor
@@ -1419,7 +1616,10 @@ interval's exact starting and ending core transition IDs in process-local
 metadata; the response repository carries those paired origins into fallback.
 Repeated same-turn segments of one execution therefore do not borrow another
 segment's start or disable its cutoff. The legacy `owner_intervals` projection
-retains its existing interval shape and meaning. No segment metadata is stored.
+retains its existing interval shape and meaning. The retained full-replay path
+stores no segment metadata. Current schema-10 reconciliation persists only the
+closed structural segment inputs and their revision under
+[reconciliation tracking](#usage-reconciliation-tracking).
 Unordered original keys may retain
 partial membership; no missing response position is fabricated.
 Pending origins are located from source/incarnation/turn/record-order metadata
@@ -1430,14 +1630,16 @@ operation set that re-establishes all carried/origin-response owners. Unrelated
 organization releases are excluded. Empty carried state does not permit an
 organization update to certify an unassigned interval. Terminal-result replay
 uses the unchanged call identity and original response, never its arrival time.
-No SQL structure, core write or result-body retention is introduced.
+These pure attribution rules introduce no core write or result-body retention;
+schema-10 derived storage follows [reconciliation tracking](#usage-reconciliation-tracking).
 Source diagnostics are merged into each execution's final admitted response
 membership, after preparation, fallback and additional participation allocation.
 Qualified operation/receipt boundary sources also supply diagnostics when the
 final owner set includes the execution but counters are missing or conflicting.
 They are also merged from each admitted additional interval's source, including
-intervals without numerical observations. An internal, non-persisted interval
-flag separates source admission from unknown coverage: committed exact reviewer
+intervals without numerical observations. An internal interval flag separates
+source admission from unknown coverage. It is process-local in full replay and
+part of the closed structural inputs in schema-10 reconciliation: committed exact reviewer
 bindings admit their reviewer source; wait intervals admit only a validated,
 uniquely ordered sender/turn. Invalid-anchor or ambiguous-sender wait placeholders
 retain boundary diagnostics without admitting any source. Existing active-work
@@ -1457,7 +1659,7 @@ Task totals and work-unit parts union original keys; shared parts name actual
 Task/execution identities instead of displaying another period's shared total
 as an exclusive value. The v2 index exposes known-unassigned versus unknown
 observed values without a completion gate or new hook/LLM action. Current
-factories select the schema-9 work-order subclass through `usage_collection.py` and
+factories select the schema-10 reconciliation subclass through `usage_collection.py` and
 `usage_evidence_service.py`; lifecycle composition and source discovery stay
 with their existing owners.
 
@@ -1527,8 +1729,9 @@ One numerical writer precedes a fresh admitted core read. Attribution reuses
 that numerical connection, eliminating a second inconsistent numerical read.
 It derives completion periods from ordered core transitions and links every
 pre-completion execution to the immutable cycle selected by its final execution.
-Snapshots, original-key membership, supersession, cycle links and capture basis
-commit together. An unchanged current component is reused. A changed component
+Each selected snapshot, original-key membership, supersession and cycle link
+commits together. The final capture basis is adopted only after all selected
+work and the fresh fence pass. An unchanged current component is reused. A changed component
 includes predecessors in its hashed identity, so later counter/conflict changes
 cannot revive an already superseded snapshot or form a successor cycle.
 No callback touches the core writer; late replay requires no ownership takeover.
@@ -1558,7 +1761,7 @@ existing response-format replay rule. The exact predecessor admitted under the
 migration writer selects that rule, never an earlier inspection. No observation or immutable history is
 deleted or treated as already audited during migration.
 
-Capture returns its admitted current documents, core/period basis and
+The retained schema-7 full replay implementation returns its admitted current documents, core/period basis and
 classification to the publisher in the same numerical writer/core read.
 It builds only index metadata for history, without repeating historical
 membership/counter validation or classification. Ordinary response reads reuse
@@ -1574,6 +1777,9 @@ shares these same local inputs with its freshly computed base-reader basis.
 Standalone attribution/basis calls and every final publication guard load their
 own inputs; none is retained on a repository or passed across calls, transactions,
 connections or events. Snapshot and public classification contracts are unchanged.
+Current schema-10 selection and freshness instead follow
+[change tracking](#usage-reconciliation-tracking); full replay remains the
+differential oracle.
 `usage_snapshot_read.py` owns an
 explicit read value with validated documents, member/predecessor maps, original
 responses and execution/response/partition indexes. It belongs to the active
@@ -1590,7 +1796,10 @@ shared components and all this Task's periods contribute to its union total.
 The publication basis also includes
 closed turn, operation, reviewer, conflict and source-diagnostic inputs, plus
 actual operation resolutions, so changed source/capture/restore state cannot
-silently reuse an earlier index. Structural metadata remains a whole pass.
+silently reuse an earlier index. Structural metadata is a whole pass in the
+retained full-replay implementation; current schema-10 publication uses the
+fresh generation and pending-work fence described in
+[reconciliation tracking](#usage-reconciliation-tracking).
 
 The writer closes before file I/O. Each subsequent short numerical read fully
 validates one snapshot; the service compares/publishes its immutable bytes,

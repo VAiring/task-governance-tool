@@ -16,6 +16,12 @@ Connection ownership behind the refreshed application entries:
 Those storage openers delegate to sqlite_connection, then connect_traced and
 its default observed cursor. Injected test connections and logging suppression
 retain their existing exceptions; an inventory entry does not enable logging.
+
+The usage_reconciliation modules borrow the admitted numerical connection from
+UsageRepository and the operation-local read-only core connection supplied by
+usage_evidence_service/usage_locator_collection. Both retain the observed SQL
+cursor. Separate stage transactions persist only numerical work; no direct
+native SQL dispatch, connection bypass or core writer is added.
 """
 import ast
 import json

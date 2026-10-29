@@ -119,6 +119,53 @@ class ReviewSessionRepositoryTests(unittest.TestCase):
         self.assertEqual(self.connection.execute("SELECT count(*) FROM review_receipts").fetchone()[0], 1)
         self.assertEqual(sessions.read_bindings(self.connection, receipt_ids={self.legacy}), {})
 
+    def test_batched_targets_match_scalar_read_and_bound_query_count(self):
+        selected = set()
+        with self.writer():
+            for number in range(257):
+                identity = self.receipt(f"batch-{number}", target=replace(TARGET, target_generation=number + 2))
+                self.connection.execute("INSERT INTO review_receipt_sessions VALUES (?,?,?,?,NULL)",
+                                        (identity, REVIEWER.session_id, EXECUTION, "direct"))
+                selected.add(identity)
+        with self.writer():
+            expected = tuple((identity, sessions._receipt_target(self.connection, identity)[0], binding)
+                for identity, binding in sessions.read_bindings(self.connection, receipt_ids=selected).items())
+            statements = []
+            self.connection.set_trace_callback(statements.append)
+            try:
+                actual = sessions.read_binding_targets(self.connection, selected | {self.legacy})
+                self.assertEqual(sessions.read_binding_targets(self.connection, set()), ())
+            finally:
+                self.connection.set_trace_callback(None)
+            self.assertEqual(actual, expected)
+            self.assertEqual(len(statements), 3)
+
+    def test_batched_targets_reject_alias_outside_selection_and_duplicate_reference(self):
+        with self.writer():
+            first = self.receipt("first")
+            self.record(first)
+        with self.writer():
+            alias = self.receipt("alias")
+            self.connection.execute("INSERT INTO review_receipt_sessions VALUES (?,?,?,?,NULL)",
+                                    (alias, REVIEWER.session_id, EXECUTION, "direct"))
+            with self.assertRaises(StorageError):
+                sessions.read_binding_targets(self.connection, {first})
+            self.connection.rollback()
+        with self.writer():
+            self.connection.execute("INSERT INTO evidence_references SELECT * FROM evidence_references WHERE source_id=?", (first,))
+            with self.assertRaises(StorageError):
+                sessions.read_binding_targets(self.connection, {first})
+
+    def test_batched_targets_reject_missing_reference_and_closed_read(self):
+        with self.assertRaises(RuntimeError):
+            sessions.read_binding_targets(self.connection, set())
+        with self.writer():
+            identity = self.receipt()
+            self.record(identity)
+            self.connection.execute("DELETE FROM evidence_references WHERE source_id=?", (identity,))
+            with self.assertRaises(StorageError):
+                sessions.read_binding_targets(self.connection, {identity})
+
     def test_direct_and_parent_forwarded_handoff_keep_actual_reviewer_and_no_slot(self):
         owner_before = self.basis()
         with self.writer():

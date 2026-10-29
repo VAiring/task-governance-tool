@@ -15,14 +15,13 @@ from task_governance_tool.state_paths import (
     read_physical_file_bounded, create_exclusive_durable_file, unlink_validated_file,
 )
 from task_governance_tool.storage import connect_initialized_readonly
-from task_governance_tool.task_ownership import validate_storage_rows as validate_usage_ownership
 from task_governance_tool.usage_evidence import encode, MAX_DOCUMENT_BYTES
-from task_governance_tool.usage_work_order_repository import UsageWorkOrderRepository
+from task_governance_tool.usage_reconciliation_repository import UsageReconciliationRepository
 from task_governance_tool.usage_values import UsageError
 
 
 def repository_for(target):
-    return UsageWorkOrderRepository(target.resolved_usage_database, target.project.project_id,
+    return UsageReconciliationRepository(target.resolved_usage_database, target.project.project_id,
                                    target.binding_path_hash, target.binding_generation)
 
 
@@ -32,9 +31,8 @@ def read_task_usage(target, core, task_id, *, audit=False):
         # Reject unavailable numerical state before consuming core history.
         # Keep admission and projection in the same numerical transaction.
         with repository.connection() as numerical:
-            # Task reads already admit core structure. The shared capture basis
-            # consumes ownership/cycle identities across the project, not all reviews.
-            validate_usage_ownership(core)
+            # The repository's fresh fence checks the admitted capture. Changed
+            # histories remain pending until the numerical worker reconciles them.
             return repository.read(core, task_id=task_id, audit=audit,
                                    numerical_connection=numerical)
     except Exception:
@@ -107,10 +105,9 @@ def refresh_usage(target, *, deadline=None):
         @contextmanager
         def core_reader():
             # Every capture and final guard has a fresh admitted snapshot.
-            # Validate consumed ownership/cycle history here; the repository
-            # owns actual Receipt/session/collected-answer relationships.
+            # Selected ownership/cycle/review validation belongs to the
+            # repository's change consumer, not every phase's core admission.
             with closing(connect_initialized_readonly(target, deadline=deadline, operation_local=True)) as core:
-                validate_usage_ownership(core)
                 yield core
         # Admit both stores before creating projection directories. No migration.
         with repository.connection():

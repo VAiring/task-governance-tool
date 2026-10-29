@@ -330,21 +330,33 @@ def link_completion_cycle(connection: sqlite3.Connection, basis: OwnershipBasis,
     )
 
 
-def validate_storage_rows(connection: sqlite3.Connection) -> None:
-    """Global consumers validate all ownership/history; ordinary reads stay Task-local."""
+def validate_storage_rows(connection: sqlite3.Connection, *, project_id=None, task_ids=None) -> None:
+    """Validate the consumed histories, or all histories for global admission.
+
+    A selected reconciliation still reads every transition of its selected
+    Tasks and checks both ends of their cycle/execution relations. Selecting a
+    Task does not admit an execution belonging to another project or Task.
+    """
+    import json
     from task_governance_tool.storage import StorageError, validate_utc_timestamp
     from task_governance_tool.task_values import TaskValidationError, validate_text
 
     try:
-        tasks = connection.execute("SELECT project_id, task_id FROM tasks").fetchall()
-        if connection.execute("SELECT count(*) FROM task_ownership").fetchone()[0] != len(tasks):
+        selected = None if task_ids is None else tuple(sorted(set(task_ids)))
+        parameters = () if selected is None else (json.dumps(selected),)
+        clause = "" if selected is None else " WHERE task_id IN (SELECT value FROM json_each(?))"
+        tasks = connection.execute("SELECT project_id, task_id FROM tasks" + clause, parameters).fetchall()
+        if selected is not None and (project_id is None or len(tasks) != len(selected)
+                                     or any(row["project_id"] != project_id for row in tasks)):
+            raise _unreadable()
+        if connection.execute("SELECT count(*) FROM task_ownership" + clause, parameters).fetchone()[0] != len(tasks):
             raise _unreadable()
         current = {}
         for project in {task["project_id"] for task in tasks}:
             current.update(read_bases(connection, project_id=project,
                            task_ids=[task["task_id"] for task in tasks if task["project_id"] == project]))
         executions = {}
-        for row in connection.execute("SELECT * FROM task_executions"):
+        for row in connection.execute("SELECT * FROM task_executions" + clause, parameters):
             if (not _identifier(row["execution_id"], "tg_execution_")
                 or row["task_id"] not in current or current[row["task_id"]].project_id != row["project_id"]):
                 raise _unreadable()
@@ -352,7 +364,7 @@ def validate_storage_rows(connection: sqlite3.Connection) -> None:
             executions[row["execution_id"]] = (row["project_id"], row["task_id"])
         latest = {}
         policies = {}
-        for row in connection.execute("SELECT * FROM task_owner_transitions ORDER BY rowid"):
+        for row in connection.execute("SELECT * FROM task_owner_transitions" + clause + " ORDER BY rowid", parameters):
             policy = row["policy_version"] if "policy_version" in row.keys() else 0
             if type(policy) is not int or policy not in (0, 1) or policy < policies.get(row["task_id"], 0):
                 raise _unreadable()
@@ -391,10 +403,15 @@ def validate_storage_rows(connection: sqlite3.Connection) -> None:
                     raise _unreadable()
             elif last is None or replace(last, status=basis.status) != basis:
                 raise _unreadable()
+        cycle_selection = "" if selected is None else (
+            " WHERE link.task_id IN (SELECT value FROM json_each(?))"
+            " OR link.execution_id IN (SELECT value FROM json_each(?))"
+            " OR cycle.task_id IN (SELECT value FROM json_each(?))")
+        cycle_parameters = () if selected is None else (*parameters, json.dumps(sorted(executions)), *parameters)
         for row in connection.execute(
             "SELECT link.*, cycle.project_id AS cycle_project, cycle.task_id AS cycle_task "
             "FROM task_execution_cycles AS link LEFT JOIN task_completion_cycles AS cycle "
-            "ON cycle.completion_cycle_id=link.completion_cycle_id"
+            "ON cycle.completion_cycle_id=link.completion_cycle_id" + cycle_selection, cycle_parameters,
         ):
             if (executions.get(row["execution_id"]) != (row["project_id"], row["task_id"])
                 or row["cycle_project"] != row["project_id"] or row["cycle_task"] != row["task_id"]):
@@ -402,7 +419,9 @@ def validate_storage_rows(connection: sqlite3.Connection) -> None:
         if connection.execute(
             "SELECT 1 FROM completion_evidence_bundles AS bundle "
             "LEFT JOIN task_execution_cycles AS link ON link.completion_cycle_id=bundle.completion_cycle_id "
-            "WHERE bundle.source_schema_version IN (24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34) AND link.completion_cycle_id IS NULL LIMIT 1"
+            "WHERE bundle.source_schema_version IN (24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34) AND link.completion_cycle_id IS NULL"
+            + ("" if selected is None else " AND bundle.task_id IN (SELECT value FROM json_each(?))") + " LIMIT 1",
+            parameters,
         ).fetchone():
             raise _unreadable()
     except (TaskValidationError, StorageError, UnicodeError, sqlite3.Error) as exc:

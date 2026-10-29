@@ -56,6 +56,29 @@ class TaskOwnershipTests(unittest.TestCase):
         basis = ownership.read_bases(self.connection, project_id=PROJECT, task_ids=["legacy-task-id"])["legacy-task-id"]
         self.assertEqual((basis.task_id, basis.state, basis.generation), ("legacy-task-id", "none", 0))
 
+    def test_selected_history_keeps_own_validation_without_unrelated_history(self):
+        from task_governance_tool.storage import StorageError
+        with self.writer():
+            self.connection.execute("CREATE TABLE completion_evidence_bundles(completion_cycle_id TEXT, task_id TEXT, source_schema_version INTEGER)")
+            selected, unrelated = self.add(), self.add()
+            self.move(selected, "in_progress")
+            self.move(unrelated, "in_progress", Y)
+        ownership.validate_storage_rows(self.connection, project_id=PROJECT, task_ids={selected})
+        with self.writer():
+            guard = self.connection.execute("SELECT sql FROM sqlite_master WHERE name='trg_task_owner_transitions_no_update'").fetchone()[0]
+            self.connection.execute("DROP TRIGGER trg_task_owner_transitions_no_update")
+            self.connection.execute("UPDATE task_owner_transitions SET created_at='invalid-time' WHERE task_id=?", (unrelated,))
+            self.connection.execute(guard)
+        ownership.validate_storage_rows(self.connection, project_id=PROJECT, task_ids={selected})
+        for ids in ({unrelated}, {selected, unrelated}, {"tg_task_ffffffffffffffff"}):
+            with self.subTest(ids=ids), self.assertRaises(StorageError):
+                ownership.validate_storage_rows(self.connection, project_id=PROJECT, task_ids=ids)
+        with self.assertRaises(StorageError):
+            ownership.validate_storage_rows(self.connection)
+        with self.assertRaises(StorageError):
+            ownership.validate_storage_rows(self.connection, project_id="another-project", task_ids={selected})
+        ownership.validate_storage_rows(self.connection, project_id=PROJECT, task_ids=set())
+
     @contextmanager
     def writer(self, connection=None):
         connection = connection or self.connection

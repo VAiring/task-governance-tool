@@ -67,7 +67,7 @@ class CountingConnection:
         return rows()
 
 
-class UsageRelationInputsTests(unittest.TestCase):
+class _UsageRelationFixture(unittest.TestCase):
     records = support.UsagePublicationTests.records
     write = support.UsagePublicationTests.write
     append = support.UsagePublicationTests.append
@@ -108,6 +108,7 @@ class UsageRelationInputsTests(unittest.TestCase):
                 connection.execute("INSERT OR IGNORE INTO usage_response_positions VALUES (?,?,?,?,?,?,?)",
                                    (source, incarnation, item.thread_id, item.turn_id, item.provider, "old-position", 1))
 
+class UsageRelationInputsTests(_UsageRelationFixture):
     @contextmanager
     def measured(self):
         counts = Counter()
@@ -176,6 +177,42 @@ class UsageRelationInputsTests(unittest.TestCase):
                 pass
         self.assert_single_read(guard)
         self.assert_single_read(lambda: self.repository.prepare_publication(self.reader))
+
+    def test_capture_shares_operation_resolution_but_guard_uses_a_fresh_read(self):
+        with mock.patch.object(response, "resolve_operations", wraps=response.resolve_operations) as resolve:
+            index, state = self.repository.prepare_publication(self.reader)
+            self.assertEqual(resolve.call_count, 1)
+            while state["position"] < state["total"]:
+                state = self.repository.advance_publication(state)
+            with self.repository.publication_guard(self.reader, index, state):
+                pass
+            self.assertEqual(resolve.call_count, 2)
+
+    def test_capture_contexts_do_not_lookup_each_source_again(self):
+        statements = []
+        original = self.repository.connection
+        @contextmanager
+        def measured(**kwargs):
+            with original(**kwargs) as connection:
+                connection.set_trace_callback(statements.append)
+                yield connection
+        with mock.patch.object(self.repository, "connection", side_effect=measured):
+            self.repository.prepare_publication(self.reader)
+        self.assertFalse(any("SELECT thread_id FROM usage_sources WHERE source_id=" in sql for sql in statements))
+
+    def test_operation_inputs_cannot_cross_connections_or_closed_reads(self):
+        with self.reader() as core, self.repository.connection() as first:
+            relations = self.repository._relation_inputs(first)
+            operations = self.repository._operation_inputs(core, first, relations)
+            with self.repository.connection() as second:
+                with self.assertRaises(UsageError):
+                    self.repository._operation_inputs(core, second, relations, operations)
+            with self.reader() as other_core:
+                with self.assertRaises(UsageError):
+                    self.repository._operation_inputs(other_core, first, relations, operations)
+            first.rollback()
+            with self.assertRaises(UsageError):
+                self.repository._operation_inputs(core, first, relations, operations)
 
     def assert_legacy_equivalent(self):
         def old_inputs(connection, inputs=None):
@@ -296,3 +333,62 @@ class UsageRelationInputsTests(unittest.TestCase):
             first.rollback()
             with self.assertRaisesRegex(UsageError, "usage_schema_invalid"):
                 self.repository._relation_inputs(first, inputs)
+
+
+class SelectedRelationInputsTests(_UsageRelationFixture):
+    def setUp(self):
+        super().setUp()
+        from task_governance_tool.usage_reconciliation_repository import UsageReconciliationRepository
+        self.repository = UsageReconciliationRepository(self.repository.path, *self.repository.basis)
+        self.repository.initialize()
+
+    def test_selected_task_origin_closure_keeps_historical_conflicts_and_skips_unrelated_calls(self):
+        from task_governance_tool.usage_reconciliation_relations import read_selected_relations
+        self.add_boundaries(1, historical=True, conflict=True)
+        self.add_boundaries(1000)
+        with self.repository.connection() as connection:
+            selected = read_selected_relations(connection, task_ids={A})
+            full = self.repository._relation_inputs(connection)
+            self.assertEqual(len(selected.current), 1)
+            self.assertEqual(len(selected.history), 2)
+            self.assertEqual(len(full.history), 1002)
+            old = next(item for item in selected.history if item[1] > 1)
+            self.assertEqual(old[2].response_id, "conflicting-origin")
+            self.assertNotIn("old-position", {item.response_id for _, _, item in selected.positions})
+            plan = " ".join(str(tuple(row)) for row in connection.execute(
+                "EXPLAIN QUERY PLAN SELECT * FROM usage_response_boundaries WHERE json_extract(document,'$.task_id') IN (SELECT value FROM json_each(?))",
+                (encode([A]).decode(),)))
+            self.assertIn("usage_reconcile_boundary_task", plan)
+            self.assertNotIn("SCAN usage_response_boundaries", plan)
+
+    def test_boundary_deletion_retains_exact_old_affected_identities(self):
+        with self.repository.connection(write=True) as connection:
+            connection.execute("DELETE FROM usage_reconcile_changes")
+            row = connection.execute("SELECT source_id,observation_id,document FROM usage_response_boundaries LIMIT 1").fetchone()
+            body = json.loads(row["document"])
+            connection.execute("DELETE FROM usage_response_boundaries WHERE source_id=? AND observation_id=?", (row[0], row[1]))
+            marks = {tuple(value) for value in connection.execute("SELECT kind,key1,key2 FROM usage_reconcile_changes")}
+            self.assertTrue({("boundary", row[0], row[1]), ("turn", body["thread_id"], body["turn_id"]),
+                            ("task", body["project_id"], body["task_id"]), ("origin_event", body["event_id"], ""),
+                            ("origin_call", body["thread_id"], body["call_id"])} <= marks)
+
+    def test_offset_only_progress_is_not_a_semantic_source_change_but_gap_removal_is(self):
+        from task_governance_tool.usage_reconciliation_sources import source_deltas, adopt_sources
+        with self.repository.connection(write=True) as connection:
+            sources = {row[0] for row in connection.execute("SELECT source_id FROM usage_sources")}
+            initial = source_deltas(connection, sources)
+            adopt_sources(connection, initial)
+            connection.execute("UPDATE usage_sources SET offset=offset+1")
+            unchanged = source_deltas(connection, sources)
+            self.assertTrue(all(not item.changed for item in unchanged))
+            source = sorted(sources)[0]
+            connection.execute("INSERT OR IGNORE INTO usage_diagnostics VALUES (?,?)", (source, "source_unreadable"))
+            changed = source_deltas(connection, sources)
+            self.assertEqual(sum(item.changed for item in changed), 1)
+            self.assertFalse(next(item for item in changed if item.source_id == source).replaced)
+            adopt_sources(connection, changed)
+            connection.execute("DELETE FROM usage_diagnostics WHERE source_id=?", (source,))
+            removed = source_deltas(connection, sources)
+            self.assertEqual(sum(item.changed for item in removed), 1)
+            with self.assertRaises(UsageError):
+                adopt_sources(connection, initial)

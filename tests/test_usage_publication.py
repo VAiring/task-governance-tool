@@ -51,7 +51,7 @@ class UsagePublicationTests(unittest.TestCase):
         self.patches.enter_context(mock.patch.object(service, "connect_initialized_readonly", side_effect=core_reader))
         # This suite isolates numerical cursor/publication behavior with a
         # minimal core. Physical-install tests retain real core admission.
-        self.patches.enter_context(mock.patch.object(service, "validate_usage_ownership"))
+        # Selected relationship validation is owned by the repository.
 
     def history(self, count=12):
         self.write_turn(self.operation("start", self.acknowledgement(A, 1, "in_progress"), "r0"))

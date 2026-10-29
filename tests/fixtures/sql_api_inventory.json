@@ -1,587 +1,745 @@
 {
-  "dispatch_requiring_review": [],
   "owners": {
     "async_backup_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 5,
         "fetchall": 2,
         "fetchone": 1
-      },
-      "kind": "observed_connection"
+      }
     },
     "backup.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 3,
         "fetchall": 3
-      },
-      "kind": "observed_connection"
+      }
     },
     "backup_metadata_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 12,
         "fetchall": 1,
         "fetchone": 3
-      },
-      "kind": "observed_connection"
+      }
     },
     "checkpoints.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 4,
         "fetchone": 3
-      },
-      "kind": "observed_connection"
+      }
     },
     "completion_bundle_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 4,
         "fetchall": 1
-      },
-      "kind": "observed_connection"
+      }
     },
     "completion_history_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 6,
         "fetchall": 5,
         "fetchone": 1
-      },
-      "kind": "observed_connection"
+      }
     },
     "contracts.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 12,
         "fetchone": 2
-      },
-      "kind": "observed_connection"
+      }
     },
     "effort.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 30,
         "fetchone": 16
-      },
-      "kind": "observed_connection"
+      }
     },
     "evidence_incremental_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 3,
         "fetchone": 2
-      },
-      "kind": "observed_connection"
+      }
     },
     "evidence_projection_metadata_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 7,
         "fetchone": 3
-      },
-      "kind": "observed_connection"
+      }
     },
     "evidence_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 27,
         "fetchall": 9,
         "fetchone": 9
-      },
-      "kind": "observed_connection"
+      }
     },
     "evidence_validation_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 45,
         "fetchall": 26,
         "fetchmany": 1,
         "fetchone": 6
-      },
-      "kind": "observed_connection"
+      }
     },
     "handoffs.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 9,
         "fetchall": 2,
         "fetchone": 5
-      },
-      "kind": "observed_connection"
+      }
     },
     "ordering.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 1,
         "fetchone": 1
-      },
-      "kind": "observed_connection"
+      }
     },
     "project_binding_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 9,
         "fetchall": 2,
         "fetchone": 2
-      },
-      "kind": "observed_connection"
+      }
     },
     "review_answer_collection_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 8,
         "executemany": 1,
         "fetchall": 3,
         "fetchone": 1
-      },
-      "kind": "observed_connection"
+      }
     },
     "review_answer_rejection_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 5,
         "fetchone": 5
-      },
-      "kind": "observed_connection"
+      }
     },
     "review_answer_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 51,
         "fetchall": 7,
         "fetchone": 34
-      },
-      "kind": "observed_connection"
+      }
     },
     "review_continuation_evidence_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 21,
         "fetchall": 11,
         "fetchone": 6
-      },
-      "kind": "observed_connection"
+      }
     },
     "review_continuation_registration_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 9,
         "fetchall": 2,
         "fetchone": 4
-      },
-      "kind": "observed_connection"
+      }
     },
     "review_continuation_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 38,
         "fetchall": 4,
         "fetchmany": 1,
         "fetchone": 16
-      },
-      "kind": "observed_connection"
+      }
     },
     "review_finalization_continuation_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 18,
         "fetchall": 5,
         "fetchone": 2
-      },
-      "kind": "observed_connection"
+      }
     },
     "review_finalization_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 16,
         "fetchall": 6,
         "fetchone": 4
-      },
-      "kind": "observed_connection"
+      }
     },
     "review_handoff.py": {
+      "kind": "non_sql_finalizer",
       "attributes": {
         "execute": 1
-      },
-      "kind": "non_sql_finalizer"
+      }
     },
     "review_material_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 7,
         "fetchone": 2
-      },
-      "kind": "observed_connection"
+      }
     },
     "review_preparation_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 14,
         "fetchall": 5,
         "fetchone": 1
-      },
-      "kind": "observed_connection"
+      }
     },
     "review_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 14,
         "fetchall": 1,
         "fetchone": 9
-      },
-      "kind": "observed_connection"
+      }
     },
     "review_session_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
-        "execute": 5,
-        "fetchall": 1,
+        "execute": 6,
+        "fetchall": 2,
         "fetchone": 2
-      },
-      "kind": "observed_connection"
+      }
     },
     "review_wait_basis_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 3,
         "fetchone": 3
-      },
-      "kind": "observed_connection"
+      }
     },
     "review_wait_control_observation.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 1,
         "fetchall": 1
-      },
-      "kind": "observed_connection"
+      }
     },
     "review_wait_runtime/continuation_transition_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 11,
         "fetchall": 2,
         "fetchone": 1
-      },
-      "kind": "observed_connection"
+      }
     },
     "review_wait_runtime/managed_direct.py": {
+      "kind": "non_sql_finalizer",
       "attributes": {
         "execute": 2
-      },
-      "kind": "non_sql_finalizer"
+      }
     },
     "review_wait_runtime/request_continuation.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 2,
         "fetchall": 2
-      },
-      "kind": "observed_connection"
+      }
     },
     "review_wait_runtime/request_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 23,
         "fetchall": 5,
         "fetchone": 5
-      },
-      "kind": "observed_connection"
+      }
     },
     "review_wait_runtime/review_wait_direct_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 10,
         "fetchall": 3,
         "fetchone": 1
-      },
-      "kind": "observed_connection"
+      }
     },
     "review_wait_runtime/review_wait_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 12,
         "fetchall": 3,
         "fetchone": 1
-      },
-      "kind": "observed_connection"
+      }
     },
     "reviews.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 23,
         "fetchall": 4,
         "fetchmany": 4,
         "fetchone": 4
-      },
-      "kind": "observed_connection"
+      }
     },
     "schema_criterion_link_collector.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 29,
         "fetchall": 1,
         "fetchone": 11
-      },
-      "kind": "observed_connection"
+      }
     },
     "schema_own_review_indexes.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 30,
         "fetchall": 1,
         "fetchone": 11
-      },
-      "kind": "observed_connection"
+      }
     },
     "schema_preservation.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 7,
         "fetchone": 1
-      },
-      "kind": "observed_connection"
+      }
     },
     "schema_review_answers.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 36,
         "fetchall": 1,
         "fetchone": 13
-      },
-      "kind": "observed_connection"
+      }
     },
     "schema_review_continuation.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 31,
         "fetchall": 2,
         "fetchone": 11
-      },
-      "kind": "observed_connection"
+      }
     },
     "schema_review_sessions.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 25,
         "fetchone": 9
-      },
-      "kind": "observed_connection"
+      }
     },
     "schema_session_slot.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 25,
         "fetchone": 9
-      },
-      "kind": "observed_connection"
+      }
     },
     "schema_session_slot_index.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 30,
         "fetchall": 1,
         "fetchone": 11
-      },
-      "kind": "observed_connection"
+      }
     },
     "schema_session_slot_reacquisition.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 25,
         "fetchone": 8
-      },
-      "kind": "observed_connection"
+      }
     },
     "schema_task_event_notes.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 26,
         "fetchall": 1,
         "fetchone": 8
-      },
-      "kind": "observed_connection"
+      }
     },
     "schema_task_ownership.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 26,
         "fetchone": 9
-      },
-      "kind": "observed_connection"
+      }
     },
     "schema_verification_declaration.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 26,
         "fetchone": 9
-      },
-      "kind": "observed_connection"
+      }
     },
     "schema_viewer_projection.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 31,
         "fetchall": 2,
         "fetchone": 10
-      },
-      "kind": "observed_connection"
+      }
     },
     "selection.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 1,
         "fetchone": 1
-      },
-      "kind": "observed_connection"
+      }
     },
     "sqlite_connection.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 3
-      },
-      "kind": "observed_connection"
+      }
     },
     "state_resolver.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 4,
         "fetchall": 3,
         "fetchone": 1
-      },
-      "kind": "observed_connection"
+      }
     },
     "storage.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 428,
         "executescript": 2,
         "fetchall": 107,
         "fetchmany": 2,
         "fetchone": 134
-      },
-      "kind": "observed_connection"
+      }
     },
     "stored_task_validation.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 9,
         "fetchall": 1,
         "fetchmany": 1,
         "fetchone": 1
-      },
-      "kind": "observed_connection"
+      }
     },
     "task_ownership.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 13,
         "fetchall": 2,
         "fetchone": 3
-      },
-      "kind": "observed_connection"
+      }
     },
     "task_show_projection.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 4,
         "fetchone": 2
-      },
-      "kind": "observed_connection"
+      }
     },
     "tasks.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 37,
         "fetchall": 3,
         "fetchone": 7
-      },
-      "kind": "observed_connection"
+      }
     },
     "usage_attribution_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
-        "execute": 32,
+        "execute": 33,
         "fetchall": 1,
         "fetchone": 7
-      },
-      "kind": "observed_connection"
+      }
     },
     "usage_evidence_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 22,
         "executemany": 2,
         "fetchall": 2,
         "fetchone": 3
-      },
-      "kind": "observed_connection"
+      }
     },
     "usage_incremental_projection.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 5,
         "executemany": 1,
         "fetchall": 1
-      },
-      "kind": "observed_connection"
+      }
     },
     "usage_incremental_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 29,
         "executemany": 3,
         "fetchone": 13
-      },
-      "kind": "observed_connection"
+      }
     },
     "usage_locator_admission.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 11,
         "fetchall": 5,
         "fetchone": 6
-      },
-      "kind": "observed_connection"
+      }
     },
     "usage_locator_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 22,
         "fetchall": 1,
         "fetchone": 6
-      },
-      "kind": "observed_connection"
+      }
     },
     "usage_publication_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 10,
         "fetchone": 5
-      },
-      "kind": "observed_connection"
+      }
+    },
+    "usage_reconciliation_baseline.py": {
+      "kind": "observed_connection",
+      "attributes": {
+        "execute": 6,
+        "fetchone": 1
+      }
+    },
+    "usage_reconciliation_basis.py": {
+      "kind": "observed_connection",
+      "attributes": {
+        "execute": 13,
+        "executemany": 1,
+        "fetchone": 7
+      }
+    },
+    "usage_reconciliation_changes.py": {
+      "kind": "observed_connection",
+      "attributes": {
+        "execute": 23,
+        "fetchone": 2
+      }
+    },
+    "usage_reconciliation_core.py": {
+      "kind": "observed_connection",
+      "attributes": {
+        "execute": 16,
+        "executemany": 4,
+        "fetchone": 2
+      }
+    },
+    "usage_reconciliation_events.py": {
+      "kind": "observed_connection",
+      "attributes": {
+        "execute": 19,
+        "executemany": 2,
+        "fetchone": 2
+      }
+    },
+    "usage_reconciliation_inputs.py": {
+      "kind": "observed_connection",
+      "attributes": {
+        "execute": 33,
+        "executemany": 4,
+        "fetchone": 7
+      }
+    },
+    "usage_reconciliation_intervals.py": {
+      "kind": "observed_connection",
+      "attributes": {
+        "execute": 18,
+        "executemany": 1
+      }
+    },
+    "usage_reconciliation_membership.py": {
+      "kind": "observed_connection",
+      "attributes": {
+        "execute": 46,
+        "executemany": 9,
+        "fetchone": 17
+      }
+    },
+    "usage_reconciliation_overlays.py": {
+      "kind": "observed_connection",
+      "attributes": {
+        "execute": 19,
+        "executemany": 1,
+        "fetchone": 9
+      }
+    },
+    "usage_reconciliation_owner_effects.py": {
+      "kind": "observed_connection",
+      "attributes": {
+        "execute": 12,
+        "executemany": 2,
+        "fetchone": 3
+      }
+    },
+    "usage_reconciliation_pending.py": {
+      "kind": "observed_connection",
+      "attributes": {
+        "execute": 17,
+        "executemany": 2,
+        "fetchone": 9
+      }
+    },
+    "usage_reconciliation_publication.py": {
+      "kind": "observed_connection",
+      "attributes": {
+        "execute": 11,
+        "fetchone": 7
+      }
+    },
+    "usage_reconciliation_ranges.py": {
+      "kind": "observed_connection",
+      "attributes": {
+        "execute": 11,
+        "executemany": 2,
+        "fetchone": 2
+      }
+    },
+    "usage_reconciliation_relations.py": {
+      "kind": "observed_connection",
+      "attributes": {
+        "execute": 3
+      }
+    },
+    "usage_reconciliation_repository.py": {
+      "kind": "observed_connection",
+      "attributes": {
+        "execute": 6,
+        "executemany": 1,
+        "fetchone": 1
+      }
+    },
+    "usage_reconciliation_runtime.py": {
+      "kind": "observed_connection",
+      "attributes": {
+        "execute": 23,
+        "fetchone": 13
+      }
+    },
+    "usage_reconciliation_snapshots.py": {
+      "kind": "observed_connection",
+      "attributes": {
+        "execute": 40,
+        "executemany": 5,
+        "fetchone": 9
+      }
+    },
+    "usage_reconciliation_sources.py": {
+      "kind": "observed_connection",
+      "attributes": {
+        "execute": 6,
+        "fetchone": 1
+      }
+    },
+    "usage_reconciliation_totals.py": {
+      "kind": "observed_connection",
+      "attributes": {
+        "execute": 8,
+        "fetchone": 3
+      }
+    },
+    "usage_reconciliation_turns.py": {
+      "kind": "observed_connection",
+      "attributes": {
+        "execute": 15,
+        "fetchone": 7
+      }
+    },
+    "usage_reconciliation_uncertainty.py": {
+      "kind": "observed_connection",
+      "attributes": {
+        "execute": 33,
+        "executemany": 2,
+        "fetchone": 14
+      }
     },
     "usage_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 31,
         "executemany": 2,
         "fetchone": 9
-      },
-      "kind": "observed_connection"
+      }
     },
     "usage_response_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
-        "execute": 30,
+        "execute": 29,
         "executemany": 1,
-        "fetchall": 2,
-        "fetchone": 4
-      },
-      "kind": "observed_connection"
+        "fetchall": 3,
+        "fetchone": 3
+      }
     },
     "usage_snapshot_read.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 2
-      },
-      "kind": "observed_connection"
+      }
     },
     "usage_wait_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 15,
         "fetchall": 1,
         "fetchone": 2
-      },
-      "kind": "observed_connection"
+      }
     },
     "verification_receipt_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 4,
         "fetchmany": 2,
         "fetchone": 1
-      },
-      "kind": "observed_connection"
+      }
     },
     "verification_receipts.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 3
-      },
-      "kind": "observed_connection"
+      }
     },
     "verification_runner_plan_edit.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 1
-      },
-      "kind": "observed_connection"
+      }
     },
     "verification_runner_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 31,
         "fetchall": 15,
         "fetchone": 10
-      },
-      "kind": "observed_connection"
+      }
     },
     "viewer_metadata_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 13,
         "fetchone": 2
-      },
-      "kind": "observed_connection"
+      }
     },
     "viewer_projection_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 15,
         "fetchone": 5
-      },
-      "kind": "observed_connection"
+      }
     },
     "viewer_task_projection_repository.py": {
+      "kind": "observed_connection",
       "attributes": {
         "execute": 7,
         "fetchall": 2,
         "fetchmany": 1,
         "fetchone": 2
-      },
-      "kind": "observed_connection"
+      }
     }
-  }
+  },
+  "dispatch_requiring_review": []
 }

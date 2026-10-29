@@ -26,8 +26,11 @@ PENDING_PAGE = 4
 DIRECT_PAGE = 8
 
 
-def _participants(target, deadline):
+def _participants(target, deadline, *, repository=None):
     try:
+        if repository is not None and hasattr(repository, "discover_participants"):
+            return repository.discover_participants(lambda: closing(connect_initialized_readonly(
+                target, deadline=deadline, operation_local=True)))
         with closing(connect_initialized_readonly(target, deadline=deadline, operation_local=True)) as core:
             validate_usage_ownership(core)
             return registered_participants(core, target.project.project_id)
@@ -129,7 +132,8 @@ def _inventory(repository, target, roots, project, hint, work):
     if work.slots >= work.limit or work.clock() >= work.deadline:
         work.gaps.add("usage_pending")
         return
-    sessions = repository.session_ids() | _participants(target, work.deadline)
+    sessions = repository.session_ids() | (_participants(target, work.deadline, repository=repository)
+        if hasattr(repository, "discover_participants") else _participants(target, work.deadline))
     if hint is not None and hint.thread_id in sessions and hint.source_id not in work.attempted:
         locator = locator_from_source(hint, roots)
         if locator is not None:

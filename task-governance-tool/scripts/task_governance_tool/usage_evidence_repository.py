@@ -44,16 +44,19 @@ _EVIDENCE_DDL = (
 )
 
 
-def core_basis(core, project_id):
+def core_basis(core, project_id, *, task_ids=None):
     """No prose or timestamps are hashed; restore admission uses original IDs."""
-    transitions = core_transitions(core, project_id)
+    transitions = core_transitions(core, project_id, task_ids=task_ids)
+    selection = "" if task_ids is None else " AND task_id IN (SELECT value FROM json_each(?))"
+    parameters = (project_id,) if task_ids is None else (project_id, json.dumps(sorted(task_ids)))
     cycles = [dict(row) for row in core.execute(
-        "SELECT completion_cycle_id,task_id,execution_id FROM task_execution_cycles WHERE project_id=? ORDER BY rowid",
-        (project_id,))]
+        "SELECT completion_cycle_id,task_id,execution_id FROM task_execution_cycles WHERE project_id=?" + selection + " ORDER BY rowid",
+        parameters)]
     reviewers = [tuple(row) for row in core.execute(
         "SELECT binding.review_receipt_id,binding.session_id,binding.execution_id,binding.original_result_digest "
         "FROM review_receipt_sessions binding JOIN task_executions execution USING(execution_id) "
-        "WHERE execution.project_id=? ORDER BY binding.review_receipt_id", (project_id,))]
+        "WHERE execution.project_id=?" + selection.replace("task_id IN", "execution.task_id IN")
+        + " ORDER BY binding.review_receipt_id", parameters)]
     fingerprint = digest({"transitions": [tuple(getattr(row, key) for key in row.__dataclass_fields__) for row in transitions],
                           "cycles": cycles, "reviewers": reviewers})
     cycle_by_execution = {row["execution_id"]: row for row in cycles}

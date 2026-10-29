@@ -14,6 +14,15 @@ from task_governance_tool.usage_adapter import read_batch
 from task_governance_tool.usage_reconciliation_repository import UsageReconciliationRepository, _INPUTS
 from task_governance_tool.usage_values import UsageError
 from task_governance_tool import usage_reconciliation_core as core_inputs
+from tests import test_usage_read_performance as physical_fixture
+from tests.test_m17_recovery_hardening import _setup_current
+from tests.test_usage_attribution import turn
+from task_governance_tool import storage, usage_evidence_service as evidence_service
+from task_governance_tool.usage_adapter import SourceInput
+from task_governance_tool.usage_collection import register_source
+from task_governance_tool.usage_evidence import encode
+from task_governance_tool.usage_sources import locator_from_source, source_from_locator
+from task_governance_tool.usage_work_order_repository import UsageWorkOrderRepository
 
 
 class ReconciliationTrackingTests(unittest.TestCase):
@@ -147,6 +156,232 @@ class ReconciliationTrackingTests(unittest.TestCase):
                     self.assertEqual(list(connection.execute("PRAGMA foreign_key_check")), [])
                 with self.assertRaises(UsageError):
                     old.inspect()
+
+
+class PopulatedSchema9MigrationTests(unittest.TestCase):
+    """Preservation is separate from admission and actual continuation reuse."""
+
+    cli = physical_fixture.UsageReadPerformanceTests.cli
+    add = physical_fixture.UsageReadPerformanceTests.add
+    complete = physical_fixture.UsageReadPerformanceTests.complete
+    response_header = physical_fixture.UsageReadPerformanceTests.response_header
+    response_rows = physical_fixture.UsageReadPerformanceTests.response_rows
+
+    def setUp(self):
+        directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.install, self.target, _ = _setup_current(directory)
+        self.root = self.install.project_root.resolve()
+        # Internal repository injection keeps the schema-9 fixture separate
+        # from Setup's current empty numerical store and all real projects.
+        self.repository = UsageWorkOrderRepository(directory / "schema9.sqlite",
+                                                   *evidence_service.repository_for(self.target).basis)
+        self.repository.initialize()
+        self.source = SourceInput(support.THREAD, self.root / "migration.jsonl", self.root, self.root)
+        register_source(self.repository, self.source, CallerIdentity(support.THREAD))
+        started = self.add("Nonempty numerical migration")
+        self.task_id = started["data"]["task"]["task_id"]
+        self.source.path.write_bytes(b"".join(encode(row) + b"\n" for row in
+            self.response_header(support.THREAD, 1) + self.response_rows("first", 1, started)))
+        self.repository.collect_source(self.source, record_attempt=True)
+        self.assertEqual(self.refresh()["publication"], "current")
+        completed = self.complete(self.task_id)
+        with self.source.path.open("ab") as stream:
+            stream.write(b"".join(encode(row) + b"\n" for row in self.response_rows("completed", 1, completed)))
+        self.repository.collect_source(self.source, record_attempt=True)
+        self.assertEqual(self.refresh()["publication"], "current")
+        # Both lanes have genuine unfinished scans, not invented cursor rows.
+        with self.source.path.open("ab") as stream:
+            stream.write(b"".join(encode(row) + b"\n" for row in [
+                support.event("turn_context", turn_id=turn(1), model="fixture-model"),
+                support.usage("later-1", turn=turn(1)), support.usage("later-2", turn=turn(1))]))
+        self.repository.collect_source(self.source, max_records=1, record_attempt=True)
+        self.repository.collect_source(self.source, lane="audit", max_records=4)
+        self.roots = (self.root, directory / "archive")
+        self.locator = locator_from_source(self.source, self.roots)
+        self.assertIsNotNone(self.locator)
+        self.fingerprints = {self.locator.root_kind: self.locator.root_fingerprint}
+        self.repository.remember_locator(self.locator)
+        self.repository.commit_discovery(0, {"root": 0, "stack": [], "cycle": 0}, [self.source.source_id], False)
+        self.old_index, state = self.repository.prepare_publication(self.reader)
+        self.assertGreater(len(self.old_index["snapshots"]), 1)
+        first = self.old_index["snapshots"][0]
+        # That immutable file was durably published by the earlier real service
+        # call. Validate its exact bytes before checkpointing this audit step.
+        self.assertEqual((self.target.resolved_usage_snapshots / (first + ".json")).read_bytes(),
+                         encode(self.repository.publication_snapshot(first)))
+        self.old_state = self.repository.advance_publication(state)
+        self.assertTrue(0 < self.old_state["position"] < self.old_state["total"])
+        self.old_cursor = self.repository.cursor(self.source.source_id, support.THREAD)
+        self.old_locators = self.repository.locator_page(self.fingerprints)
+        self.old_discovery = self.repository.discovery_position()
+        self.old_files = {p.name: p.read_bytes() for p in self.target.resolved_usage_snapshots.glob("*.json")}
+        self.last_good_index = self.target.resolved_usage_index.read_bytes()
+        self.core_bytes = self.target.db_path.read_bytes()
+        with self.repository.connection() as connection:
+            self.before = _snapshot(connection)
+            for table in ("usage_responses", "usage_observations", "usage_scan_state", "usage_scan_models",
+                          "usage_response_context", "usage_locators", "usage_work_order", "usage_discovery",
+                          "usage_publication", "usage_snapshots", "usage_snapshot_members", "usage_supersessions", "usage_cycle_links"):
+                self.assertTrue(self.before[table], table)
+            self.scans = {row["lane"]: json.loads(row["document"]) for row in connection.execute("SELECT * FROM usage_scan_state")}
+            self.assertEqual(set(self.scans), {"ingest", "audit"})
+            self.assertTrue(0 < self.scans["ingest"]["state"]["offset"] < self.source.path.stat().st_size)
+            self.assertTrue(0 < self.scans["audit"]["state"]["offset"] < self.scans["audit"]["goal"])
+            self.assertEqual(self.scans["audit"]["state"]["turn"], turn(1))
+
+    def reader(self):
+        return closing(storage.connect_initialized_readonly(self.target, operation_local=True))
+
+    def refresh(self):
+        with mock.patch.object(evidence_service, "repository_for", return_value=self.repository):
+            return evidence_service.refresh_usage(self.target)
+
+    def migrate(self):
+        self.repository = UsageReconciliationRepository(self.repository.path, *self.repository.basis)
+        self.assertEqual(self.repository.initialize(), "migrated")
+
+    def reopen(self):
+        self.repository = UsageReconciliationRepository(self.repository.path, *self.repository.basis)
+
+    def assert_preserved(self):
+        with self.repository.connection() as connection:
+            after = _snapshot(connection)
+            self.assertEqual({table: after[table] for table in self.before}, self.before)
+            self.assertEqual(connection.execute("PRAGMA quick_check").fetchone()[0], "ok")
+            self.assertEqual(list(connection.execute("PRAGMA foreign_key_check")), [])
+        self.assertEqual(self.repository.cursor(self.source.source_id, support.THREAD), self.old_cursor)
+        self.assertEqual(self.repository.locator_page(self.fingerprints), self.old_locators)
+        self.assertEqual(self.repository.discovery_position(), self.old_discovery)
+        self.assertEqual(self.target.db_path.read_bytes(), self.core_bytes)
+
+    def test_nonempty_migration_rollback_reentry_and_exact_preservation(self):
+        old = self.repository
+        with old.connection() as connection:
+            schema = tuple(map(tuple, connection.execute("SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name")))
+            markers = tuple(map(tuple, connection.execute("SELECT * FROM usage_migrations ORDER BY version")))
+        upgraded = UsageReconciliationRepository(old.path, *old.basis)
+        self.assertEqual(upgraded.inspect(), "migration_required")
+        with mock.patch.object(upgraded, "_before_reconciliation_marker", side_effect=UsageError("usage_pending")):
+            with self.assertRaises(UsageError):
+                upgraded.initialize()
+        with old.connection() as connection:
+            self.assertEqual(_snapshot(connection), self.before)
+            self.assertEqual(tuple(map(tuple, connection.execute("SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name"))), schema)
+            self.assertEqual(tuple(map(tuple, connection.execute("SELECT * FROM usage_migrations ORDER BY version"))), markers)
+        self.migrate()
+        self.assert_preserved()
+        with self.repository.connection() as connection:
+            epoch = self.repository.reconciliation_revision(connection)
+            self.assertEqual(epoch.generation, 0)
+            self.assertIsNone(connection.execute("SELECT 1 FROM usage_reconcile_baseline").fetchone())
+            self.assertIsNone(connection.execute("SELECT 1 FROM usage_reconcile_snapshot_bootstrap").fetchone())
+        self.reopen()
+        self.assertEqual(self.repository.initialize(), "current")
+        self.assert_preserved()
+        with self.repository.connection() as connection:
+            self.assertEqual(self.repository.reconciliation_revision(connection), epoch)
+
+    def test_reestablishment_and_saved_scans_resume_before_current_publication(self):
+        from task_governance_tool import usage_reconciliation_runtime as runtime
+        from task_governance_tool import usage_reconciliation_baseline as baseline
+        from task_governance_tool import usage_reconciliation_snapshots as snapshots
+        from task_governance_tool.usage_reconciliation_publication import captured_basis
+        self.migrate()
+        self.assert_preserved()
+        def unavailable():
+            with self.repository.connection() as connection, self.reader() as core:
+                with self.assertRaisesRegex(UsageError, "usage_pending"):
+                    captured_basis(self.repository, core, connection)
+            self.assertEqual(self.target.resolved_usage_index.read_bytes(), self.last_good_index)
+        unavailable()
+        self.repository.deadline = 0
+        with self.assertRaisesRegex(UsageError, "usage_pending"):
+            self.repository.prepare_publication(self.reader)
+        self.reopen()
+        with mock.patch.object(runtime, "establish_page", side_effect=lambda repo, connection:
+                               baseline.establish_page(repo, connection, limit=1)):
+            for _ in range(20):
+                if runtime.advance_initial(self.repository, self.reader)["phase"] == "baseline":
+                    break
+            else:
+                self.fail("baseline was not reached")
+            with self.repository.connection() as connection:
+                saved = tuple(connection.execute("SELECT * FROM usage_reconcile_baseline").fetchone())
+                self.assertGreater(saved[2], 0)
+                self.assertEqual(saved[3], 0)
+                before_interrupt = _snapshot(connection)
+            def interrupted(repo, connection):
+                baseline.establish_page(repo, connection, limit=1)
+                raise UsageError("usage_pending")
+            with mock.patch.object(runtime, "establish_page", side_effect=interrupted):
+                with self.assertRaisesRegex(UsageError, "usage_pending"):
+                    runtime.advance_initial(self.repository, self.reader)
+            self.reopen()
+            with self.repository.connection() as connection:
+                self.assertEqual(_snapshot(connection), before_interrupt)
+            unavailable()
+            runtime.advance_initial(self.repository, self.reader)
+            with self.repository.connection() as connection:
+                self.assertNotEqual(tuple(connection.execute("SELECT * FROM usage_reconcile_baseline").fetchone()), saved)
+        for advance, finished in ((runtime.advance_initial, "effects_pending"), (runtime.advance_effects, "classification_pending")):
+            for _ in range(300):
+                if advance(self.repository, self.reader)["phase"] == finished:
+                    break
+            else:
+                self.fail("reconciliation did not finish")
+        original_bootstrap = snapshots.bootstrap_page
+        with mock.patch.object(snapshots, "bootstrap_page", side_effect=lambda repo, connection:
+                               original_bootstrap(repo, connection, limit=1)):
+            self.assertEqual(snapshots.advance(self.repository, self.reader)["phase"], "snapshot_baseline")
+            with self.repository.connection() as connection:
+                saved = tuple(connection.execute("SELECT * FROM usage_reconcile_snapshot_bootstrap").fetchone())
+                self.assertEqual(saved[2], 0)
+            self.reopen()
+            unavailable()
+            self.assertEqual(snapshots.advance(self.repository, self.reader)["phase"], "snapshot_baseline")
+            with self.repository.connection() as connection:
+                self.assertGreater(connection.execute("SELECT position FROM usage_reconcile_snapshot_bootstrap").fetchone()[0], saved[1])
+        index, state = self.repository.prepare_publication(self.reader)
+        self.assertNotEqual(state["basis"], self.old_state["basis"])
+        self.assertEqual(state["position"], 0)
+        with self.assertRaisesRegex(UsageError, "cursor_stale"):
+            self.repository.advance_publication(self.old_state)
+        self.assertEqual(self.refresh()["publication"], "current")
+        self.assertTrue(set(self.old_index["snapshots"]) <= set(index["snapshots"]))
+        # Resolve the preserved locator, then use the actual saved ingest and
+        # audit states. No header replay, incarnation change or duplicate data.
+        self.reopen()
+        source = source_from_locator(self.locator, self.roots, self.root)
+        self.assertEqual(self.repository.locator_page(self.fingerprints), self.old_locators)
+        while self.repository.cursor(source.source_id, source.thread_id).offset < source.path.stat().st_size:
+            self.repository.collect_source(source, max_records=1, record_attempt=True)
+        for _ in range(50):
+            self.repository.collect_source(source, lane="audit", max_records=1)
+            with self.repository.connection() as connection:
+                audit = json.loads(connection.execute("SELECT document FROM usage_scan_state WHERE lane='audit'").fetchone()[0])
+            self.assertEqual(audit["goal"], self.scans["audit"]["goal"])
+            if audit["state"]["offset"] == audit["goal"]:
+                break
+        else:
+            self.fail("saved audit did not finish")
+        self.assertEqual(self.repository.cursor(source.source_id, source.thread_id).incarnation, self.old_cursor.incarnation)
+        self.assertEqual(self.refresh()["publication"], "current")
+        with self.repository.connection() as connection:
+            after = _snapshot(connection)
+            self.assertEqual({row["response_id"] for row in connection.execute("SELECT response_id FROM usage_responses")},
+                             {"first", "completed", "later-1", "later-2"})
+            for table in ("usage_responses", "usage_observations", "usage_snapshots", "usage_snapshot_members", "usage_supersessions", "usage_cycle_links"):
+                self.assertTrue(set(self.before[table]) <= set(after[table]), table)
+            self.assertGreater(after["usage_work_order"][0][1], self.before["usage_work_order"][0][1])
+            self.assertEqual(connection.execute("SELECT complete FROM usage_reconcile_baseline").fetchone()[0], 1)
+            self.assertEqual(connection.execute("SELECT complete FROM usage_reconcile_snapshot_bootstrap").fetchone()[0], 1)
+        for name, content in self.old_files.items():
+            self.assertEqual((self.target.resolved_usage_snapshots / name).read_bytes(), content)
+        final = json.loads(self.target.resolved_usage_index.read_bytes())
+        self.assertTrue(set(self.old_index["snapshots"]) <= set(final["snapshots"]))
+        self.assertTrue({tuple(sorted(row.items())) for row in self.old_index["cycle_links"]} <=
+                        {tuple(sorted(row.items())) for row in final["cycle_links"]})
+        self.assertEqual(self.target.db_path.read_bytes(), self.core_bytes)
 
 
 class CoreReconciliationPageTests(unittest.TestCase):

@@ -93,6 +93,8 @@ PLATFORM_ORDINARY_TEST_IDS = (
 PERFORMANCE_TEST_MODULE = "test_backup_performance"
 DETERMINISTIC_PERFORMANCE_TEST_IDS = (
     "test_backup_performance.BackupPerformanceTests."
+    "test_copied_fixture_has_own_evidence_identity_and_preserves_source",
+    "test_backup_performance.BackupPerformanceTests."
     "test_small_and_large_backup_only_functional_contract",
     "test_backup_performance.BackupPerformanceTests."
     "test_small_and_large_viewer_and_combined_functional_contract",

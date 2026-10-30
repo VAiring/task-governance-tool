@@ -117,6 +117,8 @@ class TestLanePolicyTests(unittest.TestCase):
         standard_ids = standard_discovery_ids()
         expected_functional = (
             "test_backup_performance.BackupPerformanceTests."
+            "test_copied_fixture_has_own_evidence_identity_and_preserves_source",
+            "test_backup_performance.BackupPerformanceTests."
             "test_small_and_large_backup_only_functional_contract",
             "test_backup_performance.BackupPerformanceTests."
             "test_small_and_large_viewer_and_combined_functional_contract",

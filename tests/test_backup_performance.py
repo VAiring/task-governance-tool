@@ -248,11 +248,17 @@ def copied_target(repo: Path, source_db: Path, destination: Path):
     if not source_evidence.is_dir():
         raise AssertionError("performance Evidence fixture is missing")
     shutil.copytree(source_evidence, destination.parent / "evidence")
-    return resolve_database_target(
+    target = resolve_database_target(
         repo=repo,
         db=destination,
         script_path=SCRIPT_PATH,
     )
+    # A copied baseline still identifies the source inode. Provision each
+    # independent measurement database before starting any timed operation.
+    evidence = publish_setup_evidence_projection(target, observed_at=timestamp(0))
+    if evidence.code != "succeeded":
+        raise AssertionError("copied performance Evidence fixture could not be seeded")
+    return target
 
 
 def mark_backup_not_due(target) -> None:
@@ -501,6 +507,21 @@ def assert_repeatable_qualification(
 
 
 class BackupPerformanceTests(unittest.TestCase):
+    def test_copied_fixture_has_own_evidence_identity_and_preserves_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            specs, events = small_task_specs()
+            repo, seed, task_id, _ = seed_fixture(
+                root, task_specs=specs, tool_event_specs=events)
+            original_path = seed.parent / "evidence/publication-baseline.json"
+            original = original_path.read_bytes()
+            copied = copied_target(repo, seed, root / "copy/taskgov.sqlite")
+            baseline = json.loads((copied.db_path.parent / "evidence/publication-baseline.json").read_bytes())
+            self.assertNotEqual(seed.stat().st_ino, copied.db_path.stat().st_ino)
+            self.assertEqual(baseline["identity"]["database_inode"], copied.db_path.stat().st_ino)
+            run_write_sequence(self, copied, task_id, maintenance_enabled=True)
+            self.assertEqual(original_path.read_bytes(), original)
+
     def test_small_and_large_backup_only_functional_contract(self):
         scenarios = (
             ("small-migration", small_task_specs(), 12, 191),

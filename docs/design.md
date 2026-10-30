@@ -1280,7 +1280,7 @@ filter of standard discovery, while `all` runs the original discovered suite
 in its original order. New `test*.py` modules therefore fail closed until
 classified; new methods in an owned module inherit that module's lane.
 The mixed backup/Viewer performance module is the only timing allocation:
-its exact four discovered identities must equal the closed functional/capacity
+its discovered identities must exactly equal the closed functional/capacity
 and manual-timing sets, or validation fails before execution. Local lane runs
 without a CI event retain the complete base lane. Pull-request and push
 selection remove only the two manual-timing identities; full manual dispatch

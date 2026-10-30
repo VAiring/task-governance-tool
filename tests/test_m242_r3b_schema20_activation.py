@@ -40,6 +40,7 @@ from tests.m14_test_support import (  # noqa: E402
     PhysicalInstall,
     activate_fresh_uuid_fixture,
     make_physical_install,
+    pin_pre_incremental_viewer,
     refresh_test_manifest,
     tree_snapshot,
 )
@@ -137,6 +138,8 @@ def _physical_current20_install(root: Path) -> PhysicalInstall:
     """Create a copied physical install pinned to the historical v20 runtime."""
 
     install = make_physical_install(root, git_managed=True)
+    # This fixture stays at schema20, including its real Viewer publisher.
+    pin_pre_incremental_viewer(install.skill_root)
     installed_storage = (
         install.skill_root
         / "scripts"

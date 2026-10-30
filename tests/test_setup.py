@@ -1,3 +1,4 @@
+import hashlib
 import json
 import sqlite3
 import tempfile
@@ -24,6 +25,7 @@ try:  # noqa: E402
         json_payload,
         make_physical_install,
         make_source_self_host,
+        pin_pre_incremental_viewer,
         refresh_test_manifest,
         remove_v18_evidence_ledger_for_test,
     )
@@ -42,6 +44,7 @@ except ModuleNotFoundError:  # noqa: E402
         json_payload,
         make_physical_install,
         make_source_self_host,
+        pin_pre_incremental_viewer,
         refresh_test_manifest,
         remove_v18_evidence_ledger_for_test,
     )
@@ -291,9 +294,14 @@ class SetupCommandTests(unittest.TestCase):
     def test_schema_v17_receipt_history_previews_and_migrates_with_viewer(self):
         with tempfile.TemporaryDirectory() as tmp:
             install = make_physical_install(Path(tmp))
+            viewer_module = install.skill_root / "scripts/task_governance_tool/viewer_maintenance.py"
+            current_viewer = viewer_module.read_bytes()
+            restore_viewer = pin_pre_incremental_viewer(install.skill_root)
             _switch_physical_fixture_schema(install, 34, 20)
             initialized = install.run("setup", "--json")
             self.assertEqual(initialized.returncode, 0, initialized.stderr)
+            self.assertEqual(json_payload(initialized)["data"]["viewer_status"], "published")
+            self.assertTrue(install.viewer_path.is_file())
 
             added = install.run(
                 "task",
@@ -368,7 +376,22 @@ class SetupCommandTests(unittest.TestCase):
             with closing(sqlite3.connect(install.db_path)) as connection:
                 remove_v18_evidence_ledger_for_test(connection)
                 connection.commit()
+                history = {}
+                for table in ("review_receipts", "verification_receipts", "task_completion_cycles"):
+                    columns = tuple(row[1] for row in connection.execute(f"PRAGMA table_info({table})"))
+                    rows = connection.execute(
+                        f"SELECT {', '.join(columns)} FROM {table} ORDER BY rowid"
+                    ).fetchall()
+                    self.assertTrue(rows, table)
+                    history[table] = (columns, rows)
+            restore_viewer()
             _switch_physical_fixture_schema(install, 20, 34)
+            self.assertEqual(viewer_module.read_bytes(), current_viewer)
+            manifest = json.loads((install.skill_root / "release-manifest.json").read_bytes())
+            for relative in ("scripts/task_governance_tool/viewer_maintenance.py",
+                             "scripts/task_governance_tool/storage.py"):
+                self.assertEqual(manifest["core_files"][relative],
+                    "sha256:" + hashlib.sha256((install.skill_root / relative).read_bytes()).hexdigest())
             before_preview = file_snapshot(install.project_root)
 
             preview = install.run("setup", "--read-only", "--json")
@@ -395,6 +418,17 @@ class SetupCommandTests(unittest.TestCase):
             )
             self.assertEqual(migrated_data["evidence_status"], "published")
             self.assertEqual(migrated_data["viewer_status"], "published")
+            with closing(sqlite3.connect(install.db_path)) as connection:
+                for table, (columns, rows) in history.items():
+                    self.assertEqual(connection.execute(
+                        f"SELECT {', '.join(columns)} FROM {table} ORDER BY rowid"
+                    ).fetchall(), rows, table)
+                self.assertEqual(connection.execute(
+                    "SELECT status FROM tasks WHERE task_id = ?", (task_id,)
+                ).fetchone(), ("done",))
+            self.assertTrue(install.viewer_path.is_file())
+            self.assertEqual(json.loads(install.target.resolved_evidence_index.read_bytes())[
+                "payload"]["source_schema_version"], 34)
 
     def test_policy_validation_change_and_equal_replay_are_bounded(self):
         invalid_cases = (

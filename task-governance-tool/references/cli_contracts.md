@@ -2086,6 +2086,14 @@ completion. Ordinary resolution of a blocking Finding still requires a newer
 target and fresh qualifying receipts. Changed material or conditions always
 use that fresh-target route.
 
+`review finding add` cannot append to a collected-answer Receipt: it returns
+`invalid_review_evidence` without saving changes (the existing exit-1 domain
+error and sanitized code/message envelope).
+The original's full Finding set is registered atomically with that answer.
+Resolve its actual original Findings normally, or use an explicitly requested
+reassessment/fresh target when appropriate; do not rewrite or drop the original.
+This prevention does not repair already inconsistent stored evidence.
+
 For an actual same-basis reassessment, add
 `--reassessment-receipt <successor-receipt-id>` to the resolution command.
 Use the registered successor Receipt from the original actual reviewer, whose

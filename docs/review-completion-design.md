@@ -199,6 +199,16 @@ block. A resolved high/medium finding still requires a target generation newer
 than its receipt and fresh passes. Any current-generation changes-requested
 or effective collected unable receipt blocks. Low findings are nonblocking.
 
+The Finding writer applies `require_initial_payload_finding` on its freshly
+locked Receipt before inserts. Provenance-v2 standalone additions reject.
+Its existing lexical initial-batch path also requires absent dispatch
+membership and an absent member of the validated original Finding set; a
+material-sharing context alone cannot authorize a later append. Partial sets
+are confined to the initial writer, whose full exact-source validation and
+atomic rollback remain mandatory. Legacy writes and resolution are unchanged.
+This guard prevents new inconsistent writes; it neither repairs old rows nor
+changes native or frozen exact-source validation.
+
 The gate deterministically requires:
 
 - Tier 0: one current not-required receipt;

@@ -1387,6 +1387,9 @@ def add_review_finding(
         verification_receipt_ids=set(),
         _materials=None if _batch is None else _batch.materials,
     )
+    from .review_answer_repository import require_initial_payload_finding
+    require_initial_payload_finding(connection, receipt, finding_severity,
+        finding_summary, initial_batch=_batch is not None)
     try:
         parent_reference_rows = connection.execute(
             """

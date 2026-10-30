@@ -75,8 +75,20 @@ launch or target.
 not-required kind, PASS or changes-requested verdict, summary, user-approval
 flag when required, and timestamps to the exact current target/generation.
 One reviewer cannot replace or contradict a receipt in the same generation.
-`review finding add` requires a same-project/Task receipt and severity;
-resolution preserves the original finding.
+`review finding add` requires a same-project/Task receipt and severity.
+A collected-answer Receipt's Finding set is fixed by its original answer:
+standalone additions fail with `invalid_review_evidence` before any row,
+Reference or event is persisted. This
+includes low-severity, duplicate, carried and reassessed Receipt additions.
+Only initial atomic collected registration creates its original Findings;
+legacy Receipt additions and explicit original-Finding resolution retain their
+existing rules. Resolution preserves the original finding.
+
+This prevention does not repair a previously inconsistent collected set.
+Such state remains rejected by exact-source validation; show, resolution and
+target replacement cannot remove the extra assertion or rewrite the original.
+Recovery of existing inconsistent data requires separate explicit authority;
+neither automatic deletion nor weaker validation is a supported recovery.
 
 Tier 2 requires two PASS receipts from distinct independent reviewer keys;
 Tier 1 requires one. Tier 2 fallback requires one documented self-review PASS

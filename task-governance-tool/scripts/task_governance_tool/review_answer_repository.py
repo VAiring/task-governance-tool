@@ -283,6 +283,39 @@ WHERE r.task_id=?)"""
             raise _bad()
 
 
+def require_initial_payload_finding(connection, receipt, severity, summary, *, initial_batch):
+    """Only the original atomic batch may finish its not-yet-published set.
+
+    A material-sharing batch is not an append permission: even there, each
+    Finding must be an absent member of the validated original, before dispatch.
+    Ordinary public additions always reject collected Receipts.
+    """
+    if receipt["review_provenance_basis_version"] != 2:
+        return
+    from .reviews import review_error
+    def rejected():
+        return review_error("invalid_review_evidence",
+            "collected receipt findings are fixed by the original answer",
+            "review_receipt_id")
+    if not initial_batch:
+        raise rejected()
+    receipt_id = receipt["review_receipt_id"]
+    if connection.execute(
+        "SELECT 1 FROM review_collection_dispatch_entries WHERE review_receipt_id=? LIMIT 1",
+        (receipt_id,),
+    ).fetchone() is not None:
+        raise rejected()
+    provenance = validate_provenance_relation(connection, receipt)
+    expected = {(f["severity"], f["summary"].strip())
+        for f in provenance["answer_attestation"]["payload"]["findings"]}
+    actual = [(r["severity"], r["summary"]) for r in connection.execute(
+        "SELECT severity,summary FROM review_findings WHERE review_receipt_id=?", (receipt_id,))]
+    if len(actual) != len(set(actual)) or not set(actual) <= expected:
+        raise _bad()
+    if (severity, summary) not in expected - set(actual):
+        raise rejected()
+
+
 def validate_payload_findings(connection, receipt_id, provenance):
     expected=sorted((f["severity"],f["summary"].strip()) for f in provenance["answer_attestation"]["payload"]["findings"])
     actual=sorted((r["severity"],r["summary"]) for r in connection.execute("SELECT severity,summary FROM review_findings WHERE review_receipt_id=?",(receipt_id,)))

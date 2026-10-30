@@ -396,9 +396,11 @@ def hash_physical_file(
     """Hash and revalidate; an explicit scope may defer close past a SQLite lock.
 
     The caller must close its SQLite reader before closing descriptor_scope,
-    including on failure. This avoids POSIX process-lock cancellation.
+    including on failure. Shared file ownership additionally protects other
+    product connections to that inode in this process.
     """
     from task_governance_tool.debug_log import aggregate
+    from task_governance_tool.sqlite_file_access import file_reader
     with aggregate(hash_physical_file, unit='bytes') as measurement:
         measurement.count(0)
 
@@ -410,17 +412,22 @@ def hash_physical_file(
             or before.size != expected_size
         ):
             raise _failure()
-        descriptor: int | None = None
+        reader_scope = None
         digest = hashlib.sha256()
         observed = 0
         try:
-            descriptor = _open_no_follow(path, os.O_RDONLY)
+            reader_scope = file_reader(path)
+            try:
+                reader = reader_scope.__enter__()
+            except OSError as exc:
+                raise _failure() from exc
+            descriptor = reader.descriptor
             opened = os.fstat(descriptor)
             if _file_identity(opened) != before:
                 raise _failure()
             while True:
                 try:
-                    chunk = os.read(descriptor, _COPY_CHUNK_BYTES)
+                    chunk = reader.read(_COPY_CHUNK_BYTES)
                 except OSError as exc:
                     raise _failure() from exc
                 if not chunk:
@@ -434,11 +441,11 @@ def hash_physical_file(
             if observed != before.size or after_open != before:
                 raise _failure()
         finally:
-            if descriptor is not None and descriptor_scope is not None:
-                descriptor_scope.callback(os.close, descriptor)
-            elif descriptor is not None:
+            if reader_scope is not None and descriptor_scope is not None:
+                descriptor_scope.callback(reader_scope.__exit__, None, None, None)
+            elif reader_scope is not None:
                 with suppress(OSError):
-                    os.close(descriptor)
+                    reader_scope.__exit__(None, None, None)
         if not _same_file_identity(path, before):
             raise _failure()
         return ValidatedFile(

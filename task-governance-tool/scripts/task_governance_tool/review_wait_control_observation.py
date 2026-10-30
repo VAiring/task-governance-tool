@@ -12,6 +12,7 @@ from pathlib import Path
 import sqlite3
 
 from .sqlite_connection import StorageError, connect_readonly
+from .sqlite_file_access import file_reader
 from .state_paths import StatePathError, inspect_physical_file
 from .review_wait_runtime.review_wait_repository import ObservationBusy, RepositoryError
 
@@ -69,14 +70,11 @@ class ReviewWaitControlObservation:
 
     def _hint(self):
         path, identity = inspect_physical_file(self.path, root=Path(self.path.anchor))
-        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0))
-        try:
-            opened = os.fstat(descriptor)
+        with file_reader(path) as reader:
+            opened = os.fstat(reader.descriptor)
             if (opened.st_dev, opened.st_ino) != (identity.device, identity.inode):
                 raise RepositoryError("state_unreadable")
-            header = os.read(descriptor, 44)
-        finally:
-            os.close(descriptor)
+            header = reader.read(44)
         # Fixed metadata only. The change counter notices same-timestamp commits;
         # these bytes are not a header validator or a database-content hash.
         return (identity, header[24:28], header[40:44],

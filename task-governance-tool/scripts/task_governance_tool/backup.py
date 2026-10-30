@@ -973,7 +973,7 @@ def restore_managed_backup(
                     or not pinned.recovery_content_valid):
                 raise _restore_failure()
             with closing(
-                configure_connection(connect_traced(temporary, access="create", role="backup"))
+                configure_connection(connect_traced(temporary, access="create", role="backup", file_guard_path=temporary))
             ) as destination:
                 source.backup(destination)
                 source_scope.close()
@@ -1128,7 +1128,7 @@ def copy_database_snapshot(
                 ):
                     raise _failure()
             with closing(
-                configure_connection(connect_traced(destination, access="create", role="backup"))
+                configure_connection(connect_traced(destination, access="create", role="backup", file_guard_path=destination))
             ) as copied:
                 source.backup(copied)
                 source_scope.close()
@@ -1557,7 +1557,7 @@ def _copy(
             os.close(descriptor)
             descriptor = None
             with closing(
-                configure_connection(connect_traced(temporary, access="create", role="backup"))
+                configure_connection(connect_traced(temporary, access="create", role="backup", file_guard_path=temporary))
             ) as destination:
                 source.backup(destination)
                 # The copy now owns its snapshot; source validation is repeated

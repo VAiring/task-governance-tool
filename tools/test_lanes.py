@@ -408,6 +408,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_sql_observation_boundaries",
         "test_sqlite_diagnostics",
         "test_sqlite_diagnostics_entry",
+        "test_sqlite_file_access",
         "test_sqlite_observation_coverage",
         "test_sqlite_sql_trace",
         "test_state_resolver",

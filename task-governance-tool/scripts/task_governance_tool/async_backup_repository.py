@@ -216,7 +216,7 @@ def copy_snapshot(target: DatabaseTarget, destination: Path,
 
     with control_snapshot(target, expected=expected) as (source, current):
         captured_at = utc_now()
-        with closing(configure_connection(connect_traced(destination, access="create", role="backup"))) as copied:
+        with closing(configure_connection(connect_traced(destination, access="create", role="backup", file_guard_path=destination))) as copied:
             source.backup(copied, pages=256, progress=progress, sleep=0.01)
     return current, captured_at
 

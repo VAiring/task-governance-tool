@@ -306,6 +306,11 @@ driver呼出し、busy timeout、リトライ、公開エラーを変えない�
 DBの内容やパスを保存して役割を特定しない。共有factoryは既知のファイル名だけで
 core/numericalを分類し、private-copyは呼出し側の固定backupラベルを使う。
 
+POSIXのアプリ所有接続は、診断の有効・無効と独立して
+[ファイル記述子の生存期間保護](design.md#journal-and-connection-rules)を使用する。
+これは診断イベントや検証済み状態のキャッシュではなく、raw readerのcloseによる
+既存SQLiteロックの解除を防ぐ共通境界である。
+
 | 接続所有者 | DB・access | 接続設定・transaction・終了 |
 |---|---|---|
 | sqlite_connection.connect | core/numerical・create | native既定設定と既存configure、呼出し側の初期化・migration、明示close/closing |

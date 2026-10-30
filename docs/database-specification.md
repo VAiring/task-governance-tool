@@ -130,6 +130,12 @@ remain database-wide at resolver admission. Schema, journal, binding and
 structural faults still fail closed. There is no caller-controlled scope,
 persisted/cross-operation proof or automatic history repair.
 
+Physical header/hint reads must not cancel another same-process SQLite
+transaction's locks. The shared [connection lifetime boundary](design.md#journal-and-connection-rules)
+covers core, numerical and operational stores across threads, including readers
+without an OS writer lease. It preserves rollback-journal exclusion and does
+not make raw file bytes, timestamps or descriptor ownership admission evidence.
+
 Explicit Runner Plan actions retain global admission in preflight and under
 their writer lock, including combined verification or Contract changes.
 Review services use the same structural boundary and their original Task's

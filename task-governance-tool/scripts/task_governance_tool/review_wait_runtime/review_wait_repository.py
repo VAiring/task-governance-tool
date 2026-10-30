@@ -12,6 +12,7 @@ import json
 import os
 import sqlite3
 from task_governance_tool.sqlite_transaction_trace import connect_traced
+from task_governance_tool.sqlite_file_access import file_reader
 import stat
 import threading
 from contextlib import contextmanager
@@ -247,8 +248,8 @@ class ReviewWaitRepository:
         # Inspect it once; required files and non-missing errors stay closed.
         _file(journal, missing_ok=True)
         try:
-            with self.path.open("rb") as stream:
-                if _identity(os.fstat(stream.fileno())) != _identity(details):
+            with file_reader(self.path) as stream:
+                if _identity(os.fstat(stream.descriptor)) != _identity(details):
                     raise RepositoryError("state_unreadable")
                 header = stream.read(20)
             if header[:16] == b"SQLite format 3\x00" and len(header) == 20 and (header[18] == 2 or header[19] == 2):
@@ -266,7 +267,7 @@ class ReviewWaitRepository:
         try:
             connection = connect_traced(self.path.as_uri() + ("?mode=rw" if write else "?mode=ro"), uri=True,
                 timeout=0 if observation else self._connection_timeout, isolation_level=None, role="operational",
-                access="readwrite" if write else "readonly")
+                access="readwrite" if write else "readonly", file_guard_path=self.path)
             connection.execute("PRAGMA trusted_schema = OFF")
             if not write:
                 connection.execute("PRAGMA query_only = ON")

@@ -2,6 +2,7 @@
 
 from contextlib import closing
 import json
+import os
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -64,7 +65,8 @@ class SQLiteDiagnosticsTests(unittest.TestCase):
         with mock.patch("task_governance_tool.project_scope._state_is_ignored") as ignored:
             with self.scope() as collector, closing(connections.connect_existing(self.database)) as connection:
                 self.assertIsNone(collector)
-                self.assertIs(type(connection), sqlite3.Connection)
+                from task_governance_tool.sqlite_file_access import GuardedConnection
+                self.assertIs(type(connection), GuardedConnection if os.name == 'posix' else sqlite3.Connection)
                 connection.execute("BEGIN IMMEDIATE")
                 connection.rollback()
         ignored.assert_not_called()

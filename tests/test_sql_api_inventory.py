@@ -34,7 +34,9 @@ PACKAGE = ROOT / 'task-governance-tool/scripts/task_governance_tool'
 API = {'execute', 'executemany', 'executescript', 'fetchone', 'fetchmany', 'fetchall'}
 # These are fixed-target Git finalizers, not database APIs (all occurrences).
 NON_SQL = {'review_handoff.py', 'review_wait_runtime/managed_direct.py'}
-INFRASTRUCTURE = {'sqlite_sql_trace.py', 'sqlite_transaction_trace.py'}
+# File lifetime protection delegates native methods without owning SQL. The
+# observed subclass still owns enabled execution/fetch instrumentation.
+INFRASTRUCTURE = {'sqlite_file_access.py', 'sqlite_sql_trace.py', 'sqlite_transaction_trace.py'}
 FIXTURE = ROOT / 'tests/fixtures/sql_api_inventory.json'
 
 

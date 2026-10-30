@@ -207,6 +207,8 @@ The implementation keeps these narrow ownership boundaries:
   and copying; neither introduces a general filesystem migration service.
 - `sqlite_connection.py` owns configured SQLite connections, registered SQL
   functions, journal/sidecar preflight, and sanitized low-level errors.
+- `sqlite_file_access.py` owns process-local POSIX descriptor lifetimes across
+  product SQLite connections and raw readers; it stores no validation proof.
 - `sqlite_transaction_trace.py` observes SQLite transaction boundaries through
   an enabled-only Connection/Cursor subclass; `sqlite_diagnostics.py` owns the
   opt-in operation scope, sanitized bounded buffer and fixed diagnostic sink.
@@ -609,6 +611,33 @@ sidecar, or disclose a path/header/OS error. WAL maps to
 A short, invalid, or unknown header is not mislabeled as WAL and proceeds to
 normal schema validation.
 
+On POSIX, every product opener supplies its admitted physical path to the
+shared file-lifetime guard, independently of logging. Native SQLite open and
+close registration and raw-reader ownership share a short process mutex. The
+registry keys device/inode, not path spelling, and counts connections and active
+raw readers. Raw readers share one descriptor and use independent positional
+reads; bytes and validation results are never cached. Closing a header, control
+hint or hash reader defers the native descriptor close until no product SQLite
+connection or raw reader remains for that inode. This protects other threads,
+not just the caller's own transaction. SQL and hashing run outside the mutex.
+
+The guard closes outstanding product cursors before the native connection;
+otherwise SQLite's deferred native close can retain locks behind an unconsumed
+cursor. Failed native close retains protection. Owners still close explicitly
+in `finally` on their owning thread; same-thread garbage collection is a fallback,
+not lifecycle authority. An abandoned wrong-thread connection fails closed by
+retaining its raw descriptors until process exit. Repeated stable observations
+reuse the descriptor, not its contents. Exceptional replacement descriptors
+are retained against their actual inode; an unidentifiable descriptor is held
+until all registered connections close. No failed OS close is retried.
+
+All core, numerical, operational and private-copy product openers participate;
+unmanaged external SQLite factories, forked live connections and independent
+SQLite libraries in one process are unsupported. Windows keeps native connection
+and descriptor lifetimes. Offline Setup copying and closed private-copy fsync
+retain their existing ownership; no live raw-copy fallback, WAL conversion,
+`immutable=1`, subprocess, retry or schema change is introduced.
+
 Read connections use:
 
 ```text
@@ -989,8 +1018,10 @@ The collector accepts sanitized closed fields, never SQL or exception
 objects, and defers file I/O until connection cleanup; ordinary scopes publish at
 exit, while admitted long waits may use the bounded intermediate checkpoints.
 
-Shared connection factories select `sqlite_transaction_trace.py` only when a
-collector is active. Disabled connections retain the ordinary sqlite3 factory.
+Shared connection factories enable diagnostic observation only when a
+collector is active. Disabled connections retain the ordinary sqlite3 factory
+on Windows; POSIX product connections retain the separate
+[file-lifetime guard](#journal-and-connection-rules) without diagnostic events.
 Connection and default Cursor execution, commit, rollback, close and context
 exit delegate to the original driver exactly once. In particular, context
 exit is observed around `sqlite3.Connection.__exit__`, not reimplemented with

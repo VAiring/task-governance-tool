@@ -13,6 +13,7 @@ from time import perf_counter_ns
 
 from .debug_log_values import plain_fields
 from . import sqlite_sql_trace as sql_trace
+from .sqlite_file_access import GuardedConnection, connect_guarded
 
 
 _ROLES = frozenset({"core", "numerical", "operational", "backup", "other"})
@@ -136,7 +137,7 @@ def _overhead(collector, started, native_elapsed, previous):
 _ObservedCursor = sql_trace._ObservedCursor
 
 
-class _ObservedConnection(sqlite3.Connection):
+class _ObservedConnection(GuardedConnection):
     def _bind_observer(self, collector, connection_id, *, converters_possible=True):
         self._diagnostic_collector = collector
         self._diagnostic_id = connection_id
@@ -258,13 +259,13 @@ class _ObservedConnection(sqlite3.Connection):
         return result
 
     def execute(self, *args, **kwargs):
-        return sql_trace.shortcut(self, 'execute', args, kwargs)
+        return self._remember_cursor(sql_trace.shortcut(self, 'execute', args, kwargs))
 
     def executemany(self, *args, **kwargs):
-        return sql_trace.shortcut(self, 'executemany', args, kwargs)
+        return self._remember_cursor(sql_trace.shortcut(self, 'executemany', args, kwargs))
 
     def executescript(self, *args, **kwargs):
-        return sql_trace.shortcut(self, 'executescript', args, kwargs)
+        return self._remember_cursor(sql_trace.shortcut(self, 'executescript', args, kwargs))
 
     def cursor(self, *args, **kwargs):
         sql_trace.observer_collector(self)
@@ -294,7 +295,13 @@ class _ObservedConnection(sqlite3.Connection):
         return self._observe(lambda: native(*args), phase, context_exit=True, transaction_method=True)
 
 
-def connect_traced(database, *args, access="readwrite", role=None, **kwargs):
+def connect_traced(database, *args, access="readwrite", role=None, file_guard_path=None, **kwargs):
+    """Keep product file lifetime protection independent of diagnostic opt-in."""
+    return connect_guarded(file_guard_path, lambda guarded: _connect_traced(
+        database, *args, access=access, role=role, guarded=guarded, **kwargs))
+
+
+def _connect_traced(database, *args, access="readwrite", role=None, guarded=False, **kwargs):
     """Use the native opener unchanged when no diagnostic scope is active.
 
     A supplied SQLite factory remains authoritative and is not instrumented.
@@ -317,12 +324,12 @@ def connect_traced(database, *args, access="readwrite", role=None, **kwargs):
     except BaseException:
         collector, connection_id = None, 0
     if collector is None or not connection_id:
-        return sqlite3.connect(database, *args, **kwargs)
+        return sqlite3.connect(database, *args, **({"factory": GuardedConnection} if guarded else {}), **kwargs)
     try:
         started = perf_counter_ns()
     except BaseException:
         # Retain the outstanding registration, suppressing any partial flush.
-        return sqlite3.connect(database, *args, **kwargs)
+        return sqlite3.connect(database, *args, **({"factory": GuardedConnection} if guarded else {}), **kwargs)
     try:
         connection = sqlite3.connect(database, *args, factory=_ObservedConnection, **kwargs)
     except BaseException as error:

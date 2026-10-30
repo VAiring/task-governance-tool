@@ -1740,7 +1740,14 @@ bounded SQLite connection and OS writer lease. It uses a single physical
 observation for an optional rollback-journal sibling,
 which SQLite may remove on concurrent commit. Missing that optional sibling is
 allowed; required files, nonphysical entries and other inspection errors still
-fail closed. This adds no transaction or effect retry. Its separate schema version one
+fail closed. This adds no transaction or effect retry. It uses the shared
+[POSIX file-lifetime guard](design.md#journal-and-connection-rules)
+for before/inside/after-transaction header checks. The same guard covers the
+base wait repository and preparation, collection, finalization, request,
+direct and continuation repositories. A writer lease still serializes writers;
+it does not replace SQLite's protection for lease-free readers. Task-control
+header hints use the same guard without retaining bytes or admission proof.
+The request schema version one
 has exact `schema_history` and `attempts` tables. Each bounded canonical JSON row
 retains basis digest (excluding generated wait ID), actual original parent turn,
 sorted reviewer UUID/turn pairs, returned automation ID or null, and phase

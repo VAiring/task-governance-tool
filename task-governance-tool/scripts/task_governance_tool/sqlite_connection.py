@@ -12,6 +12,7 @@ from pathlib import Path
 
 from task_governance_tool.ordering import LANE_SQL_FUNCTION, canonical_lane
 from task_governance_tool.sqlite_transaction_trace import connect_traced
+from task_governance_tool.sqlite_file_access import file_reader
 
 
 VERIFICATION_SPECIFIED_SQL_FUNCTION = "taskgov_verification_specified"
@@ -75,13 +76,21 @@ def operational_sqlite_error(
 
 
 def connect(db_path: Path) -> sqlite3.Connection:
-    return configure_connection(connect_traced(db_path, access="create"))
+    return _configure_owned(connect_traced(db_path, access="create", file_guard_path=db_path))
 
 
 def connect_existing(db_path: Path, *, timeout: float = 5.0) -> sqlite3.Connection:
     """Open an existing database read/write without allowing SQLite to create it."""
     uri = db_path.resolve(strict=False).as_uri() + "?mode=rw"
-    return configure_connection(connect_traced(uri, uri=True, timeout=timeout, access="readwrite"))
+    return _configure_owned(connect_traced(uri, uri=True, timeout=timeout, access="readwrite", file_guard_path=db_path))
+
+
+def _configure_owned(connection):
+    try:
+        return configure_connection(connection)
+    except BaseException:
+        connection.close()
+        raise
 
 
 def connect_readonly(db_path: Path, *, timeout: float = 5.0) -> sqlite3.Connection:
@@ -94,7 +103,7 @@ def connect_readonly(db_path: Path, *, timeout: float = 5.0) -> sqlite3.Connecti
         )
     uri = db_path.resolve(strict=False).as_uri() + "?mode=ro"
     try:
-        connection = connect_traced(uri, uri=True, timeout=timeout, access="readonly")
+        connection = connect_traced(uri, uri=True, timeout=timeout, access="readonly", file_guard_path=db_path)
     except sqlite3.Error as exc:
         raise operational_sqlite_error(
             exc,
@@ -136,7 +145,7 @@ def existing_sqlite_sidecars(db_path: Path) -> list[Path]:
 def sqlite_header_uses_wal(db_path: Path) -> bool:
     """Inspect SQLite's stable file-header journal bytes without opening SQLite."""
     try:
-        with db_path.open("rb") as stream:
+        with file_reader(db_path) as stream:
             header = stream.read(20)
     except OSError as exc:
         raise StorageError("internal_error", "could not inspect database journal mode") from exc

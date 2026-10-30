@@ -116,6 +116,14 @@ infers validity from size, mtime or `data_version`, shares a proof across
 operations, or changes the physical/native and operational-store checks at
 existing effect boundaries. There is no real-host latency or timeout guarantee.
 
+Header inspection and physical hashing use the shared
+[POSIX file-lifetime guard](design.md#journal-and-connection-rules).
+Backup's explicit descriptor scope still outlives its own SQLite reader, while
+the process-local guard also protects other connections to that artifact.
+This does not activate full-byte validation reuse on POSIX or change offline
+Setup/copy admission. Private-copy fsync occurs after its SQLite owner closes;
+ordinary snapshot capture continues to use SQLite's backup API.
+
 `CanonicalStatePaths.usage_database` owns the numerical sibling path. It is not
 part of core admission or core recovery inventory. Only the explicit outer
 `run_setup` entry adds independent usage initialization/validation after the

@@ -3,7 +3,7 @@
 Status: The immutable published product remains v0.10.0/schema v16/Viewer v4
 sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
 The current unpublished candidate is v0.13.0 with SQLite schema v34, Viewer
-snapshot v4 accepting source schemas v5-v34, and 23 public command leaves.
+snapshot v4 accepting source schemas v5-v34, and 24 public command leaves.
 Its supported behavior includes tool-owned Verification Receipt subjects,
 versioned Review provenance, immutable Evidence References and completion
 Bundles, deterministic Evidence JSON, and the explicitly opted-in trusted-local
@@ -196,7 +196,7 @@ README, design, and release/install documentation refer to these sections rather
 than maintaining additional lists. Repository validation compares both lists
 with the parser and checks those references.
 
-The public CLI has exactly 23 command leaves:
+The public CLI has exactly 24 command leaves:
 
 1. `taskgov setup`
 2. `taskgov doctor`
@@ -221,6 +221,11 @@ The public CLI has exactly 23 command leaves:
 21. `taskgov verification receipt add`
 22. `taskgov task context`
 23. `taskgov review result add`
+24. `taskgov backup protect`
+
+`backup protect` is explicit maintenance with a no-write preview, governed by
+[DB protection](setup-state-specification.md#explicit-database-protection).
+It is not an ordinary Task-loop step or permission to restore live state.
 
 `task complete --check` is a mode of the same leaf.
 `task add --from-stdin` is an input mode governed by
@@ -249,7 +254,7 @@ directory. Invocation from either supported package root requires explicit
 option and supplies a relocation token only after the explicit approval flow.
 
 Public `self`, `db`, `web`, `--db`, custom output, compatibility aliases, and
-replacement storage, Viewer, export, repair, maintenance, disable, or admin
+replacement storage, Viewer, export, repair, general maintenance, disable, or admin
 commands are removed. Unknown/removed root commands fail before package,
 project, Git, or SQLite resolution with exit 2 and `invalid_command`. A lexical
 `--db` takes precedence and fails with `invalid_option` and exact message

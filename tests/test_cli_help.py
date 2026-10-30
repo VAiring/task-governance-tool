@@ -24,6 +24,7 @@ except ModuleNotFoundError:
 PUBLIC_COMMAND_LEAVES = {
     "setup",
     "doctor",
+    "backup protect",
     "task add",
     "task list",
     "task next",
@@ -70,7 +71,7 @@ class CliHelpTests(unittest.TestCase):
             parser.parse_args(["task", "show", "tg_task_example", "--unknown"])
         self.assertEqual(shown.exception.message, "arguments are invalid")
 
-    def test_parser_has_only_the_twenty_three_public_leaves(self):
+    def test_parser_has_only_the_twenty_four_public_leaves(self):
         self.assertEqual(parser_leaf_commands(build_parser()), PUBLIC_COMMAND_LEAVES)
 
     def test_task_context_help_exposes_only_common_options(self):

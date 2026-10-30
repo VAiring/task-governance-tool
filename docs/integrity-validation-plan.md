@@ -170,12 +170,12 @@ their finished outputs without changing their Contracts.
 
 ### Explicit Capture Surface
 
-The current CLI has no force-now, wait-for-completion backup command. Re-running
+The explicit maintenance surface is `backup protect`. Re-running
 Setup at the current schema, changing backup policy or making an artificial Task
 edit is not a substitute. The opportunity file is not proof of a captured copy.
 
-Unit IV-P introduces a narrow proposed `backup protect` operation, only for
-explicit maintenance. This is a future API, not an available command to run now.
+Unit IV-P owns the narrow `backup protect` operation, only for
+explicit maintenance, specified in the [Setup/state owner](setup-state-specification.md#explicit-database-protection).
 It requires the existing canonical resolver and has no `--db`, arbitrary source,
 automatic restore, configuration toggle or periodic invocation. Normal Skill
 work does not call it. It does not migrate a source or repair its data.

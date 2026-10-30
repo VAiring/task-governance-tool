@@ -34,6 +34,7 @@ usage index      <fixed-root>/usage/index.json
 usage snapshots  <fixed-root>/usage/snapshots
 usage lock       <fixed-root>/usage/taskgov-usage.lock
 managed backups  <fixed-root>/backups
+DB protection    <state-root>/protection/<capture-id>
 backup runtime   <fixed-root>/backups/runtime
 Evidence index   <fixed-root>/evidence/index.json
 Evidence baseline <fixed-root>/evidence/publication-baseline.json
@@ -744,6 +745,42 @@ managed publication is an explicit bounded recovery window.
 <a id="setup-doctor-backup-and-maintenance"></a>
 
 ## Setup, Doctor, Backup, And Maintenance
+
+### Explicit Protection Publication
+
+`protection.py` owns explicit maintenance orchestration and manifest-last,
+no-replace publication; `protection_repository.py` owns SQLite copy/validation
+and isolated recovery. The CLI bypasses ordinary post-commit maintenance and
+uses shared package/ignore preflight and the canonical resolver. The protection
+sibling is admitted only as a physical directory by state separation; its
+contents are never ordinary recovery inventory or transition authority.
+
+Core capture reuses the existing short control reader and SQLite backup API;
+full private validation reuses the publication validator. Usage uses its current
+repository and independent SQLite copy. Raw hashing/fsync occurs after SQLite
+owners close, through existing POSIX-safe primitives. Final source object,
+binding and schema checks do not compare mutable live bytes or infer snapshot
+validity from timestamps. The fresh core control read must retain the captured
+file identity; present Usage must retain its identity across the final repository
+admission. No ordinary backup reconciliation/prune/ledger write
+is called. A unique actual-time generation fails if it cannot follow all
+captured rows; it does not use routine publication's clock adjustment.
+
+The private recovery inbox has one managed-format core file and no canonical
+primary. `select_managed_backup_for_recovery` and `restore_managed_backup`
+perform the real admission and normalization. Comparison retains every core
+table/column except managed generation rows, five backup pointer/outcome fields,
+the Viewer projection row and its source-generation field; those excluded
+values are instead checked against their exact required normalized values.
+Row multiset digests preserve duplicates without retaining raw data. Restored
+Usage uses the existing reconciliation repository against restored core.
+Only explicitly named private inbox entries are deleted; unexpected residue
+prevents publication. Sealed component hashes are rechecked before writing
+`verification.json`, then `manifest.json`, followed by the native no-replace
+directory rename. Partial stages remain outside successful capture names.
+
+The format, coverage, permission and retention contract belongs to
+[explicit DB protection](setup-state-specification.md#explicit-database-protection).
 
 ### Shared Scope Preflight
 

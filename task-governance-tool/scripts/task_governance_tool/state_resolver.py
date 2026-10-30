@@ -143,6 +143,11 @@ class CanonicalStatePaths:
     legacy_projects: Path = field(repr=False)
 
     @property
+    def protection(self) -> Path:
+        """Explicit captures, excluded from ordinary rotation and restoration."""
+        return self.state_root / "protection"
+
+    @property
     def sqlite_diagnostics(self) -> Path:
         """Opt-in local logs are outside the recoverable current-state tree."""
         return self.state_root / "diagnostics" / "sqlite"

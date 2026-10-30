@@ -194,6 +194,8 @@ class CommandContext:
 
 
 def command_name(args: argparse.Namespace) -> str:
+    if args.command == "backup" and args.backup_command:
+        return f"backup.{args.backup_command}"
     if args.command == "task" and args.task_command:
         return f"task.{args.task_command}"
     if args.command == "handoff" and args.handoff_command:
@@ -322,6 +324,9 @@ def state_resolution_failure_result(
 
 
 def handle_command(context: CommandContext) -> CommandResult:
+    if context.command == "backup.protect":
+        from task_governance_tool.protection import run_protection
+        return run_protection(context, cli_script_path())
     if context.command == "setup":
         return handle_setup(context)
     if context.command == "doctor":

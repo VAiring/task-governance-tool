@@ -16,6 +16,11 @@ Setup orchestration remains with the
 
 <a id="migration-sequence"></a>
 
+The [protection adapter](setup-state-design.md#explicit-protection-publication)
+reuses the managed backup repository's recovery normalization and current Usage
+reconciliation in isolated copies. It creates no new durable SQL tables,
+migrations or live managed-generation rows.
+
 ## Conditional Review Continuation Storage
 
 This is the schema-29 continuation foundation, preserved and extended by the

@@ -131,7 +131,7 @@ class ReleaseContractCheckerTests(unittest.TestCase):
 
         self.assertTrue(result.ok, result.issues)
         self.assertEqual(result.runtime, runtime)
-        self.assertEqual(len(runtime.public_commands), 23)
+        self.assertEqual(len(runtime.public_commands), 24)
         self.assertEqual(result.ci_python_versions, ("3.12", "3.14"))
         manifest = json.loads(
             (SKILL_ROOT / "release-manifest.json").read_text(encoding="utf-8")

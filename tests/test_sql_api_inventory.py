@@ -22,6 +22,10 @@ UsageRepository and the operation-local read-only core connection supplied by
 usage_evidence_service/usage_locator_collection. Both retain the observed SQL
 cursor. Separate stage transactions persist only numerical work; no direct
 native SQL dispatch, connection bypass or core writer is added.
+
+protection_repository reads isolated copies through sqlite_connection's observed
+reader. Source copying borrows the existing backup/Usage repositories; the
+destination uses connect_traced. Live core/Usage databases are never written.
 """
 import ast
 import json

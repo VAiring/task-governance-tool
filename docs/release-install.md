@@ -82,7 +82,7 @@ total LLM token or elapsed-time savings.
 | Package version | `0.13.0` |
 | SQLite schema | v34 |
 | Viewer snapshot | v4, accepting source schemas v5-v34 (v5 through v34) |
-| Public command leaves | 23 |
+| Public command leaves | 24 |
 | Supported runtime | Python 3.12 or newer on Windows, Linux, and macOS (ordinary functions) |
 | Verified platform | Windows x86-64; Ubuntu 24.04 x86-64; macOS 15 Apple Silicon |
 | Candidate commit / `main` | not fixed; unpublished local candidate |
@@ -873,7 +873,7 @@ manual/fallback no-finding Tier 2 flow with batch review-result registration is
 bounded to six calls, or seven with
 the enabled Effort Advisory, using automatic Packet preparation after a
 qualifying Receipt. The Receiptless Runner-pass path uses standalone
-preparation and has the same bound. The public inventory is exactly 23 leaves. No exact final candidate
+preparation and has the same bound. The public inventory is exactly 24 leaves. No exact final candidate
 commit, tag, archive, checksum, or GitHub Release identity is fixed. An ordinary
 push to `main` is CI input, not release publication; nothing here dispatches CI
 or publishes a Release.

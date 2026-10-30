@@ -15,6 +15,11 @@ remain with the [Setup/state owner](setup-state-specification.md#setup-recovery-
 
 <a id="migration-and-activation-boundary"></a>
 
+Explicit [DB protection](setup-state-specification.md#explicit-database-protection)
+introduces no schema or live-ledger write. Its separately consistent core/Usage
+copies keep their admitted schemas. Recovery rehearsal normalizes only private
+copies; missing Usage anchors cannot acquire another execution's attribution.
+
 ## Conditional Review Continuation Persistence
 
 Schema 29 introduces migration `review_continuations`; the current combined

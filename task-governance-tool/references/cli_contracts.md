@@ -9,6 +9,7 @@ audit-only detail is conditional.
 - [Optional Task Preapproval](#optional-task-preapproval)
 - [Configured Preapproval Invocation](#configured-preapproval-invocation)
 - [Envelope And Read/Write Boundary](#envelope-and-readwrite-boundary)
+- [`backup protect`](#explicit-backup-protection)
 - [`setup`](#setup)
 - [`doctor`](#doctor)
 - [Task Commands](#task-commands)
@@ -90,7 +91,7 @@ Ordinary Task use supports Windows, Linux, and macOS. The explicit trusted-local
 Runner supports the same three platforms under their OS-specific limits;
 verification without Runner opt-in remains manual. There is no OS-selection command.
 
-The complete public command inventory is exactly these 23 leaves:
+The complete public command inventory is exactly these 24 leaves:
 
 1. `setup`
 2. `doctor`
@@ -115,6 +116,7 @@ The complete public command inventory is exactly these 23 leaves:
 21. `verification receipt add`
 22. `task context`
 23. `review result add`
+24. `backup protect`
 
 There are no public aliases, alternate state locations, storage-management
 commands, projection-management commands, repair commands, or admin commands.
@@ -290,7 +292,7 @@ Registration/context, show/audit, and Review Packet retain their full forms.
 
 Inherently read-only commands are `doctor`, task `list`, `next`, `current`, `context`,
 `effort`, and `show`, `task complete --check`, handoff `list` and `show`, and
-`review prepare`. `setup --read-only` is a no-write preview.
+`review prepare`. `setup --read-only` and `backup protect --read-only` are no-write previews.
 
 Separately enabled local diagnostics may append a log for these inspections,
 except `doctor` or any invocation with explicit `--read-only`. Common logging
@@ -299,7 +301,7 @@ or business state. See [Local diagnostic logging](#local-diagnostic-logging).
 
 Write commands other than `setup` require current initialized state. They
 never initialize or migrate implicitly. `setup` is the only initializer and
-migrator. `--read-only` rejects a write form before a business write.
+migrator. Except these two previews, `--read-only` rejects a write form before a business write.
 
 Ordinary Task/evidence updates write only under the governed project's
 canonical `.taskgov/`, not the physical Skill or retired package-local state.
@@ -311,6 +313,36 @@ Business writes revalidate their current basis and save atomically. Exceptions
 with a durable completed prefix are documented under [setup](#setup) and
 [Runner Plan actions](#runner-plan-actions). Maintenance warnings never undo a successful
 business write; see [Internal Continuity Boundary](#internal-continuity-boundary).
+
+<a id="explicit-backup-protection"></a>
+
+## `backup protect`
+
+Only after explicit maintenance authorization, invoke `backup protect --repo <project> --json`.
+First use the same command with `--read-only` to inspect without writes.
+There are no other options, alternate paths or live-restore mode. `--records-only`
+rejects this operation. It is not a normal Task step, Setup, policy change or worker request.
+
+The synchronous operation protects current core and present Usage independently,
+validates private copies, and rehearses recovery through the real repository.
+Success means publication at the returned relative `location`, beneath
+`.taskgov/protection/`, outside routine rotation. Usage absence is explicit;
+present-but-unavailable Usage or any failed recovery prevents complete success.
+Sources, normal generations, settings, and operational stores are unchanged.
+Captured points exclude later writes; they do not claim a common core/Usage instant.
+Restoring live state requires separate authorization and is not supported here.
+
+Data on preview/success is exactly `status` (`preview`/`succeeded`), `accepted`,
+`completed`, `capture_id`, `location`, `components` (`core`, `usage`), `recovery`,
+`coverage=independent_snapshots`, `live_restore=not_performed`.
+Preview has `completed=false`, null identity/location, planned components and
+`recovery=not_attempted`; success has `completed=true`, protected core, protected
+or absent Usage and `recovery=passed`. Acceptance alone never proves completion.
+Failure (exit 2) has exactly `status=failed`, `accepted`, `completed=false`,
+`recovery=not_confirmed`, `private_stage=may_remain`, `live_restore=not_performed`.
+One sanitized error reports preflight/admission/busy failure or `protection_failed`.
+An unpublished `.pending-*` directory is not a capture. Retained captures are
+not automatically pruned; deletion is a separately authorized operation.
 
 <a id="setup"></a>
 

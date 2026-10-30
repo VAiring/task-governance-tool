@@ -175,6 +175,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_common_options(doctor_parser)
 
+    backup_parser = subparsers.add_parser("backup", help="explicit maintenance protection")
+    backup_subparsers = backup_parser.add_subparsers(dest="backup_command", required=True)
+    protect_parser = backup_subparsers.add_parser("protect",
+        help="protect core/Usage and verify isolated recovery; --read-only previews without writing")
+    add_common_options(protect_parser)
+
     task_parser = subparsers.add_parser("task", help="task commands")
     task_subparsers = task_parser.add_subparsers(dest="task_command")
     task_add_parser = task_subparsers.add_parser("add", help="register an explicit task")

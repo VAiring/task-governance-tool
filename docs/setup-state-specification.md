@@ -819,6 +819,48 @@ source stays open through replacement under the artifact lock. Private-stage
 copy and generation restore use the same initial-source release boundary while
 preserving their existing identity/recovery observations and publication rules.
 
+### Explicit Database Protection
+
+`backup protect` is a synchronous, explicit maintenance operation, independent
+of routine backup opt-in. It admits the current canonical binding, physical
+package and paths and effective Git ignore. It never initializes, migrates,
+repairs, changes configuration, or writes a live database. `--read-only`
+performs admission and reports a plan without creating artifacts. The closed
+[CLI result](../task-governance-tool/references/cli_contracts.md#explicit-backup-protection)
+separates accepted requests from completed protection.
+
+The resolver owns `.taskgov/protection/<capture-id>/`; generated IDs and names
+are tool-owned. Existing captures are never replaced or pruned by ordinary
+backup. Links, reparse points and multiple-linked source files are refused.
+Core and present Usage are separately consistent SQLite snapshots, with separate
+capture intervals. An existing unavailable/invalid Usage store is a failure,
+not absence. Readers close before private full validation or recovery work;
+busy/locked copying fails without indefinite retry. Ordinary writes after a
+snapshot are outside its coverage. Source replacement or binding/schema drift
+prevents complete publication.
+
+The core is sealed as a unique managed-format generation that is newer than
+all embedded generations. Its timestamp is actual UTC; unprovable ordering
+fails instead of fabricating time. This generation is never registered in the
+live ledger. A private inbox uses the real managed recovery selector and
+normalizer. It imports the candidate, removes unmatched older generation rows
+and resets derived Viewer state only in the restored copy. All other core
+business rows must compare equal. Present Usage is separately restored and
+reconciled against that core; missing anchors remain unknown/unbound.
+The original protected components do not inherit proof from normalized outputs.
+
+Only after validation, rehearsal and cleanup does publication write the manifest
+last and rename the private directory without replacement. Failure may retain
+an unpublished `.pending-*` directory; it is never accepted protection.
+The closed `taskgov-protection-v1` manifest retains capture identity, project/
+binding, package-manifest digest, validation-rules version, generation metadata,
+component presence/schema/capture interval/physical identity/size/SHA-256 and
+validation result, plus the verification-record filename/digest. It contains
+no raw rows, SQL, logs or secrets. Operational stores, host effects and later
+writes are explicitly excluded. Recovery proof never starts workers, replays
+commit/send/registration, or proves current Task completion. Live restore is
+a separate explicitly authorized operation, not an option of this command.
+
 ### Optional Feature Selection
 
 After core setup, the noninteractive CLI accepts any subset of

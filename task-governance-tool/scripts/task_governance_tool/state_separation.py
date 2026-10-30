@@ -230,7 +230,7 @@ def inspect_separation(
         inspect_physical_directory(state_root)
         names = set()
         for entry in state_root.iterdir():
-            if entry.name not in {"taskgov-state.lock", "current", ".state-separation", "diagnostics"}:
+            if entry.name not in {"taskgov-state.lock", "current", ".state-separation", "diagnostics", "protection"}:
                 raise SeparationError()
             names.add(entry.name)
             if entry.name == "taskgov-state.lock":

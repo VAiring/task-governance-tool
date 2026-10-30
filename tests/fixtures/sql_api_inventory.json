@@ -113,6 +113,13 @@
         "fetchone": 2
       }
     },
+    "protection_repository.py": {
+      "kind": "observed_connection",
+      "attributes": {
+        "execute": 5,
+        "fetchone": 1
+      }
+    },
     "review_answer_collection_repository.py": {
       "kind": "observed_connection",
       "attributes": {

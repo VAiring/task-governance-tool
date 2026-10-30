@@ -3,7 +3,7 @@
 Status: the immutable published product remains v0.10.0/schema v16/Viewer v4
 sources v5-v16/20 leaves; its identity is fixed in `docs/release-install.md`.
 The current unpublished candidate is v0.13.0 with SQLite schema v34, Viewer
-snapshot v4 accepting source schemas v5-v34, and 23 public command leaves. Its
+snapshot v4 accepting source schemas v5-v34, and 24 public command leaves. Its
 active implementation includes tool-owned Verification Receipt subjects,
 versioned Review provenance, immutable Evidence References and completion
 Bundles, deterministic Evidence JSON, and the explicitly opted-in trusted-local
@@ -497,8 +497,11 @@ The parser implements the [formal command inventory](specification.md#command-in
 The [standalone CLI guide](../task-governance-tool/references/cli_contracts.md#invocation-and-public-inventory)
 also retains a complete inventory for the distributed package.
 
-There are no public `db`, `self`, `web`, export, repair, maintenance, backup,
-restore, relocation, or adapter commands. Public `--db` is rejected. Internal
+The explicit `backup protect` operation follows the
+[protection publication boundary](setup-state-design.md#explicit-protection-publication).
+There are no public `db`, `self`, `web`, export, repair, general maintenance,
+ordinary-backup control, live restore, relocation, or adapter commands.
+Public `--db` is rejected. Internal
 path injection remains available only to repositories, services, and tests.
 `--repo` defaults to the current directory because a governed project need not
 be a Git repository; runtime never silently re-roots it to a Git worktree.

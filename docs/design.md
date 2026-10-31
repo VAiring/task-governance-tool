@@ -687,6 +687,38 @@ content validation. Its short metadata writer admits only the consumed control
 basis and performs no copy, full audit, artifact scan or child launch. This
 does not change normal Task writer admission or Setup/recovery protections.
 
+### Structural Read Lifetime
+
+`sqlite_admission.py` composes repository structural readers inside a lexical
+scope. `_inspect_database`, `_admit_current_database`, current structure/Task
+read admission and standalone schema admission own their scopes; nested calls
+join, and exit discards all facts. The retained connection may outlive that
+scope, but its facts do not. Later Task/domain composition remains independently
+validated until its own consumer is explicitly converted.
+
+`same_read_fact` accepts only immutable values produced by the decorated
+repository functions: schema version, fully validated migration-marker set,
+complete current schema contract and frozen project/binding snapshot. It never
+caches domain verdicts, caller proofs or failed validations. Unknown injected
+connections and reads outside an active transaction validate afresh.
+
+Core openers use `AdmissionConnection`, preserving the file-lifetime guard and
+native SQLite semantics. Only an active admission scope installs its temporary
+native trace callback. A bounded prefix distinguishes known read statements;
+all other statements conservatively expire the epoch, including transaction
+controls through cursors, scripts and implicit commits. No SQL text is retained
+or logged. Existing caller trace callbacks are forwarded and restored, including
+replacement during admission. Reuse also checks native transaction presence,
+write count, schema cookie, query-only/FK controls and row factory. Native copy
+or deserialize invalidates its destination. Separate connections cannot share
+facts, and no savepoint owned by a consumer is released to test validity.
+
+This facility neither opens nor extends a transaction. Fresh writers retain
+`BEGIN IMMEDIATE` and revalidation; external effects end the old read before
+their guard. Full audit is the default for unconverted consumers. Ordinary
+project control reads omit only the blanket completion-cycle count; full
+admission retains it, including doctor/recovery's common-entry composition.
+
 ### Migration Sequence
 
 Current detail is owned by the [Database persistence and migration design](database-design.md#migration-sequence).
@@ -1022,9 +1054,11 @@ objects, and defers file I/O until connection cleanup; ordinary scopes publish a
 exit, while admitted long waits may use the bounded intermediate checkpoints.
 
 Shared connection factories enable diagnostic observation only when a
-collector is active. Disabled connections retain the ordinary sqlite3 factory
-on Windows; POSIX product connections retain the separate
-[file-lifetime guard](#journal-and-connection-rules) without diagnostic events.
+collector is active. Core connections also support the independent
+[structural read lifetime](#structural-read-lifetime), without enabling
+diagnostic observation or output. Other disabled connections retain the native
+factory on Windows and the [file-lifetime guard](#journal-and-connection-rules)
+on POSIX.
 Connection and default Cursor execution, commit, rollback, close and context
 exit delegate to the original driver exactly once. In particular, context
 exit is observed around `sqlite3.Connection.__exit__`, not reimplemented with

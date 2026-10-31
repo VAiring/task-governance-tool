@@ -132,6 +132,30 @@ are explicitly domain/audit edges, not unclassified ordinary Task validators.
 
 ### Core And Task Regression Anchors
 
+The common-entry cutover has these concrete caller dispositions. Unlisted
+domain composition still belongs to its assigned later unit; defaults remain
+full admission, not an inference from a command label.
+
+| Family | Common-entry replacement and retained edges |
+|---|---|
+| C-01 | `sqlite_connection` core openers retain FK enforcement, journal preflight and native transactions. `AdmissionConnection` adds only lexical epoch observation; diagnostic and POSIX file-lifetime owners remain separate. |
+| C-02/C-03 | `_resolve_fixed` may pass explicit operation-local mode into `_inspect_database`; only current ordinary primary entry omits quick/FK scans. `_resolve_legacy`, `resolve_retained_source_snapshot`, `_classify_recovery_backups`, `recovery_database_matches_observation`, backup validation, old schemas, doctor and Setup keep full physical/FK checks. `_physical_integrity_ok`, `_reuse_read_integrity` and `_schema20_integrity_checks` remain audit helpers. |
+| C-04/C-05 | `current_schema_version`, `_validated_migration_versions` and `_validate_current_schema_contract` share immutable successful facts only within `admission_scope`. Exact all-marker, owned-definition, column and FK checks remain. Direct standalone and unknown/native injected connections validate fresh. `_Schema33OwnedValidation` remains the narrower ledger/Bundle composition, not a new global certificate. |
+| C-06 | `_read_project_binding_snapshot` shares its frozen state/lineage inside the same scope. `_inspect_database`, `_admit_current_database` and Task-read admission reuse that fact; `_validate_target_binding` still compares each actual target. Independent backup binding checks and later effect/writer snapshots remain fresh. |
+| C-07 | `_validate_current_project_rows` keeps control validation. Explicit local structure/admission and Task-read callers omit cycle COUNT; global default retains it. Resolver doctor/recovery explicitly retain full project-history equality even when their domain audit is composed later. Evidence publication's selected generation checks are unchanged. |
+| C-08 | Scope owners are `_inspect_database`, `validate_current_database_structure`, `_admit_current_database`, `_validate_current_task_read_database` and standalone schema validation. They do not cache Runner, review, ownership, note or Task verdicts. CLI retained-read and later consumer composition still establish fresh scopes; IV-T/IV-R own further composition. Runner Plan actions and other unconverted global consumers remain global. |
+
+Removing C-02 exposes one consumed relation formerly supplied by the global
+FK scan: Handoff list/show must batch-check returned source Task/project
+identities. Record retains selected Task/canonical replay checks, and withdraw
+retains selected ownership. This replacement does not inspect unconsumed
+outbox rows or move general Handoff composition out of IV-T.
+
+- `tests/test_structural_read_admission.py`: ordinary/full/doctor/recovery modes,
+  same-read history/owned/binding sharing, native cursor/script/context controls,
+  transaction restart, write/DDL/binding/control invalidation, independent
+  connections, fresh writer drift and VM work under unrelated-row growth.
+
 - `tests/test_schema_admission_reuse.py`: one owned fingerprint per current
   admission, standalone helpers independent, writer fresh after preflight, failed
   and successful result expiration, connection/DDL drift and source reentry.

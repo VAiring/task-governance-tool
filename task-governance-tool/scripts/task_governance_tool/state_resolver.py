@@ -17,6 +17,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
+from .sqlite_admission import admission_scope
 from .viewer_projection_repository import ProjectionState
 
 from task_governance_tool.strict_path import resolve_strict_path
@@ -1400,6 +1401,7 @@ def _database_target(
 
 
 @_reuse_read_integrity(doctor_only=True)
+@admission_scope
 def _inspect_database(
     path: Path,
     *,
@@ -1463,7 +1465,12 @@ def _inspect_database(
                     fingerprint = hash_physical_file(path, root=path.parent)
                     reuse_validated = validation_reuse._matches(fingerprint)
             measurement.mark('reused' if reuse_validated else 'revalidated')
-            if not reuse_validated:
+            ordinary_current = (
+                operation_local and version == SCHEMA_VERSION
+                and doctor_current_root is None and not classify_recovery_content
+                and content_proof is None
+            )
+            if not reuse_validated and not ordinary_current:
                 if (not _physical_integrity_ok(connection, "quick_check")
                         or not _physical_integrity_ok(connection, "foreign_key_check")):
                     raise _ResolverFailure("project_state_unreadable")
@@ -1475,6 +1482,7 @@ def _inspect_database(
                         connection,
                         stored.project_id,
                         review_task_id=review_task_id,
+                        _full_project_audit=not ordinary_current,
                         # Recovery's exact-schema audit below runs on this very
                         # connection/snapshot. Do not duplicate its row traversal.
                         # A matching current Doctor read below performs the exact

@@ -10,6 +10,7 @@ from contextlib import closing
 from dataclasses import dataclass
 from pathlib import PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING, Any
+from task_governance_tool.sqlite_admission import same_read_fact
 
 from task_governance_tool.sqlite_connection import (
     StorageError,
@@ -270,6 +271,7 @@ def validate_cleanup_inventory(
     return inventory, fingerprint
 
 
+@same_read_fact
 def _read_project_binding_snapshot(
     connection: sqlite3.Connection,
     *,

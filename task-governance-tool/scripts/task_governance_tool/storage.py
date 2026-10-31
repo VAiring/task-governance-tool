@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from task_governance_tool.sqlite_admission import admission_scope, same_read_fact
 
 if TYPE_CHECKING:
     from task_governance_tool.evidence_projection import _RenderedProjection
@@ -1165,6 +1166,7 @@ def column_exists(connection: sqlite3.Connection, table_name: str, column_name: 
     return column_name in {str(row["name"]) for row in rows}
 
 
+@same_read_fact
 def current_schema_version(connection: sqlite3.Connection) -> int:
     if not table_exists(connection, "schema_migrations"):
         return 0
@@ -1217,7 +1219,8 @@ _MIGRATION_NAMES = (
 )
 
 
-def _validated_migration_versions(connection: sqlite3.Connection) -> set[int]:
+@same_read_fact
+def _validated_migration_versions(connection: sqlite3.Connection) -> frozenset[int]:
     """Read every marker without coercion, repair or timestamp-order inference."""
     versions: set[int] = set()
     for row in connection.execute("SELECT version,name,applied_at FROM schema_migrations"):
@@ -1231,7 +1234,7 @@ def _validated_migration_versions(connection: sqlite3.Connection) -> set[int]:
         except StorageError:
             raise _unreadable_project_state() from None
         versions.add(version)
-    return versions
+    return frozenset(versions)
 
 
 def missing_migration_versions(
@@ -12001,6 +12004,8 @@ def _fetch_bounded_projection_rows(
 
 
 
+@admission_scope
+@same_read_fact
 def _validate_current_schema_contract(
     connection: sqlite3.Connection,
 ) -> int:
@@ -12223,6 +12228,8 @@ def validate_task_review_storage(connection, *, project_id, task_id, source_sche
 def _validate_current_project_rows(
     connection: sqlite3.Connection,
     project_id: str,
+    *,
+    full_audit: bool = True,
 ) -> None:
     if read_project_maintenance(connection, project_id) is None:
         raise _unreadable_project_state()
@@ -12233,6 +12240,8 @@ def _validate_current_project_rows(
             connection,
             project_id=project_id,
         )
+        if not full_audit:
+            return
         cycle_count = connection.execute(
             "SELECT COUNT(*) FROM task_completion_cycles WHERE project_id = ?",
             (project_id,),
@@ -12245,19 +12254,22 @@ def _validate_current_project_rows(
         raise _unreadable_project_state() from exc
 
 
+@admission_scope
 def validate_current_database_structure(
     connection: sqlite3.Connection,
     project_id: str,
     *,
     review_task_id: str | None = None,
     operation_local: bool = False,
+    _full_project_audit: bool | None = None,
 ) -> int:
     """Require complete current-schema rows without checking a caller basis."""
     admitted = _validate_current_schema_structure(
         connection, review_task=(project_id, review_task_id) if review_task_id is not None else None,
         operation_local=operation_local,
     )
-    _validate_current_project_rows(connection, project_id)
+    _validate_current_project_rows(connection, project_id,
+        full_audit=not operation_local if _full_project_audit is None else _full_project_audit)
     return admitted.version
 
 
@@ -12284,6 +12296,7 @@ def validate_current_database(
     ).version
 
 
+@admission_scope
 def _admit_current_database(
     connection: sqlite3.Connection,
     target: DatabaseTarget,
@@ -12299,7 +12312,7 @@ def _admit_current_database(
     )
     binding = read_project_binding_state(connection)
     _validate_target_binding(binding, target)
-    _validate_current_project_rows(connection, binding.project_id)
+    _validate_current_project_rows(connection, binding.project_id, full_audit=not operation_local)
     return admitted
 
 
@@ -12324,6 +12337,7 @@ def capture_current_evidence_projection(
     )
 
 
+@admission_scope
 def _validate_current_task_read_database(
     connection: sqlite3.Connection,
     target: DatabaseTarget,
@@ -12333,7 +12347,7 @@ def _validate_current_task_read_database(
     version = _validate_current_schema_contract(connection)
     binding = read_project_binding_state(connection)
     _validate_target_binding(binding, target)
-    _validate_current_project_rows(connection, binding.project_id)
+    _validate_current_project_rows(connection, binding.project_id, full_audit=False)
     return version
 
 

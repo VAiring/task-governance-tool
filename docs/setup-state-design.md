@@ -94,16 +94,21 @@ Task and review/verification adapters select storage's internal
 Completion/check and review snapshots supply their admitted Task ID for own
 review storage; Packet and retained hook/event snapshots validate that Task
 inside the existing read once selected. Only activated fixed-primary inspection
-forwards these choices. Physical integrity/foreign-key checks, package/layout,
-identity/binding and structural admission retain their scope. Setup, doctor,
-recovery and legacy/transition inspection remain global.
+forwards these choices. Current ordinary entry skips physical/FK full scans;
+package/layout, journal, identity/binding and structural admission remain.
+The resolver derives this mode only for an explicitly operation-local current
+primary with no doctor or recovery classification. Setup, doctor, recovery and
+legacy/transition inspection retain full physical/FK admission, even when the
+resolver avoids duplicating their later same-snapshot domain audit.
 
 A reviewer hook may still carry its one call-local `DatabaseValidationReuse`
 object through existing admission signatures. Operation-local reads retain
 only its physical device/inode continuity pin, reject a known replacement,
 and discard any global-validation proof. They neither hash the database nor
-skip physical, schema, binding or selected-data validation. No rows, connection
-or permission are cached, and the object is cleared on failure and hook exit.
+skip schema, binding or selected-data validation. That object caches no rows,
+connection or permission and is cleared on failure and hook exit. Independent
+[same-read structural sharing](design.md#structural-read-lifetime) ends at its
+lexical admission boundary; it is not a physical-file certificate.
 
 The internal optional proof remains applicable only to globally admitted
 retained reads of an activated fixed primary. On Windows it compares complete

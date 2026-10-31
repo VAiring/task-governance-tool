@@ -1313,8 +1313,10 @@ an incomplete prefix does not justify a guessed transaction boundary.
 Only closed labels, code-owned origins, generated correlation identifiers and
 bounded numerical measurements/error codes reach the buffer. SQL, bindings,
 row values, Task/Contract text, command arguments, paths, environment values,
-exception messages and stack contents are never logged. No SQLite SQL trace
-callback is installed. Diagnostics do not change busy timeouts, transactions,
+exception messages and stack contents are never logged. Diagnostic logging
+installs no SQLite SQL trace callback. The separate transient callback for
+[structural read lifetime](design.md#structural-read-lifetime) is not a logger
+and retains no SQL or values. Diagnostics do not change busy timeouts, transactions,
 retries, schema, public errors or command output.
 
 The sink requires physical non-link directories and marker, and effective

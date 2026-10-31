@@ -133,8 +133,8 @@ class DatabaseValidationReuseTests(unittest.TestCase):
                 mock.patch.object(resolver, "connect_readonly", side_effect=tracked):
             self.admitted(operation_local=True)
         hashing.assert_not_called()
-        self.assertEqual(statements.count("PRAGMA quick_check"), 1)
-        self.assertEqual(statements.count("PRAGMA foreign_key_check"), 1)
+        self.assertEqual(statements.count("PRAGMA quick_check"), 0)
+        self.assertEqual(statements.count("PRAGMA foreign_key_check"), 0)
         self.assertTrue(self.validated.call_args.kwargs["operation_local"])
         # Returning to global admission must validate again, even unchanged bytes.
         self.admitted()

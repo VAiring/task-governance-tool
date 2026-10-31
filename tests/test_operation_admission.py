@@ -356,7 +356,7 @@ class PublicHandoffAdmissionTests(unittest.TestCase):
     def test_structural_faults_remain_fatal_for_all_leaves(self):
         handoff = self.record()
         original = self.install.db_path.read_bytes()
-        for fault in ("schema", "history", "foreign_key", "binding"):
+        for fault in ("schema", "history", "binding"):
             with self.subTest(fault=fault):
                 self.install.db_path.write_bytes(original)
                 with closing(sqlite3.connect(self.install.db_path)) as connection:
@@ -364,8 +364,6 @@ class PublicHandoffAdmissionTests(unittest.TestCase):
                         connection.execute("DROP INDEX idx_handoff_project_state_created")
                     elif fault == "history":
                         connection.execute("UPDATE schema_migrations SET name='invalid' WHERE version=1")
-                    elif fault == "foreign_key":
-                        connection.execute("UPDATE handoff_records SET source_task_id='tg_task_absent'")
                     else:
                         connection.execute("UPDATE project_meta SET canonical_path_hash=?", ("0" * 64,))
                     connection.commit()
@@ -375,6 +373,20 @@ class PublicHandoffAdmissionTests(unittest.TestCase):
                              ("handoff", "withdraw", handoff["handoff_id"], "--reason", "User handled")):
                     self.invoke(*args, succeeds=False)
                     self.assertEqual(self.install.db_path.read_bytes(), before)
+
+    def test_consumed_foreign_source_rejected_without_auditing_unconsumed_handoffs(self):
+        handoff = self.record()
+        with closing(sqlite3.connect(self.install.db_path)) as connection:
+            connection.execute("UPDATE handoff_records SET source_task_id='tg_task_absent'")
+            connection.commit()
+        before = self.install.db_path.read_bytes()
+        for args in (("handoff", "list"), ("handoff", "show", handoff["handoff_id"]),
+                     ("handoff", "record", self.task_id, "--summary", "Bounded follow-up"),
+                     ("handoff", "withdraw", handoff["handoff_id"], "--reason", "User handled")):
+            self.invoke(*args, succeeds=False)
+            self.assertEqual(self.install.db_path.read_bytes(), before)
+        # A new record does not consume the unrelated broken outbox row.
+        self.invoke("handoff", "record", self.task_id, "--summary", "New follow-up")
 
     def test_record_rejects_its_selected_contract_pointer(self):
         with closing(sqlite3.connect(self.install.db_path)) as connection:

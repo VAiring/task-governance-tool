@@ -290,6 +290,21 @@ def _row_to_handoff(
     return {field: row[field] for field in fields}
 
 
+def _validate_handoff_sources(connection, rows) -> None:
+    """Check only consumed source identities, without source Task histories."""
+    if not rows:
+        return
+    expected = {(row["project_id"], row["source_task_id"]) for row in rows}
+    task_ids = sorted({task_id for _, task_id in expected})
+    placeholders = ",".join("?" for _ in task_ids)
+    actual = connection.execute(
+        f"SELECT project_id, task_id FROM tasks WHERE task_id IN ({placeholders})",
+        task_ids,
+    ).fetchall()
+    if {(row["project_id"], row["task_id"]) for row in actual} != expected:
+        raise HandoffError("internal_error", "stored handoff source identity is invalid")
+
+
 def _idempotency_key(
     *,
     project_id: str,
@@ -479,6 +494,7 @@ def list_handoffs(
     ).fetchall()
     total_matching = int(rows[0]["total_matching"]) if rows else 0
     handoffs = [_row_to_handoff(row, compact=True) for row in rows]
+    _validate_handoff_sources(connection, rows)
     return ListHandoffsResult(
         handoffs=handoffs,
         count=len(handoffs),
@@ -505,7 +521,9 @@ def show_handoff(
     ).fetchone()
     if row is None:
         raise HandoffError("not_found", "handoff was not found")
-    return _row_to_handoff(row)
+    handoff = _row_to_handoff(row)
+    _validate_handoff_sources(connection, [row])
+    return handoff
 
 
 def withdraw_handoff(

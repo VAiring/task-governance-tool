@@ -419,6 +419,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_state_resolver_validation_reuse",
         "test_state_separation",
         "test_state_transition_primitives",
+        "test_structural_read_admission",
         "test_task_note_bodies",
         "test_task_ownership_install",
         "test_task_ownership_migration",

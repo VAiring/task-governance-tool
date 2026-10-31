@@ -76,13 +76,13 @@ def operational_sqlite_error(
 
 
 def connect(db_path: Path) -> sqlite3.Connection:
-    return _configure_owned(connect_traced(db_path, access="create", file_guard_path=db_path))
+    return _configure_owned(connect_traced(db_path, access="create", file_guard_path=db_path, admission=True))
 
 
 def connect_existing(db_path: Path, *, timeout: float = 5.0) -> sqlite3.Connection:
     """Open an existing database read/write without allowing SQLite to create it."""
     uri = db_path.resolve(strict=False).as_uri() + "?mode=rw"
-    return _configure_owned(connect_traced(uri, uri=True, timeout=timeout, access="readwrite", file_guard_path=db_path))
+    return _configure_owned(connect_traced(uri, uri=True, timeout=timeout, access="readwrite", file_guard_path=db_path, admission=True))
 
 
 def _configure_owned(connection):
@@ -103,7 +103,7 @@ def connect_readonly(db_path: Path, *, timeout: float = 5.0) -> sqlite3.Connecti
         )
     uri = db_path.resolve(strict=False).as_uri() + "?mode=ro"
     try:
-        connection = connect_traced(uri, uri=True, timeout=timeout, access="readonly", file_guard_path=db_path)
+        connection = connect_traced(uri, uri=True, timeout=timeout, access="readonly", file_guard_path=db_path, admission=True)
     except sqlite3.Error as exc:
         raise operational_sqlite_error(
             exc,

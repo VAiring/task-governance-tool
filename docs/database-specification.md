@@ -101,16 +101,21 @@ Handoff record/list/show/withdraw use this structural admission as well.
 Their consumed-data and writer checks are defined by the
 [Handoff outbox](task-operation-specification.md#handoff-outbox); entering an
 outbox operation does not audit unrelated review, Runner, ownership-transition
-or note history. Physical/FK, schema/history and project/binding checks remain.
+or note history. Schema/history, project/binding, native locking and FK
+enforcement remain. Consumed Handoff source identities must exist in their
+own project; checking those identities does not traverse source Task histories.
 
-Within one current schema admission, the complete owned-definition validation
-is shared by the Evidence ledger and Bundle schema checks. Their individual
-column, foreign-key and relationship checks remain required. Standalone schema
-helpers establish their own complete validation; no result survives the
-admission call or crosses a connection, transaction or DDL boundary. Migration
-history, additional owned attachments and migration temporary-object rejection
-remain unchanged. Separate migration/reentry and publication stages retain
-their independent validations.
+Within one lexical structural admission and actual transaction epoch, schema
+version, every validated migration marker, complete owned definitions and
+validated project/binding facts may be shared. Evidence ledger and Bundle
+schema checks retain their individual column, foreign-key and relationship
+checks. Only private repository-produced immutable facts are reused; no Task,
+review verdict or physical-audit result is implied. Standalone helpers establish
+their own basis. Exit, connection replacement, transaction end/restart, local
+mutation, DDL or binding/source replacement expires it. Preflight facts never
+authorize a fresh writer. Migration history, attached objects and temporary
+object rejection remain complete, including every earlier marker's name/type/time.
+Separate migration/reentry and publication stages retain independent validation.
 
 Every consumed Task row and Contract pointer, current ownership/execution
 relationship, note body, checkpoint and evidence relationship retains its
@@ -130,8 +135,13 @@ and whole-project consumers retain their applicable global validation.
 
 Required cross-Task predicates remain: same-lane predecessor status and
 ordering, combined session execution/completion slots, and foreign-link
-rejection for data actually consumed. Physical integrity/foreign-key checks
-remain database-wide at resolver admission. Schema, journal, binding and
+rejection for data actually consumed. Current ordinary resolver entry performs
+no database-wide physical or foreign-key scan, and common ordinary control
+admission does not compare Evidence generation to a count of every completion
+cycle. Consumed controls remain typed and validated; Evidence publication owns
+its targeted generation check. Explicit full admission retains the blanket
+cycle equality. Setup, doctor, old-schema, migration and recovery admission
+retain their applicable physical/FK checks. Schema, journal, binding and
 structural faults still fail closed. There is no caller-controlled scope,
 persisted/cross-operation proof or automatic history repair.
 
@@ -157,8 +167,8 @@ newly saved review results. It reads no unrelated Task or history body and does
 not certify eligibility; relevant changes request existing fresh admission.
 Initial baseline capture likewise requires fresh admission before light polling.
 This avoids periodic whole-database physical, foreign-key, schema and
-migration-history checks; it does not waive them when an operation actually
-enters the resolver. Initial admission,
+migration-history checks; entry uses the structural versus explicit-audit
+boundary above. Initial admission,
 necessary result collection, completion decisions, recovery and effect guards
 retain their current fresh validation. An observation is neither a reusable
 admission proof nor authority to mutate Task state.
@@ -284,8 +294,10 @@ completion's review admission, even when those Tasks precede the completing Task
 The operation-local boundary above also excludes unrelated non-review history;
 schema/object/migration history, project binding, selected ownership and
 completion-basis checks remain.
-Physical SQLite integrity and foreign-key checks remain database-wide; this
-exception concerns review semantics, not admission of physically invalid storage.
+Physical SQLite and foreign-key audits follow the
+[operation-local boundary](#operation-local-admission): ordinary completion
+does not run database-wide scans, while explicit full-audit consumers retain
+their required checks. FK enforcement and consumed relationship validation remain.
 The scoped review checks run again after acquiring the completion writer; no
 cross-operation validation cache is introduced.
 Within one selected review read or writer transaction for one Task, repeated
@@ -294,7 +306,7 @@ immutable authority and manifest originals. Each mutable source and relation
 remains freshly validated; no gate, ownership, resolution or Task projection is
 reused. Scope exit, a transaction restart, a different connection/Task, or schema
 change invalidates the borrow. This changes validation repetition, not the
-selected graph, physical integrity checks or fresh completion writer admission.
+selected graph, applicable audit boundary or fresh completion writer admission.
 After native cycle insertion, selected-cycle Evidence and Bundle validation
 checks that cycle's persisted sources instead of replaying all Tasks' Bundles.
 

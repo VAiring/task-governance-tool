@@ -14,6 +14,7 @@ from time import perf_counter_ns
 from .debug_log_values import plain_fields
 from . import sqlite_sql_trace as sql_trace
 from .sqlite_file_access import GuardedConnection, connect_guarded
+from .sqlite_admission import AdmissionConnection
 
 
 _ROLES = frozenset({"core", "numerical", "operational", "backup", "other"})
@@ -137,7 +138,7 @@ def _overhead(collector, started, native_elapsed, previous):
 _ObservedCursor = sql_trace._ObservedCursor
 
 
-class _ObservedConnection(GuardedConnection):
+class _ObservedConnection(AdmissionConnection):
     def _bind_observer(self, collector, connection_id, *, converters_possible=True):
         self._diagnostic_collector = collector
         self._diagnostic_id = connection_id
@@ -295,19 +296,22 @@ class _ObservedConnection(GuardedConnection):
         return self._observe(lambda: native(*args), phase, context_exit=True, transaction_method=True)
 
 
-def connect_traced(database, *args, access="readwrite", role=None, file_guard_path=None, **kwargs):
+def connect_traced(database, *args, access="readwrite", role=None, file_guard_path=None, admission=False, **kwargs):
     """Keep product file lifetime protection independent of diagnostic opt-in."""
     return connect_guarded(file_guard_path, lambda guarded: _connect_traced(
-        database, *args, access=access, role=role, guarded=guarded, **kwargs))
+        database, *args, access=access, role=role, guarded=guarded, admission=admission, **kwargs))
 
 
-def _connect_traced(database, *args, access="readwrite", role=None, guarded=False, **kwargs):
+def _connect_traced(database, *args, access="readwrite", role=None, guarded=False, admission=False, **kwargs):
     """Use the native opener unchanged when no diagnostic scope is active.
 
     A supplied SQLite factory remains authoritative and is not instrumented.
     Shared operational openers do not supply one. No sink I/O occurs here.
     """
     collector, connection_id = None, 0
+    native_factory = {"factory": AdmissionConnection} if admission else ({"factory": GuardedConnection} if guarded else {})
+    if "factory" in kwargs or len(args) >= 5:
+        native_factory = {}
     try:
         overhead_started = perf_counter_ns()
         from task_governance_tool.sqlite_diagnostics import current_collector
@@ -324,12 +328,12 @@ def _connect_traced(database, *args, access="readwrite", role=None, guarded=Fals
     except BaseException:
         collector, connection_id = None, 0
     if collector is None or not connection_id:
-        return sqlite3.connect(database, *args, **({"factory": GuardedConnection} if guarded else {}), **kwargs)
+        return sqlite3.connect(database, *args, **native_factory, **kwargs)
     try:
         started = perf_counter_ns()
     except BaseException:
         # Retain the outstanding registration, suppressing any partial flush.
-        return sqlite3.connect(database, *args, **({"factory": GuardedConnection} if guarded else {}), **kwargs)
+        return sqlite3.connect(database, *args, **native_factory, **kwargs)
     try:
         connection = sqlite3.connect(database, *args, factory=_ObservedConnection, **kwargs)
     except BaseException as error:

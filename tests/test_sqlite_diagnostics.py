@@ -60,13 +60,15 @@ class SQLiteDiagnosticsTests(unittest.TestCase):
     def records(self):
         return [record for document in self.documents() for record in document["records"]]
 
-    def test_disabled_has_base_connection_and_no_output_or_ignore_subprocess(self):
+    def test_disabled_has_no_observer_output_or_ignore_subprocess(self):
         self.marker.unlink()
         with mock.patch("task_governance_tool.project_scope._state_is_ignored") as ignored:
             with self.scope() as collector, closing(connections.connect_existing(self.database)) as connection:
                 self.assertIsNone(collector)
-                from task_governance_tool.sqlite_file_access import GuardedConnection
-                self.assertIs(type(connection), GuardedConnection if os.name == 'posix' else sqlite3.Connection)
+                from task_governance_tool.sqlite_admission import AdmissionConnection
+                self.assertIs(type(connection), AdmissionConnection)
+                self.assertFalse(getattr(connection, '_admission_watching', False))
+                self.assertIsNone(getattr(connection, '_diagnostic_collector', None))
                 connection.execute("BEGIN IMMEDIATE")
                 connection.rollback()
         ignored.assert_not_called()

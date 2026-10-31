@@ -93,8 +93,8 @@
     "handoffs.py": {
       "kind": "observed_connection",
       "attributes": {
-        "execute": 9,
-        "fetchall": 2,
+        "execute": 10,
+        "fetchall": 3,
         "fetchone": 5
       }
     },
@@ -393,6 +393,13 @@
       "attributes": {
         "execute": 1,
         "fetchone": 1
+      }
+    },
+    "sqlite_admission.py": {
+      "kind": "observed_connection",
+      "attributes": {
+        "execute": 3,
+        "fetchone": 3
       }
     },
     "sqlite_connection.py": {

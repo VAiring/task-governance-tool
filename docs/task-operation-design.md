@@ -541,7 +541,10 @@ initial and retry connections and withdraw's immediate writer repeat structural
 admission under the lock. Record keeps selected Task/Contract validation and
 exact-replay checks; withdraw keeps selected ownership and delivery predicates.
 List/show keep their existing query-only snapshot and full stored-row validator,
-without traversing source Task histories. Default global consumers remain
+and batch-check only the returned source Task/project identities, without
+traversing source Task histories. Record keeps its selected source and canonical
+replay identity check; withdraw keeps its selected ownership check. Unconsumed
+outbox rows are not audited when recording another handoff. Default global consumers remain
 global; no validation result crosses these connections or transactions.
 
 Schema v7 owns `handoff_records` with source Task/current Contract revision,

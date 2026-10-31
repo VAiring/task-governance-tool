@@ -22,6 +22,7 @@ from .state_paths import inspect_physical_file
 from .storage import DatabaseTarget, utc_now
 from .usage_evidence_service import repository_for
 from .viewer_projection_repository import read_state
+from .debug_log import span
 
 
 def failure():
@@ -129,7 +130,8 @@ def rehearse(target, inbox, usage_path=None):
     before = business_digest(candidate.path)
     with closing(connect_readonly(candidate.path)) as connection:
         original = read_state(connection, target.project.project_id)
-    backup.restore_managed_backup(restored, candidate)
+    with span(backup.restore_managed_backup):
+        backup.restore_managed_backup(restored, candidate)
     if business_digest(restored.db_path) != before:
         raise failure()
     control = capture.read_control(restored)
@@ -159,12 +161,15 @@ def rehearse(target, inbox, usage_path=None):
         # This restored Core is private and no longer mutated. Validate once,
         # then lend its same query-only transaction to every reconciliation step.
         # The owner closes it before rehearsal cleanup, including on failure.
-        with closing(connect_initialized_readonly(restored)) as connection:
+        with span(connect_initialized_readonly):
+            connection = connect_initialized_readonly(restored)
+        with closing(connection):
             @contextmanager
             def core_reader():
                 yield connection
             # Real reconciliation uses exact anchors. Missing restored events or
             # executions remain unknown, never assigned to a different execution.
-            repository.refresh(core_reader)
+            with span(type(repository).refresh):
+                repository.refresh(core_reader)
     return {"core": "passed", "business_records": "equal", "normalization": "managed_repository_and_viewer",
             "usage": "reconciled" if usage_path is not None else "absent", "host_effects": "excluded"}

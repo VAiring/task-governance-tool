@@ -334,6 +334,7 @@ transaction専用sinkへ重複して追加しない。
 |---|---|---|
 | taskgov.py main | 呼出しprocess/thread、CLIと同期maintenanceの終了まで | 既存dispatch_stateful_commandのstate/binding成立 |
 | setup.run_setup | CLIと同一scopeを再利用。直接呼出しも1回のSetupだけ | matching resolution、またはfresh/relocationの成功した公開結果。未確定先は保存しない |
+| protection.run_protection | CLIと同一scope、明示的な実保護1回だけ | 既存project/state resolution成功後に保存を許可。copy・隔離復旧・Usage照合・cleanup・公開guard・renameの有限spanと、公開エラーへ変換する例外を1回記録する。preview・admission失敗は保存しない |
 | usage_lifecycle.collect_event | Hook process/thread、1eventだけ。元のevent時間予算を維持 | _target成功。登録のみの補助呼出しは親のadmitted scopeを再利用 |
 | review_handoff.py main | helper process/thread、1操作だけ。子CLIは独立scope | review_handoff_scope.resolve成功。子processとoperation IDを混同しない |
 | review_handoff wait-ended（互換入口） | helper process/thread、1宣言だけ | usage_lifecycle._targetの既存成功を再利用。通常ループへの追加ではない |

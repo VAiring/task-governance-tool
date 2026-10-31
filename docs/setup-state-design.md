@@ -784,6 +784,17 @@ prevents publication. Sealed component hashes are rechecked before writing
 `verification.json`, then `manifest.json`, followed by the native no-replace
 directory rename. Partial stages remain outside successful capture names.
 
+Explicit protection reuses the opted-in common CLI diagnostic scope under
+the `backup.protect` operation label. Its existing successful project/state
+resolution permits output; preview and rejected admission never do. Bounded
+spans identify copying, private restore, Usage reconciliation, cleanup and
+publication. The public handling boundary records the protected exception
+once before returning its unchanged sanitized failure. Existing SQLite failure
+events retain available numeric error codes, including after detail-buffer
+pressure. Common logger masking, capacity, ownership and close-before-flush
+rules remain controlling; no raw exception message, database value, new sink,
+retry or additional database read is introduced.
+
 The format, coverage, permission and retention contract belongs to
 [explicit DB protection](setup-state-specification.md#explicit-database-protection).
 

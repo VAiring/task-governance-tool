@@ -12,6 +12,7 @@ import secrets
 
 from . import protection_repository as repository
 from .backup import _filename
+from .debug_log import allow_output, record_exception, span
 from .no_replace import rename_no_replace
 from .state_paths import (create_physical_directory_exclusive, inspect_physical_directory,
     inspect_physical_file, path_lexically_exists, hash_physical_file,
@@ -91,7 +92,8 @@ def protect(target, root, *, package_basis, read_only=False, publication_guard=l
     staged = create_physical_directory_exclusive(stage, root=root)
     # Every path is generated here; callers cannot select sources or outputs.
     core = stage / "core.sqlite"
-    metadata, version, started, finished, core_identity = repository.copy_core(target, core)
+    with span(repository.copy_core):
+        metadata, version, started, finished, core_identity = repository.copy_core(target, core)
     if core_identity != control.database_identity:
         raise repository.failure()
     sealed_core = stage / _filename(metadata)
@@ -102,7 +104,8 @@ def protect(target, root, *, package_basis, read_only=False, publication_guard=l
     usage_file = None
     if usage_present:
         usage = stage / "taskgov-usage.sqlite"
-        usage_version, started, finished, copied_identity = repository.copy_usage(target, usage)
+        with span(repository.copy_usage):
+            usage_version, started, finished, copied_identity = repository.copy_usage(target, usage)
         if copied_identity != usage_identity:
             raise repository.failure()
         components["usage"], usage_file = _component(usage, usage_version, started, finished, usage_identity, root)
@@ -113,26 +116,30 @@ def protect(target, root, *, package_basis, read_only=False, publication_guard=l
     backups = inbox / "backups"
     create_physical_directory_exclusive(backups, root=root)
     _copy(sealed_core, backups / sealed_core.name, root)
-    proof = repository.rehearse(target, inbox, usage)
+    with span(repository.rehearse):
+        proof = repository.rehearse(target, inbox, usage)
     # Only the explicit, tool-owned inbox entries are removed. Unknown residue
     # makes cleanup fail closed and leaves an unpublished stage for diagnosis.
     paths = [backups / sealed_core.name, inbox / "taskgov.sqlite"]
     if usage is not None:
         paths.append(inbox / "taskgov-usage.sqlite")
-    remove_explicit_files_and_directories(root=root,
-        files=[hash_physical_file(path, root=root) for path in paths],
-        directories_deepest_first=[inspect_physical_directory(backups, root=root),
-                                   inspect_physical_directory(inbox, root=root)])
+    with span(remove_explicit_files_and_directories):
+        remove_explicit_files_and_directories(root=root,
+            files=[hash_physical_file(path, root=root) for path in paths],
+            directories_deepest_first=[inspect_physical_directory(backups, root=root),
+                                       inspect_physical_directory(inbox, root=root)])
     if (hash_physical_file(sealed_core, root=root) != core_file
             or usage_file is not None and hash_physical_file(usage, root=root) != usage_file):
         raise repository.failure()
-    _same_source(target, core_identity, usage_identity)
+    with span(_same_source):
+        _same_source(target, core_identity, usage_identity)
     current = repository.capture.read_control(target)
     if (current.database_identity != core_identity
             or current.binding != control.binding or current.schema_version != control.schema_version
             or current.schema_cookie != control.schema_cookie):
         raise repository.failure()
-    publication_guard()
+    with span(publication_guard):
+        publication_guard()
     verification = {"format": FORMAT, "capture_id": capture_id, "checked_at": utc_now(), **proof}
     verified = create_exclusive_durable_file(stage / "verification.json", _bytes(verification),
                                             root=root, max_bytes=MAX_MANIFEST_BYTES)
@@ -148,7 +155,8 @@ def protect(target, root, *, package_basis, read_only=False, publication_guard=l
                                   max_bytes=MAX_MANIFEST_BYTES)
     if inspect_physical_directory(root, root=boundary) != root_identity:
         raise repository.failure()
-    rename_no_replace(staged, destination, root=root)
+    with span(rename_no_replace):
+        rename_no_replace(staged, destination, root=root)
     return {**data, "status": "succeeded", "completed": True, "capture_id": capture_id,
         "location": ".taskgov/protection/" + capture_id,
         "components": {"core": "protected", "usage": "protected" if usage_present else "absent"},
@@ -175,6 +183,11 @@ def run_protection(context, script_path):
             raise StorageError(error or "project_state_unreadable", "project state is unavailable")
         target = resolution.target
         project_id = target.project.project_id
+        # Reuse the successful project/state admission. Preview stays entirely
+        # write-free, and neither diagnostics nor a failed admission can repair
+        # or admit state. The outer CLI scope owns close-before-flush.
+        if not context.read_only:
+            allow_output()
         paths = canonical_state_paths(scope.scope.skill_root, repo=scope.scope.canonical_repo)
         package = scope.scope.skill_root / "release-manifest.json"
         basis = hashlib.sha256(package.read_bytes()).hexdigest()
@@ -185,12 +198,14 @@ def run_protection(context, script_path):
             if status.status in {"modified", "unknown"} or hashlib.sha256(package.read_bytes()).hexdigest() != basis:
                 raise repository.failure()
         accepted = True
-        data = protect(target, paths.protection, package_basis=basis, read_only=context.read_only,
-                       publication_guard=publication_guard)
+        with span(protect):
+            data = protect(target, paths.protection, package_basis=basis, read_only=context.read_only,
+                           publication_guard=publication_guard)
         return CommandResult(True, "backup.protect", data, project_id,
             text="Protection preview; no writes performed." if context.read_only else
                  "Protection and isolated recovery completed: " + data["location"])
     except Exception as exc:
+        record_exception(exc)
         code = exc.code if isinstance(exc, StorageError) and exc.code in {
             "database_busy", "db_not_initialized", "migration_required", "schema_too_new",
             "project_state_unreadable", "project_relocation_required", "unsupported_journal_mode",

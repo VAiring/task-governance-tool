@@ -73,7 +73,7 @@
     "scripts/task_governance_tool/project_binding_repository.py": "sha256:69f6955bc2ec98358b36db9623812d39c1d5f82d8c683a180b91c38e12643b33",
     "scripts/task_governance_tool/project_scope.py": "sha256:57c88d0320acd1db4d330e20037a4b7f2605deaeb9714657a4c328c045c94863",
     "scripts/task_governance_tool/protection.py": "sha256:1618b2b21cc639b0a3ecf693dd79e63566f6dff5043d99374cce04c9d92561d0",
-    "scripts/task_governance_tool/protection_repository.py": "sha256:81a3da0ec9e27571b98f972bbb979b3ba013961ea7db38eec074820a53010ee3",
+    "scripts/task_governance_tool/protection_repository.py": "sha256:c61c24293a95975ff015668c332a0f4e21437b5dbf3a307e7c7ed5803d4ee52d",
     "scripts/task_governance_tool/relocation.py": "sha256:8d7ff5d7a6a8c2a587c52a688ee50a4a1b82a1b2e36e0c290083cf0c140836cc",
     "scripts/task_governance_tool/review_answer.py": "sha256:677bacc78c93aa8ae670b720c22d7e4171ea68529fd022e02892a98e52551fb2",
     "scripts/task_governance_tool/review_answer_audit.py": "sha256:0d5a11c8ed577d8ebed3767e435ca18c4b67964d53731dd8466aa371eaffbd1d",

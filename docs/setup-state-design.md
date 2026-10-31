@@ -773,7 +773,12 @@ table/column except managed generation rows, five backup pointer/outcome fields,
 the Viewer projection row and its source-generation field; those excluded
 values are instead checked against their exact required normalized values.
 Row multiset digests preserve duplicates without retaining raw data. Restored
-Usage uses the existing reconciliation repository against restored core.
+Usage uses the existing reconciliation repository against restored core. Its
+repeated steps borrow one fully validated, query-only core transaction for the
+whole reconciliation. This lexical reuse applies only after the private core's
+normalization and business-record comparison; the core is no longer mutated.
+The owner closes the read on success or failure before cleanup. No connection
+or validation proof is reused by another rehearsal or live-state operation.
 Only explicitly named private inbox entries are deleted; unexpected residue
 prevents publication. Sealed component hashes are rechecked before writing
 `verification.json`, then `manifest.json`, followed by the native no-replace

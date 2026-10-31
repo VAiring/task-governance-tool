@@ -1,9 +1,10 @@
 """Explicit protection exercises the real managed recovery repository."""
 
-from contextlib import closing
+from contextlib import closing, contextmanager
 from dataclasses import replace
 import json
 import os
+import sqlite3
 from pathlib import Path
 import tempfile
 import unittest
@@ -303,6 +304,80 @@ class ProtectionTests(unittest.TestCase):
         with mock.patch.object(protection_repository, "rehearse", side_effect=rehearse):
             self.assertTrue(self.protect(target, root)["completed"])
         self.assertEqual(observed, [None])
+
+    def test_usage_reconciliation_reuses_one_validated_core_read(self):
+        from task_governance_tool.usage_reconciliation_repository import UsageReconciliationRepository
+        target, root = self.fixture(usage=True)
+        original = UsageReconciliationRepository.refresh
+        reads = []
+        core_paths = []
+
+        def tracked_refresh(repository, reader):
+            core_paths.append(repository.path.with_name("taskgov.sqlite"))
+            @contextmanager
+            def tracked_reader():
+                with reader() as connection:
+                    reads.append(connection)
+                    self.assertTrue(connection.in_transaction)
+                    self.assertEqual(connection.execute("PRAGMA query_only").fetchone()[0], 1)
+                    yield connection
+            return original(repository, tracked_reader)
+
+        with mock.patch.object(UsageReconciliationRepository, "refresh", new=tracked_refresh), \
+                mock.patch.object(storage, "connect_initialized_readonly", wraps=storage.connect_initialized_readonly) as admitted:
+            self.assertTrue(self.protect(target, root)["completed"])
+        self.assertGreater(len(reads), 2)
+        self.assertEqual(len(core_paths), 1)
+        # Recovery also validates its normalization temporary file. Count only
+        # the restored Core admission used by Usage, preserving those checks.
+        self.assertEqual(sum(call.args[0].db_path == core_paths[0]
+                             for call in admitted.call_args_list), 1)
+        self.assertTrue(all(connection is reads[0] for connection in reads))
+        with self.assertRaises(sqlite3.ProgrammingError):
+            reads[0].execute("SELECT 1")
+
+    def test_usage_initial_core_admission_failure_prevents_publication(self):
+        from task_governance_tool.usage_reconciliation_repository import UsageReconciliationRepository
+        target, root = self.fixture(usage=True)
+        before = (target.db_path.read_bytes(), target.resolved_usage_database.read_bytes())
+        original = storage.connect_initialized_readonly
+        rejected = []
+
+        def fail_usage_admission(candidate, **kwargs):
+            if candidate.db_path.is_relative_to(root) and candidate.db_path.name == "taskgov.sqlite":
+                rejected.append(candidate.db_path)
+                raise storage.StorageError("project_state_unreadable", "injected admission failure")
+            return original(candidate, **kwargs)
+
+        with mock.patch.object(storage, "connect_initialized_readonly", side_effect=fail_usage_admission), \
+                mock.patch.object(UsageReconciliationRepository, "refresh") as refresh:
+            with self.assertRaises(storage.StorageError):
+                self.protect(target, root)
+        self.assertEqual(len(rejected), 1)
+        refresh.assert_not_called()
+        self.assertEqual(before, (target.db_path.read_bytes(), target.resolved_usage_database.read_bytes()))
+        self.assertFalse(list(root.rglob("manifest.json")))
+
+    def test_usage_failure_closes_core_read_and_preserves_sources(self):
+        from task_governance_tool.usage_reconciliation_repository import UsageReconciliationRepository
+        target, root = self.fixture(usage=True)
+        before = (target.db_path.read_bytes(), target.resolved_usage_database.read_bytes())
+        reads = []
+
+        def failed_refresh(repository, reader):
+            with reader() as connection:
+                reads.append(connection)
+                with self.assertRaises(sqlite3.OperationalError):
+                    connection.execute("DELETE FROM tasks")
+                raise RuntimeError("injected reconciliation failure")
+
+        with mock.patch.object(UsageReconciliationRepository, "refresh", new=failed_refresh):
+            with self.assertRaises(RuntimeError):
+                self.protect(target, root)
+        self.assertEqual(before, (target.db_path.read_bytes(), target.resolved_usage_database.read_bytes()))
+        self.assertFalse(list(root.rglob("manifest.json")))
+        with self.assertRaises(sqlite3.ProgrammingError):
+            reads[0].execute("SELECT 1")
 
 
 class ProtectionCliTests(unittest.TestCase):

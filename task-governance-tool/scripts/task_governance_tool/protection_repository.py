@@ -155,13 +155,16 @@ def rehearse(target, inbox, usage_path=None):
         copy_physical_file_exclusive(sealed, restored.resolved_usage_database,
             source_root=inbox.parent, destination_root=inbox.parent, max_bytes=sealed.identity.size)
         repository = repository_for(restored)
-        @contextmanager
-        def core_reader():
-            from .storage import connect_initialized_readonly
-            with closing(connect_initialized_readonly(restored)) as connection:
+        from .storage import connect_initialized_readonly
+        # This restored Core is private and no longer mutated. Validate once,
+        # then lend its same query-only transaction to every reconciliation step.
+        # The owner closes it before rehearsal cleanup, including on failure.
+        with closing(connect_initialized_readonly(restored)) as connection:
+            @contextmanager
+            def core_reader():
                 yield connection
-        # Real reconciliation uses exact anchors. Missing restored events or
-        # executions remain unknown, never assigned to a different execution.
-        repository.refresh(core_reader)
+            # Real reconciliation uses exact anchors. Missing restored events or
+            # executions remain unknown, never assigned to a different execution.
+            repository.refresh(core_reader)
     return {"core": "passed", "business_records": "equal", "normalization": "managed_repository_and_viewer",
             "usage": "reconciled" if usage_path is not None else "absent", "host_effects": "excluded"}

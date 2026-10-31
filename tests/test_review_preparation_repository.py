@@ -61,20 +61,78 @@ class PreparationRepositoryTests(unittest.TestCase):
 
     def test_publication_failure_rolls_back_row_and_pointer(self):
         self.initialize()
-        load = self.repo._load
+        load = self.repo._load_current
         observations = []
         def fail_after_publication(connection):
             result = load(connection)
             observations.append(result)
-            if len(result[0]) == 2:
+            if result.preparation_id == record(2).preparation_id:
                 raise RepositoryError("state_unreadable")
             return result
         with self.repo.serial() as lease:
-            with mock.patch.object(self.repo, "_load", side_effect=fail_after_publication):
+            with mock.patch.object(self.repo, "_load_current", side_effect=fail_after_publication):
                 with self.assertRaises(RepositoryError):
                     self.repo.publish(lease, record(2))
-        self.assertEqual(len(observations[-1][0]), 2)
+        self.assertEqual(observations[-1], record(2))
         self.assertEqual(self.repo.read(), ((record(),), record()))
+
+    def test_current_read_and_publication_do_not_decode_unconsumed_history(self):
+        from task_governance_tool import review_preparation_repository as preparation
+        self.initialize()
+        with self.repo.serial() as lease:
+            for index in range(2, 32):
+                self.repo.publish(lease, record(index))
+        original = self.path.read_bytes()
+        with mock.patch.object(preparation, "_decode", wraps=preparation._decode) as decode:
+            self.assertEqual(self.repo.read_current(), record(31))
+            self.assertEqual(decode.call_count, 1)
+        self.assertEqual(self.path.read_bytes(), original)
+        with self.repo.serial() as lease:
+            with mock.patch.object(preparation, "_decode", wraps=preparation._decode) as decode:
+                self.repo.publish(lease, record(32))
+                self.assertEqual(decode.call_count, 2)
+        with mock.patch.object(preparation, "_decode", wraps=preparation._decode) as decode:
+            rows, current = self.repo.read()
+            self.assertEqual((len(rows), current), (32, record(32)))
+            self.assertEqual(decode.call_count, 32)
+
+    def test_unrelated_invalid_history_is_rejected_when_explicitly_consumed(self):
+        self.initialize()
+        with self.repo.serial() as lease:
+            self.repo.publish(lease, record(2))
+        # Restore the exact trigger after fault injection: schema checks remain.
+        from task_governance_tool.review_preparation_repository import _SCHEMA
+        with closing(sqlite3.connect(self.path)) as connection, connection:
+            connection.execute("DROP TRIGGER preparations_no_update")
+            connection.execute("UPDATE preparations SET record_json='{}' WHERE preparation_id=?",
+                (record().preparation_id,))
+            connection.execute(_SCHEMA["preparations_no_update"])
+        before = self.path.read_bytes()
+        self.assertEqual(self.repo.read_current(), record(2))
+        with self.assertRaises(RepositoryError):
+            self.repo.read()
+        with self.repo.serial() as lease, self.assertRaises(RepositoryError):
+            self.repo.publish(lease, record())  # The requested old ID is consumed.
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_current_pointer_and_selected_root_corruption_remain_rejected(self):
+        self.initialize()
+        original = self.path.read_bytes()
+        from task_governance_tool.review_preparation_repository import _SCHEMA
+        mutations = (("UPDATE current SET preparation_id='missing'",),
+            ("DELETE FROM current",), ("PRAGMA user_version=2",),
+            ("DROP TRIGGER preparations_no_update", "UPDATE preparations SET record_json='{}'",
+             _SCHEMA["preparations_no_update"]))
+        for statements in mutations:
+            with self.subTest(statements=statements):
+                self.path.write_bytes(original)
+                with closing(sqlite3.connect(self.path)) as connection, connection:
+                    for statement in statements:
+                        connection.execute(statement)
+                before = self.path.read_bytes()
+                with self.assertRaises(RepositoryError):
+                    self.repo.read_current()
+                self.assertEqual(self.path.read_bytes(), before)
 
     def test_dangling_pointer_unknown_schema_and_noncanonical_record_reject_read(self):
         self.initialize()

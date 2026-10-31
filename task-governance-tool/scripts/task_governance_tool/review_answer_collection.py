@@ -323,6 +323,10 @@ class CollectionService:
         _fail("binding_mismatch", "conflict")
 
     def _readback(self, record, slot, ordinal, *, require_terminal=True):
+        item = self._readback_item(record, slot, ordinal, require_terminal=require_terminal)
+        return item.raw, item.metadata
+
+    def _readback_item(self, record, slot, ordinal, *, require_terminal=True):
         if record.get("tracking_state") == "invalidated":
             _fail("binding_mismatch", "identity")
         attempt = record["attempts"][ordinal]
@@ -350,21 +354,30 @@ class CollectionService:
         if require_terminal:
             values._validate_metadata_with_answer(metadata, answer)
         # Preserve framing key order while detaching the caller's saved record.
-        return raw, deepcopy(metadata)
+        from .review_answer_transport import CollectedItem
+        return CollectedItem(slot, raw, deepcopy(metadata), answer)
 
     def readback(self, slot, *, require_terminal=True):
         """Confirm exact saved bytes; hook-only reads preserve pending terminal facts."""
+        item = self._confirmed_readback(slot, require_terminal=require_terminal)
+        return item.raw, item.metadata
+
+    def readback_item(self, slot):
+        """Lend decoded bytes from this fresh completed-original observation."""
+        return self._confirmed_readback(slot, require_terminal=True)
+
+    def _confirmed_readback(self, slot, *, require_terminal):
         record = self._record(slot)
         self.check_basis(record["basis"], slot, persist_invalidation=False)
         ordinal = _ordinal(record)
-        result = self._readback(record, slot, ordinal, require_terminal=require_terminal)
+        result = self._readback_item(record, slot, ordinal, require_terminal=require_terminal)
         self.check_basis(record["basis"], slot, persist_invalidation=False)
         if self._record(slot) != record:
             _fail("binding_mismatch", "conflict")
         # The helper's subsequent framing performs the second whole-batch
         # confirmation. This last local comparison closes this read's I/O.
         original = record["attempts"][ordinal]["publication"]["original"]
-        if files.read_bounded(files.checked_path(self.repo, original["path"]), 262144) != result[0]:
+        if files.read_bounded(files.checked_path(self.repo, original["path"]), 262144) != result.raw:
             _fail("save_unknown", "conflict")
         return result
 
@@ -625,6 +638,12 @@ class CollectionService:
 
     @contextmanager
     def admission(self, slots=None):
+        """Compatibility projection of the same source admission."""
+        with self.admission_items(slots) as (lease, items):
+            yield lease, tuple((item.raw, item.metadata) for item in items)
+
+    @contextmanager
+    def admission_items(self, slots=None):
         """Finish all I/O before yielding frozen inputs for the core writer.
 
         Lock order: finalization, collection, core writer. Never acquire a
@@ -639,7 +658,7 @@ class CollectionService:
             for slot in selected:
                 record = self._record(slot)
                 self.check_basis(record["basis"], slot, lease=lease, persist_invalidation=False)
-                results.append(self._readback(record, slot, _ordinal(record)))
+                results.append(self._readback_item(record, slot, _ordinal(record)))
             yield lease, tuple(results)
 
     def confirm_registration(self, slot, submission_digest, receipt_id):

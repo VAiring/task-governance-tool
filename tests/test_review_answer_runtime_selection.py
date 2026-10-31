@@ -389,7 +389,7 @@ class RuntimeSelectionTests(unittest.TestCase):
     def test_hook_check_uses_one_full_native_snapshot_and_closes_before_physical_reads(self):
         self.ready(version=2)
         service = self.bound_service()
-        original_preparation_read, original_checked = PreparationRepository.read, files.checked_path
+        original_preparation_read, original_checked = PreparationRepository.read_current, files.checked_path
         def preparation_read(repository):
             self.assert_native_reads_closed()
             return original_preparation_read(repository)
@@ -397,7 +397,7 @@ class RuntimeSelectionTests(unittest.TestCase):
             self.assert_native_reads_closed()
             return original_checked(*args, **kwargs)
         with patch.object(storage, "validate_current_database", wraps=storage.validate_current_database) as validate, \
-                patch.object(PreparationRepository, "read", new=preparation_read), \
+                patch.object(PreparationRepository, "read_current", new=preparation_read), \
                 patch.object(files, "checked_path", side_effect=checked), \
                 patch.object(files, "read_bounded", wraps=files.read_bounded) as packet_read:
             for _ in range(2):
@@ -412,11 +412,11 @@ class RuntimeSelectionTests(unittest.TestCase):
     def test_hook_check_preserves_full_captured_preparation_paths(self):
         self.ready(version=2)
         service = self.bound_service()
-        records, root = self.preparation.read()
+        root = self.preparation.read_current()
         for change in (dict(packet_path="reviews/other-packet.json"),
                        dict(result_paths=("reviews/other-answer.json", root.result_paths[1]))):
             with self.subTest(change=change), \
-                    patch.object(PreparationRepository, "read", return_value=(records, replace(root, **change))), \
+                    patch.object(PreparationRepository, "read_current", return_value=replace(root, **change)), \
                     patch.object(files, "read_bounded") as packet_read, \
                     self.assertRaises(AnswerError):
                 service.admit_basis.check_hook(self.root.collection_bases[0], 1,
@@ -431,7 +431,7 @@ class RuntimeSelectionTests(unittest.TestCase):
         service.admit_basis.check_hook(self.root.collection_bases[0], 1,
             parent_id=self.binding.parent_thread_id)
         set_target(self.fixture.db, self.fixture.repo, self.binding.task_id, fingerprint="sha256:" + "f" * 64)
-        with patch.object(PreparationRepository, "read") as preparation_read, self.assertRaises(AnswerError):
+        with patch.object(PreparationRepository, "read_current") as preparation_read, self.assertRaises(AnswerError):
             service.admit_basis.check_hook(self.root.collection_bases[0], 1,
                 parent_id=self.binding.parent_thread_id)
         preparation_read.assert_not_called()

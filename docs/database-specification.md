@@ -23,7 +23,7 @@ copies; missing Usage anchors cannot acquire another execution's attribution.
 ## Conditional Review Continuation Persistence
 
 Schema 29 introduces migration `review_continuations`; the current combined
-implementation supports schema 34 with the collected-answer extension,
+implementation supports schema 35 with the collected-answer extension,
 criterion-link repair, combined-slot and own-review lookups below.
 Actual upgrade remains explicit Setup; managed host activation requires the
 combined verification/review and host gates in the
@@ -351,8 +351,8 @@ Missing state is `db_not_initialized`; supported older state is
 `migration_required`; a newer schema is `schema_too_new`. Old binaries reject
 newer state and never downgrade/write it.
 
-Fresh setup creates schema v34. Structurally complete contiguous source schemas
-v1-v33 are setup-only migration inputs; v34 is idempotent current state.
+Fresh setup creates schema v35. Structurally complete contiguous source schemas
+v1-v34 are setup-only migration inputs; v35 is idempotent current state.
 Schema sequence is:
 
 | Version | Durable addition |
@@ -388,6 +388,7 @@ Schema sequence is:
 | v32 | non-unique partial expression index for the combined session slot; source-32 Bundle 4/index 3 |
 | v33 | non-unique own-review history/dispatch reverse-lookup indexes and source-33 Bundle/cycle discriminator |
 | v34 | transactional Viewer Task revisions, indexed change selection and derived projection/epoch metadata; source-34 Bundle/cycle discriminator |
+| v35 | non-unique Runner reverse-edge, generation-scoped Reference and criterion-link lookup indexes; source-35 Bundle/cycle discriminator |
 
 Each migration is transactional, idempotent, rollback-tested, validates
 contiguous history and required objects/rows, preserves project/business IDs
@@ -487,8 +488,8 @@ every cycle/Bundle Runner-observation pointer remains null; native Bundle-v2
 This check occurs before any database or sidecar write, migration backup,
 recovery copy/publication, Viewer publication, or managed-backup write. A complete v19 source alone may invoke migration
 20; a complete v20 source continues through migrations 21 and 22, and a complete
-v21 source invokes migration 22, followed by 23 through 34. Each later complete
-predecessor invokes its remaining ordered migrations through 34; exact v34
+v21 source invokes migration 22, followed by 23 through 35. Each later complete
+predecessor invokes its remaining ordered migrations through 35; exact v35
 receives validation-only reentry. Unrelated extra
 objects retain the existing policy, including deliberate removal of
 unsupported unowned indexes/triggers attached to the rebuilt Bundle table and
@@ -515,9 +516,9 @@ qualifying Runner protocol with explicit manual fallback.
 
 <a id="current-schema-v32-persistence-contract"></a>
 
-## Current Schema-v34 Persistence Contract
+## Current Schema-v35 Persistence Contract
 
-Schema v34 is the public setup target. Its predecessor migration `24/task_session_ownership`
+Schema v35 is the public setup target. Its predecessor migration `24/task_session_ownership`
 adds `task_executions`, `task_ownership`, `task_owner_transitions` and
 `task_execution_cycles` (39 tables, 45 explicit indexes, 67 triggers).
 Execution/transition/cycle links are append-only. The one current ownership row
@@ -536,7 +537,7 @@ Only the Bundle table and its coupled native-cycle guard are rebuilt to admit
 source 24/format 2. New native completion must link its execution to its exact cycle
 within the same transaction. Older Bundles/cycles remain unlinked and unchanged;
 format 2 is retained and the index reports the actual container. No per-caller display or
-usage fields are added to sealed Evidence or Viewer v4. Viewer accepts v5-v34.
+usage fields are added to sealed Evidence or Viewer v4. Viewer accepts v5-v35.
 Reentry validates exact DDL, markers, retained graph and integrity without repair.
 Setup retains its existing backup/rollback protocol; no normal command migrates.
 Unsupported attached residue/hybrid state fails closed before writes. Global
@@ -547,7 +548,7 @@ existing verification-field-local exception.
 
 ### Preservation Across Review Migrations
 
-The supported Setup transitions 28 to 29, 29 to 30, 30 to 31, 31 to 32, 32 to 33 and 33 to 34 preserve every
+The supported Setup transitions 28 to 29, 29 to 30, 30 to 31, 31 to 32, 32 to 33, 33 to 34 and 34 to 35 preserve every
 predecessor business and unrelated user table's column values and row identities,
 including tables not rebuilt. Each identity remains associated with its original
 values. Existing `sqlite_sequence` rows remain unchanged, preserving unrelated
@@ -636,7 +637,7 @@ current consumer's registration. Existing captures and their physical metadata,
 projection, rank and one-time Receipt links remain unchanged. This transport
 extension adds no physical schema migration or native capture-repair operation.
 
-Source-30, source-31, source-32, source-33 and source-34 completions seal Bundle 4 and project index 3 under the
+Source-30, source-31, source-32, source-33, source-34 and source-35 completions seal Bundle 4 and project index 3 under the
 [versioned Evidence contract](evidence-specification.md#collected-answer-evidence).
 They retain the mandatory exact execution/cycle link: global admission
 and recovery reject a missing link without repairing it. This does not require
@@ -763,6 +764,28 @@ read-only admission does not repair missing tracking rows. Normal delta reads
 select indexed revisions, while full migration/recovery validates every tracking
 parent and requires one revision for every Task. Old source schemas retain
 their exact validators. No cache metadata satisfies a completion/evidence gate.
+
+### Schema-v35 Runner Closure Lookup
+
+Explicit Setup applies `35/runner_closure_lookup_indexes` after exact schema 34.
+Eight non-unique indexes make both identity arms of selected Runner validation
+indexable: attempt by resolution; observation by resolution and by attempt;
+cleanup by attempt and by terminal observation; Reference by source ID and by
+`(project_id,task_id,target_generation,source_kind)`; criterion link by Reference
+ID. Reverse keys are not prefixed by owner, so foreign-owner aliases remain
+visible and are rejected. Own older generations cannot enlarge a selected
+generation's Reference search. The inventory is 52 tables, 60 explicit indexes
+and 107 triggers.
+
+The Bundle/cycle discriminator admits source 35 with unchanged Bundle 4/index 3
+and digest domains. Historical schema-34 DDL/fingerprint definitions remain
+unchanged. Every predecessor row and identity, marker, unrelated object and
+sealed byte is retained under the shared preservation proof. Destination
+conflicts fail before the delta; copy,
+index, marker or validation failure rolls back the whole migration. Reentry is
+read-only validation. Backup, recovery, relocation, Evidence and Viewer admit
+actual source 35; normal commands never migrate. No new gate or host operation
+is introduced.
 
 ### Schema-v33 Own Review Lookup
 
@@ -1557,7 +1580,7 @@ snapshot inputs. Unreconciled changes remain unavailable.
 A core-basis mismatch after restore or later transitions returns unavailable
 until replay; missing references are never rebound to the newest Task cycle.
 Restored numerical state with a different project/path binding stays unavailable.
-The main schema is independently versioned (currently 34); no numerical table joins a core transaction or gate.
+The main schema is independently versioned (currently 35); no numerical table joins a core transaction or gate.
 Optional lifecycle invocation follows the separate Setup/state contract and
 cannot alter these quality or completion boundaries.
 

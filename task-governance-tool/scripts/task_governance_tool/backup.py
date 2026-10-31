@@ -373,7 +373,10 @@ def _validate_publication_source(
         # same snapshot. Keep common structure, binding and project metadata
         # here without running that audit twice.
         validate_current_database(connection, target, operation_local=True)
-    if version == 34:
+    if version == 35:
+        from task_governance_tool.schema_runner_lookup_indexes import validate_storage
+        validate_storage(connection, _privacy_success_cache=privacy_success_cache)
+    elif version == 34:
         from task_governance_tool.schema_viewer_projection import validate_storage
         validate_storage(connection, _privacy_success_cache=privacy_success_cache)
     elif version == 33:
@@ -437,7 +440,10 @@ def _recovery_content_valid(
     privacy_success_cache: set[tuple[str, str, str]] | None = None,
 ) -> bool:
     try:
-        if version == 34:
+        if version == 35:
+            from task_governance_tool.schema_runner_lookup_indexes import validate_storage
+            validate_storage(connection, recovery=True, _privacy_success_cache=privacy_success_cache)
+        elif version == 34:
             from task_governance_tool.schema_viewer_projection import validate_storage
             validate_storage(connection, recovery=True, _privacy_success_cache=privacy_success_cache)
         elif version == 33:

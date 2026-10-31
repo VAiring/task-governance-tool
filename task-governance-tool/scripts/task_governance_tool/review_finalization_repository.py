@@ -210,11 +210,13 @@ class FinalizationRepository(ReviewWaitRepository):
             manager.__exit__(None, None, None)
 
     @staticmethod
-    def _load(connection):
+    def _load(connection, *, with_parts=False):
         try:
             if connection.execute("PRAGMA user_version").fetchone() == (2,):
-                from .review_finalization_continuation_repository import load
-                return load(connection)
+                from .review_finalization_continuation_repository import _parts, view
+                parts = _parts(connection)
+                record = view(parts)
+                return (record, parts) if with_parts else record
             objects = connection.execute("SELECT type, name, tbl_name, sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY name").fetchall()
             if (objects != [("table", name, name, sql) for name, sql in sorted(_SCHEMA.items())]
                     or connection.execute("PRAGMA user_version").fetchone() != (1,)
@@ -233,7 +235,7 @@ class FinalizationRepository(ReviewWaitRepository):
             record = FinalizationRecord(**value)
             if _encode(record) != rows[0][1]:
                 raise ValueError
-            return record
+            return (record, None) if with_parts else record
         except (ValueError, TypeError, KeyError, RecursionError):
             raise RepositoryError("state_unreadable") from None
 
@@ -247,7 +249,7 @@ class FinalizationRepository(ReviewWaitRepository):
                                "reviewer_observations", "reviewer_blocker", "retained_receipt_ids", "original_locations"}:
             raise RepositoryError("state_transition_invalid")
         with self._connection(write=True) as connection:
-            before = self._load(connection)
+            before, parts = self._load(connection, with_parts=True)
             after = replace(before, **changes)
             for name in ("registration", "commit", "completion"):
                 if not 0 <= _PHASES[getattr(after, name)] - _PHASES[getattr(before, name)] <= 1:
@@ -263,9 +265,9 @@ class FinalizationRepository(ReviewWaitRepository):
                        or old[2] != "completed" and old != retained[old[0]]
                        for old in before.reviewer_observations):
                     raise RepositoryError("state_transition_invalid")
-            if connection.execute("PRAGMA user_version").fetchone() == (2,):
+            if parts is not None:
                 from .review_finalization_continuation_repository import save_view
-                save_view(connection, before, after)
+                save_view(connection, before, after, admitted_parts=parts)
             else:
                 if after.continuation_id is not None or after.original_locations or after.retained_receipt_ids:
                     raise RepositoryError("state_transition_invalid")
@@ -279,10 +281,9 @@ class FinalizationRepository(ReviewWaitRepository):
             return append(connection, record)
 
     def read_rounds(self):
-        from .review_finalization_continuation_repository import records
         with self._connection() as connection:
-            self._load(connection)
-            return records(connection) if connection.execute("PRAGMA user_version").fetchone() == (2,) else (self._load(connection),)
+            current, parts = self._load(connection, with_parts=True)
+            return parts[1] if parts is not None else (current,)
 
     def observe_reviewers(self, lease, observations):
         """Persist exact terminal observations; failed/unknown turns never become PASS on retry."""

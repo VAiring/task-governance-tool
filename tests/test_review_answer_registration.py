@@ -47,6 +47,51 @@ class RegistrationTests(TestCase):
         self.assertEqual(observed["entries"], [dispatch_entry(item, receipt["receipt"]["review_receipt_id"], submitted.submission_digest)
             for item, receipt in zip(submitted.items, result["receipts"])])
 
+    def test_storage_and_dispatch_share_each_collected_receipt_only_within_one_read(self):
+        from task_governance_tool import review_answer_repository as repository
+        for count in (1, 2, 8):
+            with self.subTest(receipts=count), review_fixture(schema_version=30, contract=None) as fixture:
+                self.fixture = fixture
+                submitted = self.submission(("pass",) * count)
+                saved = self.register(submitted)
+                expected = [dispatch_entry(item, row["receipt"]["review_receipt_id"], submitted.submission_digest)
+                    for item, row in zip(submitted.items, saved["receipts"])]
+                with closing(storage.connect_initialized_readonly(fixture.target)) as connection:
+                    admitted_transaction = connection.in_transaction
+                    selected = (fixture.basis["project_id"], fixture.task_id)
+                    with mock.patch.object(repository, "validate_provenance_relation",
+                            wraps=repository.validate_provenance_relation) as provenance, \
+                         mock.patch.object(repository, "validate_payload_findings",
+                            wraps=repository.validate_payload_findings) as findings:
+                        for repetition in (1, 2):
+                            repository.validate_storage_rows(connection, review_task=selected)
+                            self.assertEqual((provenance.call_count, findings.call_count), (count*repetition,)*2)
+                            self.assertEqual(connection.in_transaction, admitted_transaction)
+                        observed = repository.read_registration(connection, project_id=selected[0], task_id=selected[1],
+                            preparation_id=submitted.preparation_id, submission_digest=submitted.submission_digest)
+                        self.assertEqual(observed["entries"], expected)
+                        self.assertEqual((provenance.call_count, findings.call_count), (count*3,)*2)
+
+    def test_later_collected_read_rejects_changed_original_findings(self):
+        from task_governance_tool import review_answer_repository as repository
+        metadata, answer = self.fixture.metadata(1, findings=[dict(severity="low", summary="Original finding")])
+        first = CollectedItem(1, answer.raw, metadata, answer)
+        submitted = decode_collected_submission(frame_collected_submission(metadata['basis']['preparation_id'], (first,)))
+        saved = self.register(submitted)
+        finding_id = saved['receipts'][0]['findings'][0]['finding']['review_finding_id']
+        with closing(storage.connect_initialized(self.fixture.target)) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            repository.validate_storage_rows(connection)
+            # Corrupt only a disposable fixture, inside a rolled-back scope.
+            triggers = connection.execute("SELECT name FROM sqlite_schema WHERE type='trigger' AND tbl_name='review_findings'").fetchall()
+            for trigger in triggers:
+                connection.execute('DROP TRIGGER "' + trigger['name'].replace('"', '""') + '"')
+            connection.execute("UPDATE review_findings SET summary='changed original' WHERE review_finding_id=?", (finding_id,))
+            with self.assertRaises(storage.StorageError):
+                repository.validate_storage_rows(connection)
+            self.assertTrue(connection.in_transaction)
+            connection.rollback()
+
     def test_required_collected_summaries_normalize_without_changing_original_payload(self):
         import json
         from task_governance_tool.review_answer import decode_answer

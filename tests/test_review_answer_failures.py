@@ -213,7 +213,7 @@ class AdmissionFailureTests(TestCase):
                  mock.patch("task_governance_tool.state_paths.path_lexically_exists", return_value=True), \
                  mock.patch("task_governance_tool.review_preparation_repository.PreparationRepository") as repository, \
                  mock.patch("task_governance_tool.review_handoff_originals.read_original", side_effect=AnswerError(classification, reason=reason)):
-                repository.return_value.read.return_value = ((), root)
+                repository.return_value.read_current.return_value = root
                 self.assertEqual(finalization.prepared_reports(finalizer, record),
                     [dict(path="reviews/review-1.json", status="unavailable", code=classification)])
         self.assertEqual(error_code(RuntimeError("PRIVATE_SENTINEL")), "finalization_unavailable")

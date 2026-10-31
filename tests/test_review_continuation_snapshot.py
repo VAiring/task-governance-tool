@@ -44,7 +44,10 @@ class ContinuationSnapshotTests(unittest.TestCase):
                 self.assertEqual(effective_read.call_count, 1)
             projected = reviews.read_review_evidence(connection, self.basis["project_id"], self.task_id,
                 validated_task=task, source_schema_version=29)
-            frozen = evidence.freeze_basis_locked(connection, task)
+            from task_governance_tool import review_repository
+            with mock.patch.object(review_repository, 'read_review_receipt_with_provenance',
+                    side_effect=AssertionError('freeze must batch the complete selected receipt set')):
+                frozen = evidence.freeze_basis_locked(connection, task)
             heads = projected["continuation"]["effective_receipt_ids"]
             self.assertTrue(projected["gate"]["satisfied"])
             self.assertEqual(set(selected.qualifying_receipt_ids), set(heads))
@@ -171,6 +174,21 @@ class ContinuationSnapshotTests(unittest.TestCase):
                 self.assertEqual(len(snapshot.for_task(connection, task).active_ids), 2)
             with self.assertRaises(sqlite3.Error):
                 connection.execute(f"RELEASE SAVEPOINT {snapshot._guard}")
+            connection.rollback()
+
+    def test_snapshot_rejects_temp_shadow_without_main_cookie_or_row_change(self):
+        with closing(storage.connect_initialized(self.target)) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            task = self.task_row(connection)
+            with evidence.effective_review_snapshot(connection, task) as snapshot:
+                before = connection.total_changes
+                cookie = connection.execute("PRAGMA main.schema_version").fetchone()[0]
+                connection.execute("CREATE TEMP TABLE review_receipts(value INTEGER)")
+                self.assertEqual(connection.total_changes, before)
+                self.assertEqual(connection.execute("PRAGMA main.schema_version").fetchone()[0], cookie)
+                with self.assertRaises(storage.StorageError) as caught:
+                    snapshot.for_task(connection, task)
+                self.assertEqual(caught.exception.code, "internal_error")
             connection.rollback()
 
     def test_snapshot_cleanup_preserves_read_and_consumer_exceptions(self):

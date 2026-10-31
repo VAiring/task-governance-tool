@@ -1526,7 +1526,10 @@ def _inspect_database(
                 viewer_projection = read_state(connection, stored.project_id)
             if classify_recovery_content and content_proof is None:
                 try:
-                    if version == 34:
+                    if version == 35:
+                        from task_governance_tool.schema_runner_lookup_indexes import validate_storage
+                        validate_storage(connection, recovery=True)
+                    elif version == 34:
                         from task_governance_tool.schema_viewer_projection import validate_storage
                         validate_storage(connection, recovery=True)
                     elif version == 33:

@@ -12,7 +12,7 @@ existing owners.
 
 ## Snapshot And Publication
 
-Current schema-34 maintenance uses the
+Current schema-35 and compatible schema-34 maintenance use the
 [incremental protocol](#incremental-cache-and-publication). This section
 documents the retained full-capture reader and common v4 rendering/path
 boundaries used by explicit inspection and compatible older sources.
@@ -65,7 +65,7 @@ crosses the capture's transaction into a guard, another capture or outcome write
 
 The repository selects complete rows for all project Tasks in list order and
 validates them as one source-schema-aware stored-Task/Contract batch before any
-Task, review, or history projection. Exact v18-v34 snapshot validation first
+Task, review, or history projection. Exact v18-v35 snapshot validation first
 validates the complete Task batch as part of the full Evidence Ledger, then the
 same-transaction list-order query consumes the
 [private batch proof](task-operation-design.md#shared-stored-task-rowbatch-validator) instead of
@@ -101,10 +101,10 @@ before projection, while the event allow-list remains summary-only. Full note
 bodies never enter Viewer snapshot JSON or generated HTML.
 
 Source schemas v5-v14 synthesize empty/incomplete completion history;
-v15-v34 use stored cycles, reading completion histories in batches of at most
-500 Task IDs. Sources v17-v34 validate version-1 cycle Receipt links; v19-v34
-also validate and discard Bundle linkage, and v20-v34 validate the source-
-appropriate closed verification basis and Runner graph. Sources v21-v34 validate
+v15-v35 use stored cycles, reading completion histories in batches of at most
+500 Task IDs. Sources v17-v35 validate version-1 cycle Receipt links; v19-v35
+also validate and discard Bundle linkage, and v20-v35 validate the source-
+appropriate closed verification basis and Runner graph. Sources v21-v35 validate
 the complete tagged union before discarding every Runner field. Every snapshot
 reports its actual source schema and selects all
 project Tasks; 500 Tasks is the accepted performance fixture rather than a

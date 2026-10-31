@@ -259,7 +259,7 @@ is introduced.
 `review_material_repository.py` lends validated immutable authority snapshots,
 criterion links and artifact manifests only within a lexical scope on the same
 connection, transaction, project and Task. Its private savepoint guard and schema
-cookie reject a transaction restart or schema change; scope exit clears the
+cookies for both main and TEMP reject a transaction restart or schema change; scope exit clears the
 borrowed material. These scopes nest lexically and never commit the writer.
 Each item still reads and validates current Task/Contract/ownership and compares
 the original locked basis, plus its own Receipt, Finding, Reference, status and
@@ -272,6 +272,16 @@ ownership, each source/Reference, resolution digest and duplicate-link rejection
 remain individual checks. Continuation judgment and resolution-history readers
 also borrow immutable materials across their selected-ID chunks; the graph,
 ancestry and mutable resolution state are still validated independently.
+
+The effective-review snapshot separately guards mutable heads, resolutions and
+Findings with the exact Task projection, connection, transaction savepoint,
+write count and both schema cookies. It is never borrowed after a relevant
+write. Completion selection and frozen Bundle construction consume the complete
+own ancestry, including retained and resolved Findings, within that scope.
+Frozen graph construction uses the existing selected Receipt iterator once,
+retaining complete provenance/session validation and canonical Receipt-ID order.
+The native Bundle basis selects its bound authority snapshot and criteria;
+unrelated authority history remains the responsibility of explicit full audits.
 
 ### Structured Result Registration
 
@@ -578,6 +588,23 @@ of parsing its bytes again. Readback retains the physical confirmation read;
 publication retains its fresh validation immediately before writing. Recovery
 of saved publication validates its newly read bytes once. These values never
 cross a writer or physical-read admission boundary as proof.
+
+`CollectionService.admission_items` retains the decoded answer beside its exact
+raw bytes and metadata while the source lease is held; the raw-pair admission
+view delegates to it. Initial submission uses that value, then physically
+confirms every prepared original before the independent framing validation.
+`SavedOriginal` similarly carries a private raw-bound parse into immediate
+reporting and source composition. Report fields are detached copies; another
+physical observation or changed bytes require a new parse. Legacy originals
+retain their decoded closed result and sidecar checks.
+
+Native `validate_storage_rows` shares each collected Receipt's complete
+provenance and payload-Finding validation with its dispatch-entry validation
+inside that one synchronous, write-free read transaction. The local callback
+compares every native Receipt column and never leaves that call. The dispatch
+still checks its own inventory, Reference, actual session, source and judgment
+relations. Standalone registration reads and post-write validation start fresh;
+the original atomic Finding-batch guard and full payload equality remain.
 
 The provenance builder validates metadata and payload once, freshly parses
 the supplied `DecodedAnswer.raw`, and compares all decoded fields and exact
@@ -1184,6 +1211,13 @@ write activates no continuation, core migration, worker, or Git effect; it allow
 an actually admitted preparation to survive a later explicit upgrade. Legacy
 unknown caller/execution retains no locator and no inferred binding.
 
+Ordinary preparation admission uses `read_current`: exact owned schema/history,
+singleton pointer shape and membership, and the complete selected record.
+Publication validates that root plus any explicitly reused preparation ID,
+then rereads the new current record after its write. `read` remains the explicit
+full-history/FK audit; locating a retained old Packet falls back to that route.
+Initialization also retains full acceptance. Neither route rewrites old bytes.
+
 `review_handoff_scope.py` owns structural project resolution and sanitized error
 codes shared by preparation, continuation and finalization. It grants no route,
 ownership or effect admission. `review_handoff_originals.py` owns complete-batch
@@ -1246,6 +1280,11 @@ Both the transition store and schema-two request journal use
 `rounds(ordinal,preparation_id,sequence,continuation_id,payload)` with generated
 positive contiguous ordinal, unique continuation ID, unique preparation/sequence
 and sequence one through sixty-four per preparation root.
+Request load returns its already admitted round inventory to same-transaction
+read/advance callers. Finalization continuation load likewise composes its view
+from one parsed set of root/round/current parts. Their standalone readers and
+post-write checks load anew. The finalizer factory uses one round read for root
+intent and latest basis; later consumer and effect checks remain fresh.
 The last per-Task row is applicable only when its wait-basis digest matches the
 current binding. Historical admission validates the old native record against
 its own digest/selection/preparation and a strictly newer current generation,
@@ -1601,6 +1640,14 @@ failed/interrupted, unavailable or changed turns latch a blocker for this intent
 `ManagedDirectProbe` supplies only its guard to `Finalizer.execute`.
 Each guard check uses `_read_reviewer`'s one fresh `ChildTurn` for both the
 status/thread-status readiness decision and the immediate observation callback.
+For fully frozen collected answers, one admitted collection snapshot instead
+supplies every expected reviewer in that guard. Source selection reads each
+complete slot group, performs each required current-basis admission and confirms
+unchanged records before projection. Missing or still-watching slots retain the
+fresh collecting/host path. The frozen snapshot is discarded before the parent
+host read and the subsequent occurrence check; another guard starts anew.
+The immediate reviewer callbacks retain their existing finalization journal
+observations, which do not mutate the source collection or native Task basis.
 There is no preceding batch observer, cross-boundary cache or delayed batch
 save. Busy-parent retries and later registration, commit and completion guards
 still read anew; the existing native writer checks remain independent.
@@ -3034,7 +3081,7 @@ ownership before T1, but committed execution cleanup and terminal audit never
 depend on later caller ownership. Packet preparation bindings omit the
 caller-relative ownership projection; ownership freshness is checked separately.
 
-1. validate schema v34, identity/binding, optimistic ownership/Task/authority/target
+1. validate schema v35, identity/binding, optimistic ownership/Task/authority/target
    capture basis, Contract, sequential ordering, and evidence;
 2. reread Verification Receipts and review receipts/findings, evaluate the
    current verification and review gates, and select their deterministic

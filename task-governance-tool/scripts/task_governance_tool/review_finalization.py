@@ -450,8 +450,8 @@ class Finalizer:
             or current.route != "integrated"):
             _fail("review_continuation_conflict")
         paths = self.resolution.paths
-        _, root = PreparationRepository(paths.review_preparation_store(self.caller.require(), self.task_id,
-            record.basis["target_generation"])).read()
+        root = PreparationRepository(paths.review_preparation_store(self.caller.require(), self.task_id,
+            record.basis["target_generation"])).read_current()
         initial = self.journal.read_rounds()[0]
         if (root.route != "integrated" or root.finalization_store != self.path.name
             or root.preparation_id != current.preparation_id or root.basis != current.basis

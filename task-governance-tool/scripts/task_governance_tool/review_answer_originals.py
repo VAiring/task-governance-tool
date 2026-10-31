@@ -4,7 +4,6 @@ from hashlib import sha256
 
 from . import review_handoff_transport as files
 from . import review_session_transport as legacy
-from .review_answer import decode_answer
 from .review_answer_values import metadata_digest
 from .review_answer_transport import CollectedItem, LegacyItem, InitialOriginal, frame_collected_submission
 from .review_continuation import RetainedOriginal, selection_digest
@@ -73,7 +72,7 @@ def compose_collected_inventory(repo, root, record, state, sources, selected):
     items = []
     for slot, source in enumerate(supplied, 1):
         if source.collected_metadata is not None:
-            items.append(CollectedItem(slot, source.raw, source.collected_metadata, decode_answer(source.raw)))
+            items.append(CollectedItem(slot, source.raw, source.collected_metadata, source.decoded_answer()))
         else:
             if source in selected:
                 files.fail("review_continuation_conflict")

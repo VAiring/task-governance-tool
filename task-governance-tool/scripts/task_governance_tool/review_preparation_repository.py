@@ -122,14 +122,44 @@ def _decode(raw):
 
 class PreparationRepository(ReviewWaitRepository):
     @staticmethod
-    def _load(connection):
+    def _schema(connection):
         expected = sorted(("trigger" if sql.startswith("CREATE TRIGGER") else "table", name,
                            "preparations" if sql.startswith("CREATE TRIGGER") else name, sql)
                           for name, sql in _SCHEMA.items())
         actual = connection.execute("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name").fetchall()
         if (actual != expected or connection.execute("PRAGMA user_version").fetchone() != (1,)
-            or connection.execute("SELECT * FROM schema_history").fetchall() != [(1, "review-preparation-v1")]
-            or connection.execute("PRAGMA foreign_key_check").fetchall()):
+            or connection.execute("SELECT * FROM schema_history").fetchall() != [(1, "review-preparation-v1")]):
+            raise RepositoryError("state_unreadable")
+
+    @staticmethod
+    def _record(connection, preparation_id, *, missing_ok=False):
+        if not values.identifier(preparation_id, "tg_review_preparation_"):
+            raise RepositoryError("state_unreadable")
+        row = connection.execute("SELECT preparation_id,record_json FROM preparations WHERE preparation_id=?",
+            (preparation_id,)).fetchone()
+        if row is None and missing_ok:
+            return None
+        if row is None or type(row[0]) is not str or type(row[1]) is not str:
+            raise RepositoryError("state_unreadable")
+        record = _decode(row[1])
+        if record.preparation_id != row[0]:
+            raise RepositoryError("state_unreadable")
+        return record
+
+    @classmethod
+    def _load_current(cls, connection):
+        """Admit the current pointer and its complete immutable root only."""
+        cls._schema(connection)
+        rows = connection.execute("SELECT singleton,preparation_id FROM current").fetchall()
+        if len(rows) != 1 or type(rows[0][0]) is not int or rows[0][0] != 1:
+            raise RepositoryError("state_unreadable")
+        return cls._record(connection, rows[0][1])
+
+    @classmethod
+    def _load(cls, connection):
+        """Explicit complete history/acceptance; never a current-read shortcut."""
+        cls._schema(connection)
+        if connection.execute("PRAGMA foreign_key_check").fetchall():
             raise RepositoryError("state_unreadable")
         rows = connection.execute("SELECT preparation_id,record_json FROM preparations ORDER BY preparation_id").fetchall()
         records = tuple(_decode(row[1]) for row in rows)
@@ -142,8 +172,13 @@ class PreparationRepository(ReviewWaitRepository):
         return records, next(row for row in records if row.preparation_id == current[0][1])
 
     def read(self):
+        """Explicit full-history consumer, retaining its original contract."""
         with self._connection() as connection:
             return self._load(connection)
+
+    def read_current(self):
+        with self._connection() as connection:
+            return self._load_current(connection)
 
     @contextmanager
     def serial(self, *, initial=None, admit=lambda: None):
@@ -173,7 +208,7 @@ class PreparationRepository(ReviewWaitRepository):
                 raise RepositoryError("state_exists")
             lease._database_identity = _identity(self._inspect())
             lease._check()
-            self.read()
+            self.read_current()
             yield lease
             lease._check()
 
@@ -181,18 +216,20 @@ class PreparationRepository(ReviewWaitRepository):
         payload = _encode(record)
         lease._check()
         with self._connection(write=True) as connection:
-            records, current = self._load(connection)
+            current = self._load_current(connection)
             # This store's path binds the root. A new explicit preparation may
             # change conditions, but cannot adopt a different root identity.
             keys = ("project_id", "task_id", "parent_session_id", "target_generation")
             if any(record.basis[key] != current.basis[key] for key in keys):
                 raise RepositoryError("binding_mismatch")
-            old = next((row for row in records if row.preparation_id == record.preparation_id), None)
+            old = current if record.preparation_id == current.preparation_id else self._record(
+                connection, record.preparation_id, missing_ok=True)
             if old is not None:
                 if _encode(old) != payload or current.preparation_id != old.preparation_id:
                     raise RepositoryError("state_transition_invalid")
                 return old  # Known publication, never move a pointer backwards.
             connection.execute("INSERT INTO preparations VALUES (?,?)", (record.preparation_id, payload))
             connection.execute("UPDATE current SET preparation_id=? WHERE singleton=1", (record.preparation_id,))
-            self._load(connection)
+            if self._load_current(connection) != record:
+                raise RepositoryError("state_unreadable")
         return record

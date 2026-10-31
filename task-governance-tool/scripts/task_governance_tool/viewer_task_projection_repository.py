@@ -13,7 +13,7 @@ from .completion_history_projection import format_completion_history
 from .storage import (
     CompletionHistory, StorageError, _cycle_from_row,
     _validate_cycle_receipt_links_batch, _validate_current_completion_verification,
-    completion_history_inconsistent,
+    completion_history_inconsistent, current_schema_version,
 )
 from .stored_task_validation import fetch_stored_task_rows, validate_stored_task_rows
 from .tasks import row_to_event, row_to_viewer_task
@@ -66,7 +66,7 @@ def _review_evidence(connection, project_id, rows):
             stream.task_id = row["task_id"]
             evidence = _read_review_evidence(
                 connection, project_id, row["task_id"], validated_task=row,
-                source_schema_version=34, finding_stream=stream)
+                source_schema_version=current_schema_version(connection), finding_stream=stream)
             for receipt in evidence["recent_receipts"]:
                 receipt.pop("review_provenance", None)
             result.append(evidence)
@@ -157,7 +157,7 @@ def read_task_projections(connection, *, project_id, task_ids=None):
             ORDER BY task_id""", (json.dumps(task_ids),))
         if len(rows) != len(task_ids):
             raise completion_history_inconsistent()
-    validate_stored_task_rows(rows, connection=connection, source_schema_version=34,
+    validate_stored_task_rows(rows, connection=connection, source_schema_version=current_schema_version(connection),
                              expected_project_id=project_id)
     evidence = _review_evidence(connection, project_id, rows)
     result = []

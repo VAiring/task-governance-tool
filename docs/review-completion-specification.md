@@ -27,6 +27,15 @@ relations. Own history keeps all required generations; foreign evidence is
 rejected rather than importing another Task's review history.
 
 Fresh observations and existing locked writers repeat the applicable validation.
+Synchronous consumers within one unchanged read share their selected validated
+rows and immutable originals. Sharing ends at transaction/connection changes,
+relevant writes, DDL (including TEMP objects), or external-effect boundaries.
+Preparation admission reads the current pointer and its exact issued record;
+explicit history consumers retain complete preparation-history validation.
+Every source group retains its full slot inventory and source lease. A frozen
+collection may supply all reviewers in one effect guard, with fresh admission
+on the next guard; this does not replace original-file confirmation or native
+registration/completion checks.
 Locating canonical state or reading schema/policy metadata alone is structural,
 not proof of Task eligibility. A retained resolver snapshot validates its selected
 Task before consuming that Task's review graph. Runner control/audit reads keep
@@ -364,7 +373,7 @@ helper below performs caller-owned transport without changing this writer.
 
 ### Collected Review Answers
 
-An explicitly opted-in preparation on current schema 34 fixes protocol
+An explicitly opted-in preparation on current schema 35 fixes protocol
 `review-answer-v1` and attestation `assigned-independent-review-v1` in its
 immutable request basis. The reviewer returns exactly:
 
@@ -3090,7 +3099,7 @@ repeating timer changes, Task completion or review registration.
 
 ### Reviewer Session Binding
 
-This section applies from schema 25 (retained by current schema 34) under the
+This section applies from schema 25 (retained by current schema 35) under the
 [approved participation design](session-usage-plan.md#reviewer-participation-without-new-manual-steps)
 and preserves the version-1 reviewer's judgment template. Schema migration
 remains setup-only; numerical collection and lifecycle integration are separate.

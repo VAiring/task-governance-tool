@@ -11,7 +11,7 @@ from hashlib import sha256
 from pathlib import Path
 
 from . import review_handoff_transport as files
-from .review_answer import AnswerError, decode_answer
+from .review_answer import AnswerError
 from .review_answer_collection import CollectionService, CollectionInvalidated
 from .review_answer_collection_repository import CollectionRepository
 from .review_answer_transport import (CollectedItem, CollectedSubmission, LegacyItem, SettledRegistrationRecovery, frame_collected_submission,
@@ -99,8 +99,8 @@ class _CollectionAdmission:
 
     def _preparation(self, paths):
         basis = self.root.basis
-        _records, current_root = PreparationRepository(paths.review_preparation_store(
-            basis["parent_session_id"], basis["task_id"], basis["target_generation"])).read()
+        current_root = PreparationRepository(paths.review_preparation_store(
+            basis["parent_session_id"], basis["task_id"], basis["target_generation"])).read_current()
         # Keep the complete captured record, including physical destinations.
         if current_root != self.root:
             raise _bad()
@@ -229,12 +229,11 @@ def root_for(repo, collection_basis):
     basis = collection_basis["execution_basis"]
     if resolution.target.project.project_id != basis["project_id"]:
         raise _bad()
-    records, current = PreparationRepository(resolution.paths.review_preparation_store(
-        basis["parent_session_id"], basis["task_id"], basis["target_generation"])).read()
-    matches = [row for row in records if row.preparation_id == collection_basis["preparation_id"]]
-    if len(matches) != 1 or current is None or matches[0].preparation_id != current.preparation_id:
+    current = PreparationRepository(resolution.paths.review_preparation_store(
+        basis["parent_session_id"], basis["task_id"], basis["target_generation"])).read_current()
+    if current.preparation_id != collection_basis["preparation_id"]:
         raise _bad()
-    return resolution, matches[0]
+    return resolution, current
 
 
 def initial_submission(repo, root, resolution, originals):
@@ -242,9 +241,7 @@ def initial_submission(repo, root, resolution, originals):
         raise _bad()
     service = service_for(repo, resolution, root, root.collection_bases[0])
     try:
-        with service.admission() as (_lease, sources):
-            items = tuple(CollectedItem(slot, raw, metadata, decode_answer(raw))
-                for slot, (raw, metadata) in enumerate(sources, 1))
+        with service.admission_items() as (_lease, items):
             # Read each exact prepared original a second time immediately before
             # framing; a saved acknowledgement never replaces this confirmation.
             for item in items:

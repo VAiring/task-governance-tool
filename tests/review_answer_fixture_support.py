@@ -28,6 +28,7 @@ from task_governance_tool import schema_review_answers as schema30
 from task_governance_tool import schema_criterion_link_collector as schema31
 from task_governance_tool import schema_session_slot_index as schema32
 from task_governance_tool import schema_own_review_indexes as schema33
+from task_governance_tool import schema_runner_lookup_indexes as schema35
 from task_governance_tool.review_continuation_evidence_repository import freeze_basis_locked
 from task_governance_tool.review_answer import decode_answer
 from task_governance_tool.review_answer_repository import CollectedReceiptInput, record_dispatch_locked
@@ -241,7 +242,7 @@ class ReviewFixture:
             raise AssertionError(completed.stdout)
         with closing(storage.connect_initialized(self.target)) as connection:
             from task_governance_tool import schema_viewer_projection as schema34
-            {30: schema30, 31: schema31, 32: schema32, 33: schema33, 34: schema34}[self.schema_version].validate_storage(connection)
+            {30: schema30, 31: schema31, 32: schema32, 33: schema33, 34: schema34, 35: schema35}[self.schema_version].validate_storage(connection)
             _, artifacts = _bundle_artifacts(connection, self.basis["project_id"])
             return next(iter(artifacts.values()))
 
@@ -280,8 +281,8 @@ def attach_existing(*, db, repo, task_id, schema_version, target=None):
 def review_fixture(*, schema_version, contract: ReviewContract | None = None):
     """Own temporary state and exactly one final runtime, including failed setup."""
     from task_governance_tool import schema_viewer_projection as schema34
-    if type(schema_version) is not int or schema_version not in (29, 30, 31, 32, 33, 34):
-        raise ValueError("review fixture requires schema 29, 30, 31, 32, 33, or 34")
+    if type(schema_version) is not int or schema_version not in (29, 30, 31, 32, 33, 34, 35):
+        raise ValueError("review fixture requires schema 29, 30, 31, 32, 33, 34, or 35")
     if contract is not None and not isinstance(contract, ReviewContract):
         raise TypeError("contract must be ReviewContract or None")
     with ExitStack() as stack:
@@ -296,7 +297,7 @@ def review_fixture(*, schema_version, contract: ReviewContract | None = None):
                 if result.returncode != 0:
                     raise AssertionError(response)
             set_target(db, repo, task_id)
-        for version, module in ((29, schema29), (30, schema30), (31, schema31), (32, schema32), (33, schema33), (34, schema34)):
+        for version, module in ((29, schema29), (30, schema30), (31, schema31), (32, schema32), (33, schema33), (34, schema34), (35, schema35)):
             if version > schema_version:
                 break
             with candidate_runtime(version), closing(storage.connect(db)) as connection:

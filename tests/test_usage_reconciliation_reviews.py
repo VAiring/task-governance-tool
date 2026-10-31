@@ -21,7 +21,7 @@ class ReviewTests(unittest.TestCase):
     ingest = support.CollectedReviewUsageTests.ingest
 
     def setUp(self):
-        self.fixture = self.enterContext(review_fixture(schema_version=34))
+        self.fixture = self.enterContext(review_fixture(schema_version=35))
         self.root = self.fixture.repo
         self.logs = self.root / "usage-review-logs"
         self.logs.mkdir()

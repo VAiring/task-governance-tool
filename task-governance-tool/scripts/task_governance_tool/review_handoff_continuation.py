@@ -155,7 +155,7 @@ def assemble_submission(repo, packet_path, originals, approvals=(), *, caller=No
     paths = resolution.paths
     locator = PreparationRepository(paths.review_preparation_store(caller.require(), state.basis["task_id"], state.basis["target_generation"]))
     with locator.serial():
-        _, root = locator.read()
+        root = locator.read_current()
         if root.preparation_id != record.preparation_id or root.basis != record.basis:
             files.fail("review_continuation_conflict")
         history = TransitionRepository(paths.review_continuation_store(caller.require(), state.basis["task_id"], state.basis["target_generation"])).read()
@@ -535,7 +535,7 @@ def _admission_scope(repo: Path, args, caller: CallerIdentity
         files.fail("review_continuation_unavailable")
     with ExitStack() as admissions:
         admissions.enter_context(locator.serial())
-        _, root = locator.read()
+        root = locator.read_current()
         state = core.read_state(resolution.target, args.task_id, caller)
         if root.basis != initial.basis or state.basis != root.basis:
             files.fail("review_continuation_basis_changed")

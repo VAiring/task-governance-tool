@@ -26,6 +26,7 @@ class ProjectionBasis:
     state: ProjectionState
     viewer: ViewerMaintenanceState
     enabled_at: str | None
+    source_schema_version: int
 
     def header(self):
         from .viewer_projection_cache import CACHE_FORMAT_VERSION, PROJECTION_VERSION
@@ -33,7 +34,7 @@ class ProjectionBasis:
                     project_id=self.binding.project_id, binding_generation=self.binding.binding_generation,
                     binding_path_hash=self.binding.canonical_path_hash, database_epoch=self.state.database_epoch,
                     database_file_identity=dict(device=self.identity[0], inode=self.identity[1]),
-                    source_schema_version=34, applied_generation=self.state.source_generation)
+                    source_schema_version=self.source_schema_version, applied_generation=self.state.source_generation)
 
 
 def _database_identity(target):
@@ -42,6 +43,7 @@ def _database_identity(target):
 
 
 def _basis(connection, target, identity):
+    from .storage import current_schema_version
     from .backup_metadata_repository import read_project_maintenance
     from .project_binding_repository import read_project_binding_state
     from .viewer_projection_repository import read_state
@@ -58,7 +60,8 @@ def _basis(connection, target, identity):
     if maintenance is None or viewer is None:
         raise StorageError("project_state_unreadable", "Viewer maintenance is unavailable")
     return ProjectionBasis(identity, read_project_binding_state(connection),
-                           read_state(connection, target.project.project_id), viewer, maintenance.enabled_at)
+                           read_state(connection, target.project.project_id), viewer, maintenance.enabled_at,
+                           current_schema_version(connection))
 
 
 @contextmanager
@@ -80,6 +83,7 @@ def read_projection_basis(target):
 
 def _compatible(actual, expected, *, exact_source):
     return (actual.identity == expected.identity and actual.binding == expected.binding
+            and actual.source_schema_version == expected.source_schema_version
             and actual.enabled_at == expected.enabled_at and actual.enabled_at is not None
             and actual.state.database_epoch == expected.state.database_epoch
             and actual.state.invalidated_generation == expected.state.invalidated_generation

@@ -678,8 +678,18 @@ adapter. No SQLite writer spans filesystem or process work.
 
 `verification_runner_repository.py` owns stored Runner types, graph validation,
 exact-generation/current snapshot reads, the atomic T1 insert, cleanup-only
-append, and atomic terminal append. Global-first readers retain global
-validation; selected Task/history consumers validate their exact generation.
+append, and atomic terminal append. Ordinary generation reads and T1/T2/cleanup
+validate the exact selected or newly written graph. Selection includes rows
+reached through either endpoint identity, including foreign aliases, before
+cardinality and domain checks. A past admitted generation can finish mandatory
+cleanup after an owner/target change without becoming current gate evidence.
+Explicit full-audit consumers retain the complete graph validator.
+Selected searches use the [Runner closure indexes](database-design.md#runner-closure-index-migration)
+and a union of indexed row identities before ordering. Both owner-generation
+and reverse endpoint arms remain visible; source-ID and Reference-ID probes
+cannot filter out foreign owners. Their work is bounded by the selected closure,
+including when unrelated Tasks or the same Task's older terminal generations,
+References and criterion links grow. This is separate from pending inventory.
 Schema admission remains in `storage.py`, and the parent owns transactions. The
 repository enforces at most one resolution, attempt, cleanup event, and
 observation per project/Task/target generation despite the deliberately more
@@ -689,6 +699,15 @@ pending owner fails closed. `BEGIN IMMEDIATE` makes each same-generation
 repository transaction atomic, while the retained Runner OS lock serializes
 the complete reconciliation/T1/process/T2 route. A caller that cannot take
 that lock performs no T1 and cannot launch a process.
+
+Pending reconciliation proves the project-wide inventory using cardinality,
+identity-type and anti-join predicates over resolutions, attempts, observations
+and cleanup events. Orphans, foreign endpoints and missing/conflicting terminal
+links cannot disappear from the absence proof. Only the resulting pending
+generation receives full payload/authority validation; closed unrelated graphs
+do not. Inventory enumeration remains necessary work that can grow with stored
+rows. It is distinct from the removed whole-history semantic decoding and
+digest checks. A second pending owner fails closed before T1.
 
 The parent supplies one fresh 16-lowercase-hex token to each pure
 `generate_runner_id` call. A resolution uses the target-plan seal and the

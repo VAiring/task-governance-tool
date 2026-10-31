@@ -14,17 +14,24 @@ class ReviewMaterials:
         self.connection = connection
         self.project_id = project_id
         self.task_id = task_id
-        self.schema_cookie = connection.execute("PRAGMA schema_version").fetchone()[0]
+        self.schema_cookie = self._schema_cookie(connection)
         self.guard = 'taskgov_review_material_' + secrets.token_hex(8)
         connection.execute(f"SAVEPOINT {self.guard}")
         self.authorities = {}
         self.manifests = {}
 
+    @staticmethod
+    def _schema_cookie(connection):
+        # A TEMP table or trigger can shadow an unqualified domain read even
+        # while the main database's schema cookie stays unchanged.
+        return (connection.execute("PRAGMA main.schema_version").fetchone()[0],
+                connection.execute("PRAGMA temp.schema_version").fetchone()[0])
+
     def require(self, connection, project_id, task_id):
         from .storage import evidence_ledger_inconsistent
         if (self.connection is not connection or not connection.in_transaction
                 or (project_id, task_id) != (self.project_id, self.task_id)
-                or connection.execute("PRAGMA schema_version").fetchone()[0] != self.schema_cookie):
+                or self._schema_cookie(connection) != self.schema_cookie):
             raise evidence_ledger_inconsistent()
         # A commit/rollback followed by BEGIN can leave in_transaction true.
         # The private savepoint proves this is still the original transaction;

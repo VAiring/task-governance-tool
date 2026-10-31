@@ -66,7 +66,7 @@ def _capture(target, candidate, generated_at, *, validation=None):
     snapshot = ViewerSnapshotResult({
         "snapshot_version": 4, "generated_at": generated_at,
         "project": {"project_id": basis.binding.project_id, "display_name": basis.binding.display_name},
-        "source_schema_version": 34, "counts": counts, "tasks": ordered,
+        "source_schema_version": basis.source_schema_version, "counts": counts, "tasks": ordered,
     }, len(ordered), sum(len(task["events"]) for task in ordered))
     return basis, cache, snapshot
 

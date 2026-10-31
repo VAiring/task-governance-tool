@@ -359,6 +359,14 @@ owner, duplicate, or cardinality overflow fails closed. Runner identifiers are
 allocated by the parent from one caller token per record and do not encode a
 path or result.
 
+Ordinary admission validates the selected/newly written graph and its identity
+closure. Pending reconciliation additionally checks the real project-wide
+inventory, including orphan and foreign endpoint arms and terminal/cleanup
+cardinality, without semantically revalidating every unrelated closed graph.
+An older admitted generation remains eligible for required cleanup/audit after
+ownership or target changes; only exact current evidence can satisfy a gate.
+Explicit full audits retain complete graph validation.
+
 After intent, a terminal observation is allowed only after all three accepted
 process proofs (`process_zero`, `handles_closed`, and
 `raw_output_discarded`) are true and lifecycle independently proves the exact

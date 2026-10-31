@@ -22,6 +22,11 @@ class WaitBasisError(ValueError):
 
 def read_wait_basis(connection, *, project_id, task_id):
     """The caller retains the resolver's validated read transaction throughout."""
+    return _read_wait_basis(connection, project_id=project_id, task_id=task_id)[0]
+
+
+def _read_wait_basis(connection, *, project_id, task_id):
+    """Return the wait projection and its admitted Task in this one read only."""
     if (not connection.in_transaction
             or connection.execute("PRAGMA query_only").fetchone()[0] != 1):
         raise WaitBasisError()
@@ -67,17 +72,16 @@ def read_wait_basis(connection, *, project_id, task_id):
         "target_kind": task["review_target_kind"], "target_value": task["review_target_value"],
         "target_base_revision": task["review_target_base_revision"],
         "target_generation": task["review_target_generation"], "artifact_manifest_id": manifest_id,
-    }
+    }, task
 
 
 def read_review_basis(connection, *, project_id, task_id):
     """Observe full native identity; this read grants no caller/worker authority."""
     from .review_continuation import validate_basis
     from .verification_declaration import verification_requirement
-    wait = read_wait_basis(connection, project_id=project_id, task_id=task_id)
+    wait, task = _read_wait_basis(connection, project_id=project_id, task_id=task_id)
     if wait["task_status"] not in ("in_progress", "review_pending"):
         raise WaitBasisError("task_ownership_changed")
-    task = read_internal_task(connection, project_id, task_id)
     return validate_basis({
         **{key: value for key, value in wait.items() if key not in ("task_status", "parent_thread_id")},
         "parent_session_id": wait["parent_thread_id"],

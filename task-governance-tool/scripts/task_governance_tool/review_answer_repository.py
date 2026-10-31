@@ -214,6 +214,40 @@ VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""", (receipt["review_receipt_id"],*(host[k] for
 
 
 def validate_storage_rows(connection, *, review_task=None):
+    """Admit each collected Receipt once inside this read-only call.
+
+    The callback and its facts never escape this synchronous repository read.
+    Standalone registration reads and every later writer validate independently.
+    """
+    owns_read = not connection.in_transaction
+    try:
+        if owns_read:
+            connection.execute("BEGIN")
+        checked = {}
+        def collected(receipt):
+            # The dispatch query adds contract_revision to the native Receipt.
+            # Compare all native columns before borrowing the earlier result.
+            key = receipt["review_receipt_id"]
+            native = {name: receipt[name] for name in receipt.keys() if name != "contract_revision"}
+            previous = checked.get(key)
+            if previous is not None:
+                if previous != native:
+                    raise _bad()
+                return
+            _validate_collected_receipt(connection, receipt)
+            checked[key] = native
+        _validate_storage_rows(connection, review_task=review_task, collected=collected)
+    finally:
+        if owns_read and connection.in_transaction:
+            connection.rollback()
+
+
+def _validate_collected_receipt(connection, receipt):
+    provenance = validate_provenance_relation(connection, receipt)
+    validate_payload_findings(connection, receipt["review_receipt_id"], provenance)
+
+
+def _validate_storage_rows(connection, *, review_task, collected):
     # Completion admits its own review graph; global consumers also reject orphans.
     selected = " AND task_id=?" if review_task is not None else ""
     rows = connection.execute("SELECT receipt.* FROM review_receipts AS receipt WHERE review_provenance_basis_version=2" + selected + " ORDER BY review_receipt_id",
@@ -221,8 +255,7 @@ def validate_storage_rows(connection, *, review_task=None):
     for row in rows:
         if review_task is not None and (row["project_id"], row["task_id"]) != review_task:
             raise _bad()
-        provenance=validate_provenance_relation(connection,row)
-        validate_payload_findings(connection,row["review_receipt_id"],provenance)
+        collected(row)
         if connection.execute("SELECT 1 FROM review_receipt_sessions WHERE review_receipt_id=?",(row["review_receipt_id"],)).fetchone() is None:
             raise _bad()
     own_receipt = "r.task_id=?" if review_task is not None else "1"
@@ -275,7 +308,7 @@ WHERE r.task_id=?)"""
             (review_task[1],) * 3 if review_task is not None else ()):
         if review_task is not None and (dispatch["project_id"], dispatch["task_id"]) != review_task:
             raise _bad()
-        registration = read_registration(connection,project_id=dispatch["project_id"],task_id=dispatch["task_id"],preparation_id=dispatch["preparation_id"],submission_digest=dispatch["submission_digest"])
+        registration = _read_registration(connection,project_id=dispatch["project_id"],task_id=dispatch["task_id"],preparation_id=dispatch["preparation_id"],submission_digest=dispatch["submission_digest"], collected=collected)
         if (registration["status"] != "recorded" or any(
             (entry["project_id"], entry["task_id"]) != (dispatch["project_id"], dispatch["task_id"])
             for entry in registration["entries"]
@@ -386,7 +419,7 @@ def record_dispatch_locked(connection, *, preparation_id, submission_digest, pro
         connection.execute("INSERT INTO review_collection_dispatch_entries VALUES (?,?,?,?,?)",(preparation_id,submission_digest,entry["slot"],entry["receipt_id"],_canonical(entry,32768)))
 
 
-def _validate_dispatch_entries(connection, entries):
+def _validate_dispatch_entries(connection, entries, *, collected=None):
     from .review_continuation import identifier
     from .review_provenance import DIGEST_PATTERN
     for entry in entries:
@@ -405,7 +438,10 @@ def _validate_dispatch_entries(connection, entries):
         if receipt is None or session is None or any(entry[k] != receipt[k] for k in ("project_id","task_id","contract_revision")) or entry["target"] != _target(receipt) or entry["reviewer_session_id"] != session["session_id"] or entry["original_digest"] != "sha256:"+session["original_result_digest"]:
             raise _bad()
         if entry["protocol"] == "review-answer-v1":
-            validate_payload_findings(connection,entry["receipt_id"],validate_provenance_relation(connection,receipt))
+            if collected is None:
+                _validate_collected_receipt(connection, receipt)
+            else:
+                collected(receipt)
             source = connection.execute("SELECT * FROM review_collection_sources WHERE review_receipt_id=?", (entry["receipt_id"],)).fetchone()
             if source is None or entry["source_preparation_id"] != source["preparation_id"] or any(entry[k] != source[k] for k in ("reviewer_session_id","turn_id","message_id","basis_digest","original_digest","payload_digest","submission_digest")):
                 raise _bad()
@@ -423,6 +459,11 @@ def _validate_dispatch_entries(connection, entries):
 
 
 def read_registration(connection, *, project_id, task_id, preparation_id, submission_digest):
+    return _read_registration(connection, project_id=project_id, task_id=task_id,
+        preparation_id=preparation_id, submission_digest=submission_digest)
+
+
+def _read_registration(connection, *, project_id, task_id, preparation_id, submission_digest, collected=None):
     result = dict(status="absent",preparation_id=preparation_id,submission_digest=submission_digest,current_basis=None,entries=[],reason=None)
     import sqlite3
     try:
@@ -452,7 +493,7 @@ def read_registration(connection, *, project_id, task_id, preparation_id, submis
         if collected_ids!=native_sources:
             result.update(status="conflict",reason="partial_inventory")
             return result
-        _validate_dispatch_entries(connection,entries)
+        _validate_dispatch_entries(connection,entries,collected=collected)
     except sqlite3.Error:
         result.update(status="unknown",reason="inventory_unavailable")
         return result

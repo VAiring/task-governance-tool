@@ -871,7 +871,7 @@ class DocumentContractTests(unittest.TestCase):
                 ),
                 (
                     "docs/specification.md",
-                "### Current Schema-v34 Persistence Contract",
+                "### Current Schema-v35 Persistence Contract",
                     ("database-specification.md#current-schema-v22-persistence-contract",),
                 ),
                 (
@@ -886,7 +886,7 @@ class DocumentContractTests(unittest.TestCase):
                 ),
                 (
                     contract.DESIGN,
-                "## Current Schema-v34 Ownership, Reviewer Binding, And Task Notes Design",
+                "## Current Schema-v35 Ownership, Reviewer Binding, And Task Notes Design",
                     ("database-design.md#session-ownership-migration", "database-design.md#conditional-reviewer-binding-migration", "database-design.md#combined-session-slot-migration", "database-design.md#task-event-note-body-migration", "database-design.md#current-schema-v22-reservation-cleanup-design"),
                 ),
                 (

@@ -72,7 +72,14 @@ def locate(repo, packet_path, packet_raw, packet):
         packet["review_target"]["generation"])
     if not path_lexically_exists(path):
         return None
-    records, current = PreparationRepository(path).read()
+    journal = PreparationRepository(path)
+    current = journal.read_current()
+    if current.packet_path == packet_path and current.packet_digest == sha256(packet_raw).hexdigest():
+        records = (current,)
+    else:
+        # An explicitly supplied old Packet still requires legacy source lookup.
+        # Do not silently change that history consumer into a current-only read.
+        records, current = journal.read()
     matches = [row for row in records if row.packet_path == packet_path
         and row.packet_digest == sha256(packet_raw).hexdigest()]
     if len(matches) > 1:

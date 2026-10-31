@@ -226,7 +226,8 @@ class RequestRepository(ReviewWaitRepository):
                 known = {row.continuation_id: row for row in rounds}
                 selected = {}
                 for index, raw in history:
-                    prior = _decode_record(raw)
+                    # The last attempt was already decoded in this snapshot.
+                    prior = record if index == sequence else _decode_record(raw)
                     if index < count and prior.phase != "closed":
                         raise ValueError
                     if prior.continuation_id is not None:
@@ -268,9 +269,8 @@ class RequestRepository(ReviewWaitRepository):
         if record.phase != "creating":
             raise RepositoryError("state_transition_invalid")
         with self._connection(write=True) as connection:
-            sequence, before = self._load(connection)
-            from .request_continuation import encode as encode_round, load_rounds
-            rounds = load_rounds(connection) if connection.execute("PRAGMA user_version").fetchone()[0] == 2 else ()
+            sequence, before, rounds = self._load(connection, with_rounds=True)
+            from .request_continuation import encode as encode_round
             continued = rounds[-1] if rounds else None
             if record.continuation_id is not None:
                 if (continued is None or record.continuation_id != continued.continuation_id
@@ -296,10 +296,8 @@ class RequestRepository(ReviewWaitRepository):
             self._load(connection)
 
     def read_rounds(self):
-        from .request_continuation import load_rounds
         with self._connection() as connection:
-            self._load(connection)
-            return load_rounds(connection) if connection.execute("PRAGMA user_version").fetchone()[0] == 2 else ()
+            return self._load(connection, with_rounds=True)[2]
 
     def install_round(self, lease, record, *, historical=None):
         """Explicit settled conversion/publication, preserving every old JSON byte."""
@@ -308,10 +306,9 @@ class RequestRepository(ReviewWaitRepository):
         if type(record) is not continuation.RequestRound or record.phase != "prepared":
             raise RepositoryError("state_transition_invalid")
         with self._connection(write=True) as connection:
-            sequence, before = self._load(connection)
+            sequence, before, rounds = self._load(connection, with_rounds=True)
             version = connection.execute("PRAGMA user_version").fetchone()[0]
             if version == 2:
-                rounds = continuation.load_rounds(connection)
                 previous = next((row for row in rounds if row.continuation_id == record.continuation_id), None)
                 if previous is not None:
                     if replace(previous, phase="prepared") != record:
@@ -327,15 +324,17 @@ class RequestRepository(ReviewWaitRepository):
             if version == 1:
                 # Validate the whole admitted predecessor, not just its last row.
                 history = connection.execute("SELECT sequence,payload FROM attempts ORDER BY sequence").fetchall()
+                predecessors = tuple(_decode_record(raw) for _, raw in history)
                 if ([row[0] for row in history] != list(range(1, sequence + 1))
-                    or any(_decode_record(raw).phase != "closed" or _decode_record(raw).continuation_id is not None for _, raw in history)):
+                    or any(row.phase != "closed" or row.continuation_id is not None for row in predecessors)):
                     raise RepositoryError("state_unreadable")
                 connection.execute("DROP TABLE schema_history")
                 for statement in continuation.SCHEMA.values():
                     connection.execute(statement)
                 connection.execute("PRAGMA user_version=2")
                 connection.execute("INSERT INTO schema_history VALUES (2,'review-wait-request-v2')")
-            rounds = continuation.load_rounds(connection)
+                # The new tables are empty; no pre-conversion fact survives DDL.
+                rounds = continuation.load_rounds(connection)
             previous = next((row for row in rounds if row.continuation_id == record.continuation_id), None)
             if previous is not None:
                 if replace(previous, phase="prepared") != record:
@@ -358,11 +357,10 @@ class RequestRepository(ReviewWaitRepository):
         settled effects before retiring an older-generation unused round.
         Original rows and identities remain unchanged except monotone phase.
         """
-        from .request_continuation import encode as encode_round, load_rounds
+        from .request_continuation import encode as encode_round
         lease._check()
         with self._connection(write=True) as connection:
-            sequence, _ = self._load(connection)
-            rounds = load_rounds(connection)
+            sequence, _, rounds = self._load(connection, with_rounds=True)
             if not rounds or rounds[-1] != record or record.phase != "prepared" or sequence != record.expected_attempt:
                 raise RepositoryError("state_transition_invalid")
             after = replace(record, phase="published")

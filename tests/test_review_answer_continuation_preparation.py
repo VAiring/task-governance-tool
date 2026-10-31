@@ -186,7 +186,7 @@ class ContinuedAnswerPreparationTests(unittest.TestCase):
         with patch.object(review_handoff_scope,"resolve",return_value=SimpleNamespace(paths=paths)),\
              patch.object(setup_feature_config,"answer_collection_allowed",return_value=True),\
              patch.object(state_paths,"path_lexically_exists",return_value=True),\
-             patch.object(p.PreparationRepository,"read",return_value=((root,),root)),\
+             patch.object(p.PreparationRepository,"read_current",return_value=root),\
              patch.object(p.TransitionRepository,"read",return_value=(round,)),\
              patch.object(p.CollectionRepository,"read",return_value=({"basis":initial},)),\
              patch.object(handoff,"service_for",side_effect=AssertionError("redirected to initial store")):

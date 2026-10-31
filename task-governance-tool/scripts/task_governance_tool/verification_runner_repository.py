@@ -42,6 +42,97 @@ VERIFICATION_RUNNER_OBSERVATION_ID_PATTERN = re.compile(
 
 VERIFICATION_RUNNER_IDENTIFIER_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 
+_RUNNER_TABLES = {name: 'verification_runner_' + name + 's'
+                  for name in ('resolution', 'attempt', 'observation', 'sandbox_event')}
+_RUNNER_IDS = {name: 'verification_runner_' + name + '_id' for name in _RUNNER_TABLES}
+_RUNNER_EDGES = (
+    ('resolution', 'attempt', _RUNNER_IDS['resolution'], _RUNNER_IDS['resolution'], False),
+    ('attempt', 'resolution', _RUNNER_IDS['resolution'], _RUNNER_IDS['resolution'], False),
+    ('observation', 'resolution', _RUNNER_IDS['resolution'], _RUNNER_IDS['resolution'], False),
+    ('observation', 'attempt', _RUNNER_IDS['attempt'], _RUNNER_IDS['attempt'], False),
+    ('observation', 'sandbox_event', _RUNNER_IDS['observation'], 'terminal_observation_id', False),
+    ('sandbox_event', 'attempt', _RUNNER_IDS['attempt'], _RUNNER_IDS['attempt'], False),
+    ('sandbox_event', 'observation', 'terminal_observation_id', _RUNNER_IDS['observation'], True),
+)
+
+
+def _selected_runner_rows(connection, key):
+    """Select both identity arms, refusing aliases before semantic validation."""
+    from .storage import evidence_ledger_inconsistent
+    scope = 'project_id=? AND task_id=? AND target_generation=?'
+    result = []
+    for name, table in _RUNNER_TABLES.items():
+        selections, parameters = [f'SELECT rowid FROM {table} WHERE {scope}'], list(key)
+        relations = set()
+        for child, parent, child_key, parent_key, _nullable in _RUNNER_EDGES:
+            if child == name:
+                relations.add((child_key, parent, parent_key))
+            if parent == name:
+                relations.add((parent_key, child, child_key))
+        for field, other, other_field in sorted(relations):
+            selections.append(f'SELECT rowid FROM {table} WHERE {field} IN '
+                f'(SELECT {other_field} FROM {_RUNNER_TABLES[other]} WHERE {scope})')
+            parameters.extend(key)
+        # Union indexed row identities before sorting the bounded closure.
+        # A single OR plus ORDER BY can choose a whole primary-key scan.
+        rows = connection.execute(f'SELECT * FROM {table} WHERE rowid IN (' +
+            ' UNION '.join(selections) + f') ORDER BY {_RUNNER_IDS[name]} LIMIT 2', parameters).fetchall()
+        if len(rows) > 1 or any(tuple(row[field] for field in
+                ('project_id', 'task_id', 'target_generation')) != key for row in rows):
+            raise evidence_ledger_inconsistent()
+        result.append(rows)
+    return result
+
+
+def _runner_reference_rows(connection, selected_generation, observation_rows):
+    """Owner-generation plus reverse source identity, without unrelated history."""
+    if selected_generation is None:
+        return connection.execute(
+            "SELECT * FROM evidence_references "
+            "WHERE source_kind = 'runner_observation' "
+            "ORDER BY source_id, evidence_reference_id"
+        ).fetchall()
+    else:
+        return connection.execute(
+            "SELECT * FROM evidence_references "
+            "WHERE rowid IN (SELECT rowid FROM evidence_references "
+            "WHERE project_id = ? AND task_id = ? "
+            "AND target_generation = ? "
+            "AND source_kind = 'runner_observation' "
+            "UNION SELECT rowid FROM evidence_references WHERE source_id IN "
+            "(SELECT value FROM json_each(?))) "
+            "ORDER BY source_id, evidence_reference_id LIMIT 2",
+            (*selected_generation, json.dumps([row['verification_runner_observation_id'] for row in observation_rows])),
+        ).fetchall()
+
+
+def _runner_reference_links(connection, runner_reference_keys):
+    """Follow reference identity across owners; callers reject foreign links."""
+    if runner_reference_keys:
+        selected_references_json = json.dumps(
+            runner_reference_keys,
+            ensure_ascii=True,
+            separators=(",", ":"),
+        )
+        return connection.execute(
+            """
+            WITH selected_references(value) AS (
+                SELECT value FROM json_each(?)
+            )
+            SELECT link.*
+              FROM selected_references AS selected
+             CROSS JOIN criterion_evidence_links AS link
+             WHERE link.evidence_reference_id =
+                     json_extract(selected.value, '$[2]')
+             ORDER BY link.evidence_reference_id,
+                      link.criterion_evidence_link_id
+             LIMIT ?
+            """,
+            (selected_references_json, len(runner_reference_keys) + 1),
+        ).fetchall()
+    else:
+        return ()
+
 
 @dataclass(frozen=True)
 class _ValidatedRunnerGraph:
@@ -320,7 +411,7 @@ def _validated_verification_runner_graph(
     )
 
     physical_schema_version = current_schema_version(connection)
-    if physical_schema_version not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+    if physical_schema_version not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
         PRIVATE_SCHEMA20_VERSION,
         PRIVATE_SCHEMA21_VERSION,
         PRIVATE_SCHEMA22_VERSION,
@@ -328,7 +419,7 @@ def _validated_verification_runner_graph(
         return (), {}
     allowed_eligibility_versions = (
         {0, 1}
-        if physical_schema_version in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+        if physical_schema_version in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
             PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
         }
         else {0}
@@ -336,8 +427,8 @@ def _validated_verification_runner_graph(
     if selected_generation is not None:
         project_id, task_id, target_generation = selected_generation
         if (
-            physical_schema_version not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
-                PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
+            physical_schema_version not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
+                PRIVATE_SCHEMA20_VERSION, PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
             }
             or type(project_id) is not str
             or not project_id
@@ -352,7 +443,6 @@ def _validated_verification_runner_graph(
             if (
                 selected_task["project_id"] != project_id
                 or selected_task["task_id"] != task_id
-                or selected_task["review_target_generation"] != target_generation
             ):
                 raise evidence_ledger_inconsistent()
         else:
@@ -368,50 +458,17 @@ def _validated_verification_runner_graph(
                 not in {"caller_attestation", "runner_observation"}
             ):
                 raise evidence_ledger_inconsistent()
-        generation_predicate = (
-            " WHERE project_id = ? AND task_id = ? AND target_generation = ? "
-        )
-        generation_parameters: tuple[object, ...] = selected_generation
-        generation_limit = " LIMIT 2"
     else:
         if selected_task is not None or selected_history_cycle is not None:
             raise evidence_ledger_inconsistent()
-        generation_predicate = " "
-        generation_parameters = ()
-        generation_limit = ""
     try:
-        resolution_rows = connection.execute(
-            "SELECT * FROM verification_runner_resolutions "
-            + generation_predicate
-            + "ORDER BY project_id, task_id, target_generation, "
-            "verification_runner_resolution_id"
-            + generation_limit,
-            generation_parameters,
-        ).fetchall()
-        attempt_rows = connection.execute(
-            "SELECT * FROM verification_runner_attempts "
-            + generation_predicate
-            + "ORDER BY project_id, task_id, target_generation, "
-            "verification_runner_attempt_id"
-            + generation_limit,
-            generation_parameters,
-        ).fetchall()
-        observation_rows = connection.execute(
-            "SELECT * FROM verification_runner_observations "
-            + generation_predicate
-            + "ORDER BY project_id, task_id, target_generation, "
-            "verification_runner_observation_id"
-            + generation_limit,
-            generation_parameters,
-        ).fetchall()
-        event_rows = connection.execute(
-            "SELECT * FROM verification_runner_sandbox_events "
-            + generation_predicate
-            + "ORDER BY project_id, task_id, target_generation, "
-            "verification_runner_sandbox_event_id"
-            + generation_limit,
-            generation_parameters,
-        ).fetchall()
+        if selected_generation is not None:
+            resolution_rows, attempt_rows, observation_rows, event_rows = _selected_runner_rows(
+                connection, selected_generation)
+        else:
+            resolution_rows, attempt_rows, observation_rows, event_rows = (
+                connection.execute(f'SELECT * FROM {table} ORDER BY project_id, task_id, target_generation, {_RUNNER_IDS[name]}').fetchall()
+                for name, table in _RUNNER_TABLES.items())
         if selected_generation is None:
             snapshots = {
                 str(row["authority_snapshot_id"]): row
@@ -485,7 +542,7 @@ def _validated_verification_runner_graph(
                     (selected_generation[0], selected_generation[1]): (
                         selected_task_basis
                     )
-                }
+                } if selected_task["review_target_generation"] == target_generation else {}
             else:
                 assert selected_history_cycle is not None
                 tasks = {}
@@ -846,7 +903,7 @@ def _validated_verification_runner_graph(
             current = resolutions.get((project_id, task_id, generation))
             if marker == 2:
                 if (
-                    physical_schema_version not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+                    physical_schema_version not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
                         PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
                     }
                     or current is None
@@ -901,21 +958,7 @@ def _validated_verification_runner_graph(
                     ):
                         raise evidence_ledger_inconsistent()
 
-        if selected_generation is None:
-            runner_references = connection.execute(
-                "SELECT * FROM evidence_references "
-                "WHERE source_kind = 'runner_observation' "
-                "ORDER BY source_id, evidence_reference_id"
-            ).fetchall()
-        else:
-            runner_references = connection.execute(
-                "SELECT * FROM evidence_references "
-                "WHERE project_id = ? AND task_id = ? "
-                "AND target_generation = ? "
-                "AND source_kind = 'runner_observation' "
-                "ORDER BY source_id, evidence_reference_id LIMIT 2",
-                selected_generation,
-            ).fetchall()
+        runner_references = _runner_reference_rows(connection, selected_generation, observation_rows)
         references_by_source: dict[str, sqlite3.Row] = {}
         runner_reference_keys: list[list[str]] = []
         for row in runner_references:
@@ -937,34 +980,7 @@ def _validated_verification_runner_graph(
             references_by_source[source_id] = row
             runner_reference_keys.append([project_id, task_id, reference_id])
 
-        runner_links: tuple[sqlite3.Row, ...] | list[sqlite3.Row]
-        if runner_reference_keys:
-            selected_references_json = json.dumps(
-                runner_reference_keys,
-                ensure_ascii=True,
-                separators=(",", ":"),
-            )
-            runner_links = connection.execute(
-                """
-                WITH selected_references(value) AS (
-                    SELECT value FROM json_each(?)
-                )
-                SELECT link.*
-                  FROM selected_references AS selected
-                 CROSS JOIN criterion_evidence_links AS link
-                       INDEXED BY idx_criterion_evidence_links_reference
-                 WHERE link.project_id = json_extract(selected.value, '$[0]')
-                   AND link.task_id = json_extract(selected.value, '$[1]')
-                   AND link.evidence_reference_id =
-                         json_extract(selected.value, '$[2]')
-                 ORDER BY link.evidence_reference_id,
-                          link.criterion_evidence_link_id
-                 LIMIT ?
-                """,
-                (selected_references_json, len(runner_reference_keys) + 1),
-            ).fetchall()
-        else:
-            runner_links = ()
+        runner_links = _runner_reference_links(connection, runner_reference_keys)
         links_by_reference: dict[str, list[sqlite3.Row]] = {}
         for row in runner_links:
             reference_id = row["evidence_reference_id"]
@@ -997,7 +1013,7 @@ def _validated_verification_runner_graph(
                 ),
                 _validated_runner_eligibility_version=(
                     observation.gate_eligibility_version
-                    if physical_schema_version in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+                    if physical_schema_version in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
                         PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
                     }
                     else 0
@@ -1160,7 +1176,7 @@ def read_current_verification_runner_target_basis(
 
     schema_version = current_schema_version(connection)
     if (
-        schema_version not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+        schema_version not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
             PRIVATE_SCHEMA20_VERSION,
             PRIVATE_SCHEMA21_VERSION,
             PRIVATE_SCHEMA22_VERSION,
@@ -1237,7 +1253,7 @@ def read_current_verification_runner_target_basis(
         or task["review_target_runner_basis_version"] not in {0, 2}
         or (
             task["review_target_runner_basis_version"] == 2
-            and schema_version not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+            and schema_version not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
                 PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
             }
         )
@@ -1350,13 +1366,14 @@ def read_verification_runner_generation_locked(
         or target_generation < 1
     ):
         raise evidence_ledger_inconsistent()
-    _validated_verification_runner_references(connection)
-    return _read_verification_runner_generation_unvalidated(
-        connection,
-        project_id=project_id,
-        task_id=task_id,
-        target_generation=target_generation,
-    )
+    from task_governance_tool.storage import _read_validated_current_task_row
+    task = _read_validated_current_task_row(connection, project_id=project_id, task_id=task_id)
+    if task is None:
+        raise evidence_ledger_inconsistent()
+    key = (project_id, task_id, target_generation)
+    _references, generations = _validated_verification_runner_graph(
+        connection, selected_generation=key, selected_task=task)
+    return generations.get(key)
 
 
 def _verification_runner_gate_storage_token(
@@ -1420,7 +1437,7 @@ def _read_current_verification_runner_gate_snapshot(
 
 
     if (
-        current_schema_version(connection) not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+        current_schema_version(connection) not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
             PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
         }
         or type(project_id) is not str
@@ -1599,7 +1616,7 @@ def read_pending_verification_runner_cleanup(
 
     if type(project_id) is not str or not project_id:
         raise evidence_ledger_inconsistent()
-    _validated_verification_runner_references(connection)
+    _validate_runner_inventory_edges(connection, project_id)
     rows = connection.execute(
         "SELECT resolution.task_id, resolution.target_generation "
         "FROM verification_runner_resolutions AS resolution "
@@ -1612,24 +1629,62 @@ def read_pending_verification_runner_cleanup(
         "AND cleanup.task_id = resolution.task_id "
         "AND cleanup.target_generation = resolution.target_generation "
         "WHERE resolution.project_id = ? "
-        "AND resolution.gate_eligibility_version IN (0, 1) "
         "AND observation.verification_runner_observation_id IS NULL "
         "AND cleanup.verification_runner_sandbox_event_id IS NULL "
-        "ORDER BY resolution.task_id, resolution.target_generation",
+        "ORDER BY resolution.task_id, resolution.target_generation LIMIT 2",
         (project_id,),
     ).fetchall()
+    if len(rows) > 1:
+        raise evidence_ledger_inconsistent()
     result: list[dict[str, Any]] = []
     for row in rows:
-        item = _read_verification_runner_generation_unvalidated(
+        item = read_verification_runner_generation_locked(
             connection,
             project_id=project_id,
-            task_id=str(row["task_id"]),
-            target_generation=int(row["target_generation"]),
+            task_id=row["task_id"],
+            target_generation=row["target_generation"],
         )
         if item is None or item["state"] != "pending":
             raise evidence_ledger_inconsistent()
         result.append(item)
     return tuple(result)
+
+
+def _validate_runner_inventory_edges(connection, project_id):
+    """Prove the actual pending inventory without decoding sealed terminals.
+
+    These project-wide cardinality/anti-join predicates are required by the
+    single Runner lock. Full payload/authority/digest validation belongs only
+    to the selected or pending generation (and explicit whole-store audits).
+    Both endpoint identities participate, including foreign children of our
+    rows. An orphan or malformed identity cannot disappear through selection.
+    """
+    from task_governance_tool.storage import evidence_ledger_inconsistent
+    tables, ids = _RUNNER_TABLES, _RUNNER_IDS
+    for name, table in tables.items():
+        if connection.execute(
+            f"SELECT 1 FROM {table} WHERE project_id=? AND ("
+            "typeof(project_id)!='text' OR typeof(task_id)!='text' OR task_id='' "
+            "OR typeof(target_generation)!='integer' OR target_generation<1 "
+            f"OR typeof({ids[name]})!='text' OR {ids[name]}='') LIMIT 1",
+            (project_id,)).fetchone() is not None or connection.execute(
+            f"SELECT 1 FROM {table} WHERE project_id=? "
+            "GROUP BY task_id,target_generation HAVING COUNT(*)>1 LIMIT 1",
+            (project_id,)).fetchone() is not None:
+            raise evidence_ledger_inconsistent()
+    for child, parent, child_key, parent_key, nullable in _RUNNER_EDGES:
+        absent = f"p.{ids[parent]} IS NULL"
+        if nullable:
+            absent = f"(c.{child_key} IS NOT NULL AND {absent})"
+        mismatch = " OR ".join(f"c.{key} IS NOT p.{key}" for key in
+                               ('project_id', 'task_id', 'target_generation'))
+        if connection.execute(
+            f"SELECT 1 FROM {tables[child]} AS c LEFT JOIN {tables[parent]} AS p "
+            f"ON p.{parent_key}=c.{child_key} "
+            f"WHERE (c.project_id=? OR p.project_id=?) AND ({absent} OR "
+            f"(p.{ids[parent]} IS NOT NULL AND ({mismatch}))) LIMIT 1",
+            (project_id, project_id)).fetchone() is not None:
+            raise evidence_ledger_inconsistent()
 
 
 def has_pending_verification_runner_cleanup(
@@ -1775,24 +1830,11 @@ def insert_verification_runner_resolution_locked(
             != attempt_values
         ):
             raise evidence_ledger_inconsistent()
-        _validated_verification_runner_references(connection)
+        read_verification_runner_generation_locked(connection, project_id=resolution.project_id,
+            task_id=resolution.task_id, target_generation=resolution.target_generation)
+        read_pending_verification_runner_cleanup(connection, project_id=resolution.project_id)
         return False
-    pending = connection.execute(
-        "SELECT 1 FROM verification_runner_resolutions AS existing "
-        "LEFT JOIN verification_runner_observations AS observation "
-        "ON observation.project_id = existing.project_id "
-        "AND observation.task_id = existing.task_id "
-        "AND observation.target_generation = existing.target_generation "
-        "LEFT JOIN verification_runner_sandbox_events AS cleanup "
-        "ON cleanup.project_id = existing.project_id "
-        "AND cleanup.task_id = existing.task_id "
-        "AND cleanup.target_generation = existing.target_generation "
-        "WHERE existing.project_id = ? "
-        "AND observation.verification_runner_observation_id IS NULL "
-        "AND cleanup.verification_runner_sandbox_event_id IS NULL LIMIT 1",
-        (resolution.project_id,),
-    ).fetchone()
-    if pending is not None:
+    if read_pending_verification_runner_cleanup(connection, project_id=resolution.project_id):
         raise evidence_ledger_inconsistent()
     current = read_current_verification_runner_target_basis(
         connection,
@@ -1826,7 +1868,8 @@ def insert_verification_runner_resolution_locked(
         )
     except sqlite3.Error as exc:
         raise evidence_ledger_sqlite_error(exc) from exc
-    _validated_verification_runner_references(connection)
+    read_verification_runner_generation_locked(connection, project_id=resolution.project_id,
+        task_id=resolution.task_id, target_generation=resolution.target_generation)
     return True
 
 
@@ -1914,8 +1957,7 @@ def persist_verification_runner_terminal_locked(
     reference_fields = _EVIDENCE_LEDGER_REQUIRED_COLUMNS["evidence_references"]
     if set(reference) != reference_fields:
         raise evidence_ledger_inconsistent()
-    _validated_verification_runner_references(connection)
-    generation = _read_verification_runner_generation_unvalidated(
+    generation = read_verification_runner_generation_locked(
         connection,
         project_id=observation.project_id,
         task_id=observation.task_id,
@@ -1992,7 +2034,8 @@ def persist_verification_runner_terminal_locked(
         )
     except sqlite3.Error as exc:
         raise evidence_ledger_sqlite_error(exc) from exc
-    _validated_verification_runner_references(connection)
+    read_verification_runner_generation_locked(connection, project_id=observation.project_id,
+        task_id=observation.task_id, target_generation=observation.target_generation)
     return True
 
 
@@ -2015,8 +2058,7 @@ def persist_verification_runner_restart_cleanup_locked(
         cleanup_event,
         VerificationRunnerSandboxEvent,
     )
-    _validated_verification_runner_references(connection)
-    generation = _read_verification_runner_generation_unvalidated(
+    generation = read_verification_runner_generation_locked(
         connection,
         project_id=cleanup_event.project_id,
         task_id=cleanup_event.task_id,
@@ -2059,7 +2101,8 @@ def persist_verification_runner_restart_cleanup_locked(
         )
     except sqlite3.Error as exc:
         raise evidence_ledger_sqlite_error(exc) from exc
-    _validated_verification_runner_references(connection)
+    read_verification_runner_generation_locked(connection, project_id=cleanup_event.project_id,
+        task_id=cleanup_event.task_id, target_generation=cleanup_event.target_generation)
     return True
 
 

@@ -79,6 +79,37 @@ class RequestContinuationTests(unittest.TestCase):
         self.assertEqual(after.phase, "published")
         self.assertEqual(self.payloads(), before)
 
+    def test_same_snapshot_rounds_are_decoded_once_and_new_reads_remain_fresh(self):
+        from task_governance_tool.review_wait_runtime import request_continuation as rounds
+        from task_governance_tool.review_wait_runtime import request_repository as requests
+        self.install()
+        with mock.patch.object(rounds, "decode", wraps=rounds.decode) as decode_round, \
+                mock.patch.object(requests, "_decode_record", wraps=requests._decode_record) as decode_attempt:
+            self.assertEqual(self.repo.read_rounds(), (self.record,))
+            self.assertEqual((decode_round.call_count, decode_attempt.call_count), (1, 1))
+            self.assertEqual(self.repo.read_admission()[2], (self.record,))
+            self.assertEqual((decode_round.call_count, decode_attempt.call_count), (2, 2))
+        with self.repo.serial() as lease:
+            with mock.patch.object(rounds, "decode", wraps=rounds.decode) as decode_round:
+                self.assertEqual(self.repo.install_round(lease, self.record), self.record)
+                self.assertEqual(decode_round.call_count, 1)
+            with mock.patch.object(rounds, "decode", wraps=rounds.decode) as decode_round:
+                after = self.repo.publish_without_wait(lease, self.record)
+                # Separate pre-write and post-write states must both be admitted.
+                self.assertEqual(decode_round.call_count, 2)
+        self.assertEqual(self.repo.read_rounds(), (after,))
+
+    def test_append_reuses_prewrite_rounds_but_validates_new_occurrence(self):
+        from task_governance_tool.review_wait_runtime import request_continuation as rounds
+        self.install()
+        value = RequestRecord("d" * 64, self.turn, self.pairs,
+            continuation_id=self.record.continuation_id, continuation_sequence=1)
+        with self.repo.serial() as lease, mock.patch.object(rounds, "decode", wraps=rounds.decode) as decode:
+            self.repo.append(lease, value)
+            self.assertEqual(decode.call_count, 2)
+        self.assertEqual(self.repo.read(), (2, value))
+        self.assertEqual(self.repo.read_rounds()[0].phase, "published")
+
     def first_closed_occurrence(self):
         self.install()
         value = RequestRecord("d" * 64, self.turn, self.pairs,
@@ -187,8 +218,8 @@ class RequestContinuationTests(unittest.TestCase):
     def test_failed_conversion_rolls_back_schema_and_every_original_row(self):
         before = self.payloads()
         load = self.repo._load
-        def reject_v2(connection):
-            value = load(connection)
+        def reject_v2(connection, **options):
+            value = load(connection, **options)
             if connection.execute("PRAGMA user_version").fetchone() == (2,):
                 raise RepositoryError("state_unreadable")
             return value

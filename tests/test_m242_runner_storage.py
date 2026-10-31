@@ -5,6 +5,7 @@ import unittest
 from contextlib import closing
 from dataclasses import replace
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -520,6 +521,83 @@ class RunnerStorageTests(unittest.TestCase):
                     ),
                     (1, 1),
                 )
+
+    def test_selected_and_pending_reads_do_not_decode_unrelated_closed_generations(self):
+        from task_governance_tool import verification_runner_repository as repository
+        def measure(connection, operation):
+            statements, work = [], [0]
+            def tick():
+                work[0] += 1
+                return 0
+            connection.set_trace_callback(statements.append)
+            connection.set_progress_handler(tick, 1)
+            try:
+                with mock.patch.object(repository, '_runner_resolution_value', wraps=repository._runner_resolution_value) as decode:
+                    result = operation()
+                    return result, (len(statements), work[0], decode.call_count)
+            finally:
+                connection.set_trace_callback(None)
+                connection.set_progress_handler(None, 0)
+        with tempfile.TemporaryDirectory(prefix='.tmp-runner-selected-', dir=ROOT) as tmp:
+            target, basis, resolution, attempt = self._pending_graph(
+                Path(tmp), seed='selected', commit_character='4', token='a' * 16)
+            old_id = resolution.verification_runner_resolution_id
+            with closing(storage.connect_initialized(target, operation_local=True)) as connection:
+                _first, baseline = measure(connection, lambda: repository.read_pending_verification_runner_cleanup(
+                    connection, project_id=resolution.project_id))
+            for index in range(1, 33):
+                with closing(storage.connect_initialized(target)) as connection, connection:
+                    connection.execute('BEGIN IMMEDIATE')
+                    storage.persist_verification_runner_restart_cleanup_locked(connection,
+                        cleanup_event=self._cleanup_only_event(resolution, attempt, token=f'{index:016x}'))
+                basis = self._basis_with_owner(self._capture_target(target, resolution.task_id,
+                    commit_character='4', now=FIXED_TIME), project_id=resolution.project_id,
+                    task_id=resolution.task_id)
+                resolution, attempt = self._resolution_attempt(basis, token=f'{index:016x}',
+                    created_at='2026-08-25T00:00:01Z')
+                with closing(storage.connect_initialized(target, operation_local=True)) as connection, connection:
+                    connection.execute('BEGIN IMMEDIATE')
+                    storage.insert_verification_runner_resolution_locked(connection, resolution=resolution, attempt=attempt)
+                if index == 8:
+                    with closing(storage.connect_initialized(target, operation_local=True)) as connection:
+                        _middle, middle_work = measure(connection, lambda: repository.read_pending_verification_runner_cleanup(
+                            connection, project_id=resolution.project_id))
+            with closing(storage.connect_initialized(target, operation_local=True)) as connection:
+                _pending, current_work = measure(connection, lambda: repository.read_pending_verification_runner_cleanup(
+                    connection, project_id=resolution.project_id))
+                _all, audit_work = measure(connection, lambda: repository._validated_verification_runner_references(connection))
+                # The required project-wide inventory may cost more SQL than
+                # a bulk audit whose main cost is Python decoding/hashing.
+                # Check constant query/decode count and bounded linear VM
+                # growth at 1/9/33 graphs, separately from semantic audit work.
+                self.assertEqual((baseline[0], baseline[2]), (current_work[0], 1))
+                self.assertEqual((middle_work[0], middle_work[2]), (current_work[0], 1))
+                self.assertEqual((current_work[2], audit_work[2]), (1, 33))
+                self.assertGreater(current_work[1], 0)
+                self.assertLessEqual(current_work[1] - middle_work[1],
+                    4 * (middle_work[1] - baseline[1]), (baseline, middle_work, current_work, audit_work))
+                # A disposable old payload fault does not affect the actual
+                # pending identity inventory, but remains an explicit audit fault.
+                connection.execute('BEGIN IMMEDIATE')
+                triggers = connection.execute("SELECT name,sql FROM sqlite_master WHERE type='trigger' AND tbl_name='verification_runner_resolutions'").fetchall()
+                for name, _ in triggers:
+                    connection.execute('DROP TRIGGER "' + name + '"')
+                connection.execute('UPDATE verification_runner_resolutions SET idempotency_digest=? WHERE verification_runner_resolution_id=?',
+                    (_digest('f'), old_id))
+                for _, sql in triggers:
+                    connection.execute(sql)
+                with mock.patch.object(repository, '_runner_resolution_value', wraps=repository._runner_resolution_value) as decode:
+                    selected = repository.read_verification_runner_generation_locked(connection,
+                        project_id=resolution.project_id, task_id=resolution.task_id,
+                        target_generation=resolution.target_generation)
+                    self.assertEqual(selected['attempt'], attempt)
+                    self.assertEqual(decode.call_count, 1)
+                    pending = repository.read_pending_verification_runner_cleanup(connection, project_id=resolution.project_id)
+                    self.assertEqual(pending, (selected,))
+                    self.assertEqual(decode.call_count, 2)
+                with self.assertRaises(storage.StorageError):
+                    repository._validated_verification_runner_references(connection)
+                connection.rollback()
 
     def test_terminal_replay_is_read_only_and_invalid_graph_rolls_back(self):
         with tempfile.TemporaryDirectory(

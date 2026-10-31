@@ -292,6 +292,33 @@ class ReviewMaterialReuseTests(unittest.TestCase):
                         value.selected(connection, **arguments)
                 connection.rollback()
 
+    def test_temp_shadow_invalidates_borrow_even_with_same_main_schema(self):
+        from task_governance_tool.review_material_repository import review_materials
+        with review_fixture(schema_version=33) as fixture:
+            with closing(storage.connect_initialized(fixture.target)) as connection:
+                with review_materials(connection, project_id=fixture.basis['project_id'], task_id=fixture.task_id) as value:
+                    main_cookie = connection.execute('PRAGMA main.schema_version').fetchone()[0]
+                    connection.execute('CREATE TEMP TABLE artifact_manifests(digest TEXT)')
+                    self.assertEqual(main_cookie, connection.execute('PRAGMA main.schema_version').fetchone()[0])
+                    with self.assertRaises(storage.StorageError):
+                        value.require(connection, fixture.basis['project_id'], fixture.task_id)
+
+    def test_full_review_basis_reads_task_graph_once_and_next_read_is_fresh(self):
+        from task_governance_tool import review_wait_basis_repository as repository
+        with review_fixture(schema_version=33) as fixture:
+            with closing(storage.connect_initialized_readonly(fixture.target,
+                    operation_local=True, review_task_id=fixture.task_id)) as connection:
+                arguments = dict(project_id=fixture.basis['project_id'], task_id=fixture.task_id)
+                with mock.patch.object(repository, 'read_internal_task', wraps=repository.read_internal_task) as read:
+                    actual = repository.read_review_basis(connection, **arguments)
+                    self.assertEqual(actual, fixture.basis)
+                    self.assertEqual(read.call_count, 1)
+                    self.assertEqual(repository.read_review_basis(connection, **arguments), actual)
+                    self.assertEqual(read.call_count, 2)
+                with mock.patch.object(repository, 'read_internal_task', return_value=None):
+                    with self.assertRaises(repository.WaitBasisError):
+                        repository.read_review_basis(connection, **arguments)
+
     def test_reassessment_batches_share_materials_for_open_and_resolved_findings(self):
         results = [run_reassessment_case(count, entries, already_resolved=resolved)
             for resolved in (False, True) for entries in (1, 16) for count in (1, 8, 64)]

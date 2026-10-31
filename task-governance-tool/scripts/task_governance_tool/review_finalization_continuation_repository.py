@@ -98,7 +98,12 @@ def records(connection):
 
 
 def load(connection):
-    root, history = _parts(connection)
+    return view(_parts(connection))
+
+
+def view(parts):
+    """Project parts already admitted by the immediate repository read."""
+    root, history = parts
     return replace(history[-1], candidate=root.candidate, commit=root.commit, completion=root.completion)
 
 
@@ -129,7 +134,7 @@ def append(connection, record):
     if existing is not None:
         if (existing.basis,existing.packet_path,existing.packet_digest,existing.result_paths,existing.active_sessions,existing.replaced_registration_round) != (record.basis,record.packet_path,record.packet_digest,record.result_paths,record.active_sessions,record.replaced_registration_round):
             raise RepositoryError("binding_mismatch")
-        return load(connection)
+        return view((root, history))
     if (len(history)>=65 or record.continuation_sequence!=len(history)
         or record.basis!=root.basis or record.branch!=root.branch
         or root.completion != "not_started" or root.commit == "dispatching"):
@@ -141,9 +146,12 @@ def append(connection, record):
     return load(connection)
 
 
-def save_view(connection, before, after):
-    root, history = _parts(connection)
-    if before != load(connection):
+def save_view(connection, before, after, *, admitted_parts=None):
+    # Only advance's immediate pure transition checks may borrow these parts.
+    # Reads after either write below always admit the new state independently.
+    parts = _parts(connection) if admitted_parts is None else admitted_parts
+    root, history = parts
+    if before != view(parts):
         raise RepositoryError("state_transition_invalid")
     updated_root = replace(root,candidate=after.candidate,commit=after.commit,completion=after.completion)
     round_record = replace(after,candidate=history[-1].candidate,commit=history[-1].commit,completion=history[-1].completion)

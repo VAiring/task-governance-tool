@@ -50,7 +50,7 @@ class EffectiveReviewSnapshot:
     _connection: sqlite3.Connection
     _task_projection: tuple
     _total_changes: int
-    _schema_cookie: int
+    _schema_cookie: tuple[int, int]
     _guard: str
     _view: EffectiveTaskReviews | None
     _active: bool = field(default=True, init=False)
@@ -60,7 +60,7 @@ class EffectiveReviewSnapshot:
         if (not self._active or connection is not self._connection
             or not connection.in_transaction or connection.total_changes != self._total_changes
             or tuple(sorted(dict(task).items())) != self._task_projection
-            or connection.execute("PRAGMA schema_version").fetchone()[0] != self._schema_cookie):
+            or _schema_cookie(connection) != self._schema_cookie):
             raise StorageError("internal_error", "validated review read is outside its snapshot")
         # The private savepoint disappears even after a write-free transaction
         # end. Check it before opening any nested material scope: RELEASE also
@@ -83,6 +83,13 @@ class EffectiveReviewSnapshot:
             raise StorageError("internal_error", "validated review read is outside its snapshot") from exc
 
 
+def _schema_cookie(connection):
+    # TEMP objects can shadow native tables without changing the main cookie or
+    # total_changes. Both namespaces belong to this connection's read scope.
+    return (connection.execute("PRAGMA main.schema_version").fetchone()[0],
+            connection.execute("PRAGMA temp.schema_version").fetchone()[0])
+
+
 @contextmanager
 def effective_review_snapshot(connection, task):
     """Share one effective read only inside the caller's existing transaction."""
@@ -91,7 +98,7 @@ def effective_review_snapshot(connection, task):
         raise StorageError("internal_error", "validated review read requires an active transaction")
     task_projection = tuple(sorted(dict(task).items()))
     guard = "taskgov_effective_review_" + secrets.token_hex(8)
-    schema_cookie = connection.execute("PRAGMA schema_version").fetchone()[0]
+    schema_cookie = _schema_cookie(connection)
     connection.execute(f"SAVEPOINT {guard}")
     snapshot = EffectiveReviewSnapshot(connection,
         task_projection, connection.total_changes,
@@ -242,7 +249,7 @@ def effective_for_task(connection, task) -> EffectiveTaskReviews | None:
 def freeze_basis_locked(connection, task):
     """Capture the exact graph now; never reconstruct a sealed graph later."""
     from .storage import _require_evidence_writer, current_schema_version
-    from .review_repository import read_review_receipt_with_provenance
+    from .review_repository import _iter_validated_review_receipts_with_provenance
     from .review_continuation_evidence import ASSERTION_KEYS, REFERENCE_KEYS, validate_graph
     from .evidence_ledger import canonical_json_bytes
     from .evidence_projection import _reference_projection
@@ -265,14 +272,11 @@ WHERE receipt.project_id=? AND receipt.task_id=? AND receipt.target_generation=?
         (task["project_id"], task["task_id"], task["review_target_generation"])).fetchall()
     receipt_ids = [row["review_receipt_id"] for row in judgments]
     receipts = []
-    for receipt_id in receipt_ids:
-        value = read_review_receipt_with_provenance(connection, review_receipt_id=receipt_id)
-        if value is None:
-            raise records._inconsistent()
-        receipt = value["receipt"]
+    for receipt, provenance in _iter_validated_review_receipts_with_provenance(connection, set(receipt_ids)):
         assertion = {key: receipt[key] for key in ASSERTION_KEYS - {"review_provenance"}}
-        assertion.update(review_provenance=value["provenance"], judgment_revision=receipt["judgment_revision"])
+        assertion.update(review_provenance=provenance, judgment_revision=receipt["judgment_revision"])
         receipts.append(assertion)
+    receipts.sort(key=lambda row: row['review_receipt_id'])
     selected = json.dumps(receipt_ids)
     sessions = connection.execute("SELECT * FROM review_receipt_sessions WHERE review_receipt_id IN (SELECT value FROM json_each(?)) ORDER BY review_receipt_id", (selected,)).fetchall()
     findings = connection.execute("SELECT * FROM review_findings WHERE review_receipt_id IN (SELECT value FROM json_each(?)) ORDER BY review_finding_id", (selected,)).fetchall()

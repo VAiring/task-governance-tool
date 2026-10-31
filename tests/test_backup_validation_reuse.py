@@ -16,7 +16,8 @@ from tests.test_routine_backup import make_target, metadata, timestamp
 from tests.test_m17_recovery_hardening import _setup_current
 from task_governance_tool import backup, backup_validation as validation, state_resolver
 from task_governance_tool import backup_metadata_repository as repository
-from task_governance_tool import schema_viewer_projection, setup, storage
+from task_governance_tool import setup, storage
+from task_governance_tool import schema_runner_lookup_indexes as current_schema
 
 
 class BackupValidationReuseTests(unittest.TestCase):
@@ -44,7 +45,7 @@ class BackupValidationReuseTests(unittest.TestCase):
         self.assertEqual(record.sha256, hashlib.sha256(path.read_bytes()).hexdigest())
         self.assertEqual((record.project_id, record.metadata, record.schema),
                          (target.project.project_id, item, storage.SCHEMA_VERSION))
-        with mock.patch.object(schema_viewer_projection, "validate_storage",
+        with mock.patch.object(current_schema, "validate_storage",
                                side_effect=AssertionError("repeated internal audit")), \
              mock.patch.object(validation, "hash_physical_file", wraps=validation.hash_physical_file) as hashes:
             observed = self.inspect(target, path, item)
@@ -65,8 +66,8 @@ class BackupValidationReuseTests(unittest.TestCase):
                         record, mode="structure", scope="structure", classification="structural_only")
                     before = validation.encode(record)
                     record_path.write_bytes(before)
-                with mock.patch.object(schema_viewer_projection, "validate_storage",
-                                       wraps=schema_viewer_projection.validate_storage) as checked:
+                with mock.patch.object(current_schema, "validate_storage",
+                                       wraps=current_schema.validate_storage) as checked:
                     self.assertTrue(self.inspect(target, path, item).recovery_content_valid)
                 self.assertEqual(checked.call_count, 1)
                 self.assertEqual(record_path.read_bytes() if record_path.exists() else None, before)
@@ -132,11 +133,11 @@ finally:
             observed.maintenance_pointer, observed.viewer_projection, observed.content_sha256)
         destination = replace(target, db_path=path.parent / 'private-copy.sqlite')
         audited = []
-        original = schema_viewer_projection.validate_storage
+        original = current_schema.validate_storage
         def validate(connection, *args, **kwargs):
             audited.append(Path(connection.execute('PRAGMA database_list').fetchone()[2]))
             return original(connection, *args, **kwargs)
-        with mock.patch.object(schema_viewer_projection, 'validate_storage', side_effect=validate):
+        with mock.patch.object(current_schema, 'validate_storage', side_effect=validate):
             version = backup.copy_database_snapshot(source_path=path, source_target=target,
                 destination_target=destination, expected_source_identity=expected.identity,
                 require_recovery_content_valid=True, expected_recovery_observation=expected)
@@ -160,13 +161,13 @@ finally:
                     target.db_path.unlink()
                     before = file_snapshot(install.project_root)
                     audited = []
-                    original = schema_viewer_projection._validate_storage_with_task_rows
+                    original = current_schema._validate_storage_with_task_rows
 
                     def audit(connection, *args, **kwargs):
                         audited.append(Path(connection.execute("PRAGMA database_list").fetchone()[2]))
                         return original(connection, *args, **kwargs)
 
-                    with mock.patch.object(schema_viewer_projection,
+                    with mock.patch.object(current_schema,
                                            "_validate_storage_with_task_rows", side_effect=audit):
                         result = setup.run_setup(repo=str(install.project_root), repo_explicit=True,
                             script_path=install.entrypoint, read_only=read_only,
@@ -222,7 +223,7 @@ finally:
         changed[-1] ^= 1
         path.write_bytes(changed)
         os.utime(path, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
-        with mock.patch.object(schema_viewer_projection, "validate_storage") as checked:
+        with mock.patch.object(current_schema, "validate_storage") as checked:
             with self.assertRaises(storage.StorageError):
                 self.inspect(target, path, item)
         checked.assert_not_called()
@@ -316,8 +317,8 @@ finally:
 
     def test_explicit_content_audit_does_not_accept_the_cached_inspection(self):
         target, path, item, _, _ = self.fixture()
-        with mock.patch.object(schema_viewer_projection, "validate_storage",
-                               wraps=schema_viewer_projection.validate_storage) as checked:
+        with mock.patch.object(current_schema, "validate_storage",
+                               wraps=current_schema.validate_storage) as checked:
             observed = validation.inspect_artifact(path, item, project_id=target.project.project_id, audit=True)
         self.assertTrue(observed.recovery_content_valid)
         self.assertEqual(checked.call_count, 1)

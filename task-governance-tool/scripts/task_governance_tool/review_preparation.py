@@ -137,7 +137,7 @@ def publish_ready(repo, packet_path, result_paths, caller, *, route, collection_
             basis["target_generation"], preparation_id)).initialize(collection_bases)
     with journal.serial(initial=record if fresh else None, admit=admit) as lease:
         if not fresh:
-            _, current = journal.read()
+            current = journal.read_current()
             with _replacement_collection_fence(paths, current):
                 admit()
                 journal.publish(lease, record)
@@ -170,7 +170,7 @@ def save_admission(repo, packet_path, raw, packet, output, caller):
         return
     journal = PreparationRepository(path)
     with journal.serial():
-        _, current = journal.read()
+        current = journal.read_current()
         if context["version"] == 1 and current.version == 2:
             files.fail("review_answer_save_not_allowed")
         with closing(connect_initialized_readonly(resolution.target, operation_local=True, review_task_id=packet["task"]["task_id"])) as connection:

@@ -22,9 +22,9 @@ The public v4 shape below is shared by the current
 [incremental projection](#conditional-incremental-projection) and the retained
 full-capture reader. Complete-source admission described below belongs to that
 full reader for explicit inspection and compatible older sources; routine
-schema-34 maintenance uses the selected-Task boundary below.
+schema-34/35 maintenance uses the selected-Task boundary below.
 
-Snapshot v4 accepts source schemas v5-v34. One query-only transaction validates
+Snapshot v4 accepts source schemas v5-v35. One query-only transaction validates
 schema/project/binding, reads generation, validates the complete source-aware
 Task batch through the stored-row and Contract-relationship boundary, and
 assembles rows; rendering and
@@ -40,13 +40,13 @@ Older source schemas retain independent compatible admission.
 It contains version/UTC `generated_at`, project ID/display, source schema,
 seven status counts, explicit Task allow-list, newest at most 10 sanitized
 events/review receipts/findings, and the exact completion-history projection. Sources
-v5-v14 synthesize zero cycles with `legacy_history_incomplete=true`; v15-v34
+v5-v14 synthesize zero cycles with `legacy_history_incomplete=true`; v15-v35
 read stored history in query batches of at most 500 Task IDs. For sources
-v17-v34, the batch reader validates version-1 completion-cycle Verification
+v17-v35, the batch reader validates version-1 completion-cycle Verification
 Receipt links; v18+ additionally validates subject, provenance, manifest, and
-Reference relations, while v19-v34 validate and discard the Bundle
-discriminator. Sources v20-v34 additionally validate the Bundle
-verification basis and Runner graph appropriate to the source schema; v21-v34
+Reference relations, while v19-v35 validate and discard the Bundle
+discriminator. Sources v20-v35 additionally validate the Bundle
+verification basis and Runner graph appropriate to the source schema; v21-v35
 validate the complete tagged union. These reads discard every Runner field without
 exposing it. Schema-23 declaration reasons are validated but not added to the
 Viewer projection or UI.
@@ -178,7 +178,7 @@ Supported sources v5-v33 retain their full-capture compatibility path. They
 cannot consume the new cache or receive tracking writes; ordinary commands do
 not migrate them. Explicit Setup owns migration, restoration and rebind.
 The full-capture reader remains available for those compatibility and explicit
-inspection responsibilities; routine schema-34 publication uses this contract.
+inspection responsibilities; routine schema-34/35 publication uses this contract.
 
 ## Optional Visibility-Aware Reload
 

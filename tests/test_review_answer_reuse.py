@@ -206,6 +206,44 @@ class AnswerReuseTests(unittest.TestCase):
         self.assertEqual(caught.exception.failure["class"], "save_unknown")
         self.assertEqual(service.check_basis.call_count, 2)
 
+    def test_original_and_report_share_parse_but_next_physical_read_is_fresh(self):
+        from task_governance_tool.review_handoff_originals import read_original
+        from task_governance_tool.review_answer_finalization import review_view
+        for size in (1, 2, 8):
+            items = tuple(sample(slot) for slot in range(1, size + 1))
+            for item in items:
+                service = object.__new__(CollectionService)
+                service.repo = None
+                # Each source group uses its original slot, even in a retained batch.
+                service.original_paths = tuple(value.metadata["original"]["path"] for value in items)
+                service._record = Mock(return_value=record(item))
+                service.check_basis = Mock()
+                root = SimpleNamespace(collection_bases=(item.metadata["basis"],))
+                def physical(path, _limit):
+                    return b"packet" if path == "packet.json" else item.raw
+                def observe_and_report():
+                    source = read_original(None, "packet.json", item.metadata["original"]["path"])
+                    return source, review_view(source)
+                with patch.object(files, "checked_path", side_effect=lambda _repo, path: path), \
+                        patch.object(files, "read_bounded", side_effect=physical) as read, \
+                        patch.object(files, "decode_packet", return_value={"review_session_context": {}}), \
+                        patch("task_governance_tool.review_handoff_originals.collection_location", return_value=(None, root, root.collection_bases)), \
+                        patch("task_governance_tool.review_answer_handoff.service_for", return_value=service):
+                    (source, report), counts = measured(observe_and_report)
+                    self.assert_one_answer(counts)
+                    self.assertEqual(report, {"reviewer": item.metadata["binding"]["reviewer_key"],
+                        "kind": "independent", **item.answer.payload})
+                    self.assertEqual((read.call_count, service.check_basis.call_count), (3, 2))
+                    report["checks"].append("caller modification")
+                    self.assertEqual(review_view(source)["checks"], item.answer.payload["checks"])
+                    _result, counts = measured(observe_and_report)
+                    self.assert_one_answer(counts)
+                    self.assertEqual(service.check_basis.call_count, 4)
+                    with patch.object(files, "read_bounded", side_effect=lambda path, _limit:
+                            b"packet" if path == "packet.json" else sample(size + 1).raw):
+                        with self.assertRaises(a.AnswerError):
+                            observe_and_report()
+
     def test_publication_keeps_fresh_prewrite_validation_and_recovery_admission(self):
         from task_governance_tool.review_answer_collection_repository import CollectionRepository
         for version in (1, 2):
@@ -248,6 +286,30 @@ class AnswerReuseTests(unittest.TestCase):
         with patch.object(storage, "_require_evidence_writer"), self.assertRaises(a.AnswerError):
             insert_provenance_locked(connection, receipt={}, provenance=provenance, collected=submitted)
         connection.execute.assert_not_called()
+
+    def test_initial_submission_uses_admitted_parse_and_preserves_physical_confirmation(self):
+        from contextlib import contextmanager
+        from task_governance_tool import review_answer_handoff as handoff
+        for count in (1, 2, 8):
+            items = tuple(sample(slot) for slot in range(1, count + 1))
+            @contextmanager
+            def admitted():
+                yield object(), items
+            root = SimpleNamespace(version=2, result_paths=tuple(item.metadata['original']['path'] for item in items),
+                collection_bases=(items[0].metadata['basis'],), basis=items[0].metadata['basis']['execution_basis'],
+                preparation_id=items[0].metadata['basis']['preparation_id'])
+            originals = dict(zip(root.result_paths, (item.raw for item in items)))
+            with patch.object(handoff, 'service_for', return_value=SimpleNamespace(admission_items=admitted)), \
+                 patch.object(files, 'checked_path', side_effect=lambda _repo, path: path), \
+                 patch.object(files, 'read_bounded', side_effect=lambda path, _limit: originals[path]) as physical:
+                (task, raw), counts = measured(lambda: handoff.initial_submission(None, root, None, root.result_paths))
+                self.assertEqual(task, root.basis['task_id'])
+                self.assert_one_answer(counts, count)  # Framing's independent input boundary only.
+                self.assertEqual(physical.call_count, count)
+                self.assertEqual(t.decode_collected_submission(raw).items, items)
+                originals[root.result_paths[-1]] = sample(count + 1).raw
+                with self.assertRaises(ReviewEvidenceError):
+                    handoff.initial_submission(None, root, None, root.result_paths)
 
 
 if __name__ == "__main__":

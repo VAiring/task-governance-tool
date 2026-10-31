@@ -26,6 +26,23 @@ class SavedOriginal:
     verdict: str
     collected_metadata: dict | None = None
     reviewer_key: str | None = None
+    _answer: object = field(default=None, repr=False, compare=False)
+    _legacy_document: tuple | None = field(default=None, repr=False, compare=False)
+
+    def decoded_answer(self):
+        """Pure immediate consumption; this is never live source admission."""
+        from .review_answer import DecodedAnswer, decode_answer
+        if type(self._answer) is DecodedAnswer and self._answer.raw == self.raw:
+            return self._answer
+        return decode_answer(self.raw)
+
+    def legacy_review(self):
+        from copy import deepcopy
+        from .review_results import decode_review_results
+        document = self._legacy_document
+        if document is None or document[0] != self.raw:
+            return decode_review_results(self.raw)["receipts"][0]
+        return deepcopy(document[1]["receipts"][0])
 
 
 def read_original(repo, packet_path, result_path, *, approvals=(), preparation=None, current=True):
@@ -44,14 +61,12 @@ def read_original(repo, packet_path, result_path, *, approvals=(), preparation=N
         if result_path not in service.original_paths:
             files.fail("review_continuation_conflict")
         slot = service.original_paths.index(result_path) + 1
-        raw, metadata = service.readback(slot)
-        from .review_answer import decode_answer
-        from .review_answer_transport import CollectedItem
-        item = CollectedItem(slot, raw, metadata, decode_answer(raw))
+        item = service.readback_item(slot)
+        raw, metadata = item.raw, item.metadata
         sealed = json.dumps(metadata, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
         return SavedOriginal(packet_path, result_path, raw, metadata, sealed,
             transport.BoundResult(item.target, item.session_binding), item.answer.payload["verdict"], metadata,
-            metadata["binding"]["reviewer_key"])
+            metadata["binding"]["reviewer_key"], _answer=item.answer)
     result_file = files.checked_path(repo, result_path)
     raw = files.read_bounded(result_file, REVIEW_RESULTS_INPUT_LIMIT)
     normalized = files.validate_results(raw, packet, approvals, original=True)
@@ -64,7 +79,8 @@ def read_original(repo, packet_path, result_path, *, approvals=(), preparation=N
         or files.read_bounded(sidecar_file, files.PACKET_LIMIT) != sidecar_raw):
         files.fail("handoff_file_changed")
     return SavedOriginal(packet_path, result_path, raw, metadata, sidecar_raw, bound,
-        normalized["receipts"][0]["verdict"], reviewer_key=normalized["receipts"][0]["reviewer"])
+        normalized["receipts"][0]["verdict"], reviewer_key=normalized["receipts"][0]["reviewer"],
+        _legacy_document=(raw, normalized))
 
 
 def collection_location(repo, packet_path, packet_raw, packet, *, preparation=None, current=True):

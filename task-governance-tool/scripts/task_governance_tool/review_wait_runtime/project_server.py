@@ -429,7 +429,7 @@ class ProjectReviewWaitSession:
         preparation = None
         if path_lexically_exists(locator_path):
             from task_governance_tool.review_preparation_repository import PreparationRepository
-            _, preparation = PreparationRepository(locator_path).read()
+            preparation = PreparationRepository(locator_path).read_current()
             expected = {**preparation.basis, "parent_thread_id": preparation.basis["parent_session_id"]}
             if any(expected.get(key) != value for key, value in asdict(binding).items() if key != "wait_id"):
                 raise BasisError()
@@ -443,13 +443,14 @@ class ProjectReviewWaitSession:
         from task_governance_tool.session_identity import CallerIdentity
         finalizer = Finalizer(self.config.repo, binding.task_id, CallerIdentity(binding.parent_thread_id),
                               generation=binding.target_generation)
-        basis = finalizer.journal.read().basis
+        rounds = finalizer.journal.read_rounds()
+        basis = rounds[-1].basis
         if preparation is not None:
             from task_governance_tool.review_finalization import require_preparation_intent
             from task_governance_tool.session_identity import CallerIdentity
             if preparation.finalization_store != intent.name:
                 raise BasisError()
-            require_preparation_intent(preparation, finalizer.journal.read_rounds()[0], preparation.basis,
+            require_preparation_intent(preparation, rounds[0], preparation.basis,
                 CallerIdentity(binding.parent_thread_id))
         if any(basis.get(key) != value for key, value in asdict(binding).items() if key != "wait_id"):
             raise BasisError()

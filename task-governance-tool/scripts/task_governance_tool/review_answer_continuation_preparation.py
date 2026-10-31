@@ -148,11 +148,9 @@ def locate_continuation(repo, packet_path, packet_raw, packet, *, admitted=None,
     from .storage import connect_initialized_readonly
     with closing(connect_initialized_readonly(resolution.target, operation_local=True, review_task_id=packet["task"]["task_id"])) as connection:
         basis=read_review_basis(connection,project_id=resolution.target.project.project_id,task_id=packet["task"]["task_id"])
-    records,current_root=PreparationRepository(resolution.paths.review_preparation_store(basis["parent_session_id"],basis["task_id"],basis["target_generation"])).read()
-    roots=[row for row in records if row.preparation_id==context["preparation_id"]]
-    if len(roots)!=1 or current_root is None or current_root.preparation_id!=roots[0].preparation_id or roots[0].basis!=basis:
+    root=PreparationRepository(resolution.paths.review_preparation_store(basis["parent_session_id"],basis["task_id"],basis["target_generation"])).read_current()
+    if root.preparation_id!=context["preparation_id"] or root.basis!=basis:
         files.fail("review_continuation_conflict")
-    root=roots[0]
     return locate_from_preparation(repo,resolution,root,packet_path,packet_raw,packet,current=current)
 
 

@@ -244,7 +244,7 @@ def _source_context(repo, skill, binding, *, observe_policy=None):
     path = paths.review_preparation_store(binding.parent_thread_id, binding.task_id, binding.target_generation)
     if not path_lexically_exists(path):
         return None
-    _records, root = PreparationRepository(path).read()
+    root = PreparationRepository(path).read_current()
     expected = {**root.basis, "parent_thread_id": root.basis["parent_session_id"]}
     if any(expected.get(key) != value for key, value in asdict(binding).items() if key != "wait_id"):
         _fail()
@@ -301,6 +301,11 @@ class SourceGroup:
 
 
 def sources_for_reviewers(repo, skill, binding, reviewer_ids, *, observe_policy=None):
+    groups, _records = _source_selection(repo, skill, binding, reviewer_ids, observe_policy=observe_policy)
+    return groups
+
+
+def _source_selection(repo, skill, binding, reviewer_ids, *, observe_policy=None):
     """Resolve exact fresh sources from issuance, selection history and bindings.
 
     Latest selected requests and never-selected initial slots are the only
@@ -312,10 +317,10 @@ def sources_for_reviewers(repo, skill, binding, reviewer_ids, *, observe_policy=
     from .storage import connect_initialized_readonly
     context = _source_context(repo, skill, binding, observe_policy=observe_policy)
     if context is None:
-        return None
+        return None, ()
     resolution, root, transition = context
     if root.version != 2 and (transition is None or transition.answer_protocol == "legacy"):
-        return None
+        return None, ()
     if type(reviewer_ids) not in (tuple, list) or not 1 <= len(reviewer_ids) <= 8:
         _fail()
     children = tuple(_uuid(value) for value in reviewer_ids)
@@ -330,7 +335,7 @@ def sources_for_reviewers(repo, skill, binding, reviewer_ids, *, observe_policy=
     latest = group[-1] if group else None
     ever_selected = {choice.session_id for row in relevant for choice in row.selected}
     selected = () if latest is None else tuple(choice.session_id for choice in latest.selected)
-    services, grouped, order = {}, {}, []
+    services, records_by_source, grouped, order = {}, {}, {}, []
     for position, child in enumerate(children, 1):
         initial = child not in ever_selected
         if not initial and (child not in selected or transition is None
@@ -339,13 +344,15 @@ def sources_for_reviewers(repo, skill, binding, reviewer_ids, *, observe_policy=
         if initial not in services:
             services[initial] = _source_service(repo, skill, context, initial=initial,
                                                 observe_policy=observe_policy)
+            if services[initial] is not None:
+                records_by_source[initial] = services[initial].repository.read()
         service = services[initial]
         if service is None:
             # An entirely legacy request remains normal non-applicability.
             # Mixed requests cannot silently omit an unsupported source.
             grouped.setdefault(None, []).append(position)
             continue
-        records = service.repository.read()
+        records = records_by_source[initial]
         matches = [slot for slot, row in enumerate(records, 1)
                    if row["binding"] is not None and row["binding"]["reviewer_session_id"] == child]
         if len(matches) == 1:
@@ -368,11 +375,17 @@ def sources_for_reviewers(repo, skill, binding, reviewer_ids, *, observe_policy=
     if None in grouped:
         if len(grouped) != 1:
             _fail()
-        return None
+        return None, ()
     if order != sorted(order):
         _fail()
-    return tuple(SourceGroup(services[key], tuple(item[0] for item in items),
+    # Source admission may read native/filesystem state. Confirm the exact
+    # operational snapshot again afterwards; no pre-I/O rows certify changes.
+    for key in grouped:
+        if services[key].repository.read() != records_by_source[key]:
+            _fail('conflict')
+    groups = tuple(SourceGroup(services[key], tuple(item[0] for item in items),
         tuple(item[1] for item in items), tuple(item[2] for item in items)) for key, items in grouped.items())
+    return groups, tuple(records_by_source[key] for key in grouped)
 
 
 def bind_sources(group, host, *, creation_context=False):
@@ -501,15 +514,15 @@ def _tracking_projection(row, child):
 
 
 def tracking_for_reviewers(repo, skill, binding, reviewer_ids):
-    groups = sources_for_reviewers(repo, skill, binding, reviewer_ids)
+    groups, snapshots = _source_selection(repo, skill, binding, reviewer_ids)
     result = {}
-    for group in groups or ():
-        records = group.service.repository.read()
+    # This pure projection immediately consumes this call's admitted records.
+    # They never escape through the public SourceGroup or survive another read.
+    for group, records in zip(groups or (), snapshots):
         for child, slot in zip(group.reviewer_ids, group.source_slots):
             row = records[slot - 1]
             if row["basis"]["version"] != 2:
                 continue
-            group.service.check_basis(row["basis"], slot)
             projection = _tracking_projection(row, child)
             if projection is not None:
                 result[child] = projection

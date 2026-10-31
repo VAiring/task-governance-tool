@@ -2410,13 +2410,18 @@ class R3ASchema20StorageTests(unittest.TestCase):
             },
             completion_cycle_id=cycle.completion_cycle_id,
         )
-        bundle_basis = storage.read_native_completion_bundle_basis_locked(
-            connection,
-            project_id=str(basis["project_id"]),
-            task_id=str(basis["task_id"]),
-            cycle=cycle,
-            completion_reference=completion_reference,
-        )
+        from task_governance_tool import evidence_repository
+        with mock.patch.object(evidence_repository, '_validated_authority_context',
+                wraps=evidence_repository._validated_authority_context) as authority_read:
+            bundle_basis = storage.read_native_completion_bundle_basis_locked(
+                connection,
+                project_id=str(basis["project_id"]),
+                task_id=str(basis["task_id"]),
+                cycle=cycle,
+                completion_reference=completion_reference,
+            )
+            self.assertEqual([call.kwargs.get('snapshot_ids') for call in authority_read.call_args_list],
+                [{basis['authority_snapshot_id']}])
         storage.persist_evidence_reference_locked(
             connection,
             reference=completion_reference,

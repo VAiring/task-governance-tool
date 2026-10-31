@@ -16,7 +16,7 @@ def prepared_reports(finalizer, record):
         record.basis["target_generation"])
     if not path_lexically_exists(path):
         return None
-    _, root = PreparationRepository(path).read()
+    root = PreparationRepository(path).read_current()
     if root is None:
         return None
     initial = finalizer.journal.read_rounds()[0]
@@ -41,11 +41,10 @@ def prepared_reports(finalizer, record):
 
 def review_view(source):
     """Preserve every review finding/check/limitation without inventing v1 facts."""
-    from .review_answer import decode_answer
-    from .review_results import decode_review_results
+    from copy import deepcopy
     if source.collected_metadata is None:
-        return decode_review_results(source.raw)["receipts"][0]
-    payload = decode_answer(source.raw).payload
+        return source.legacy_review()
+    payload = deepcopy(source.decoded_answer().payload)
     return {"reviewer": source.collected_metadata["binding"]["reviewer_key"],
         "kind": "independent", **payload}
 

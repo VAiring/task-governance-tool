@@ -185,7 +185,7 @@ class PreparationPublicationTests(unittest.TestCase):
         self.publish()
         for diagnostic in ("state_unreadable", "untrusted diagnostic detail"):
             with self.subTest(diagnostic=diagnostic), \
-                 mock.patch.object(PreparationRepository, "read", side_effect=RepositoryError(diagnostic)):
+                 mock.patch.object(PreparationRepository, "read_current", side_effect=RepositoryError(diagnostic)):
                 code, result, _ = self.save_public(A, "reviews/a.json")
             self.assertEqual((code, result["code"], result["save_status"]),
                              (1, "handoff_state_unavailable", "not_started"))

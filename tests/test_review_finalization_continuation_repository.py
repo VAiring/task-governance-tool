@@ -74,6 +74,39 @@ class FinalizationContinuationRepositoryTests(unittest.TestCase):
         self.assertEqual(self.repo.read_rounds()[1].registration,"succeeded")
         self.assertEqual(self.append(round_record(2)),second)
 
+    def test_round_history_is_decoded_once_per_snapshot_and_after_mutation(self):
+        from task_governance_tool import review_finalization_continuation_repository as continued
+        self.initialize()
+        self.append()
+        with mock.patch.object(continued, "_record_decode", wraps=continued._record_decode) as decode:
+            self.assertEqual(self.repo.read_rounds(), (root_record(), round_record()))
+            self.assertEqual(decode.call_count, 2)
+            self.assertEqual(self.repo.read(), round_record())
+            self.assertEqual(decode.call_count, 4)
+        with self.repo.serial() as lease:
+            with mock.patch.object(continued, "_parts", wraps=continued._parts) as parts:
+                after = self.repo.advance(lease, candidate="c" * 40)
+                self.assertEqual(parts.call_count, 2)  # Before and after the write.
+            with mock.patch.object(continued, "_parts", wraps=continued._parts) as parts:
+                self.assertEqual(self.repo.append_round(lease, round_record()), after)
+                self.assertEqual(parts.call_count, 1)  # Idempotent, without a write.
+        self.assertEqual(self.repo.read().candidate, "c" * 40)
+
+    def test_new_snapshot_rejects_changed_round_and_schema_without_reusing_parts(self):
+        self.initialize()
+        self.append()
+        original = self.repo.path.read_bytes()
+        for statement in ("UPDATE current_round SET sequence=99", "PRAGMA user_version=3"):
+            with self.subTest(statement=statement):
+                self.repo.path.write_bytes(original)
+                self.repo.read_rounds()
+                with closing(sqlite3.connect(self.repo.path)) as connection, connection:
+                    connection.execute(statement)
+                changed = self.repo.path.read_bytes()
+                with self.assertRaises(RepositoryError):
+                    self.repo.read_rounds()
+                self.assertEqual(self.repo.path.read_bytes(), changed)
+
     def test_unknown_registration_dispatch_does_not_convert(self):
         original = root_record(registration="dispatching",originals=((A,"a"*64),(B,"b"*64)))
         self.initialize(original)

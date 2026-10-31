@@ -401,6 +401,48 @@ class ManagedDirectProbe(DirectProbe):
                 # its native effect guards and occurrence fence remain intact.
         return controller.reviewers
 
+    def _idle_and_ended(self, host, controller, record, monotonic_deadline, *, reviewer_observer=None):
+        """Consume a fully frozen collection once inside this effect guard.
+
+        Partial/untracked reviews keep the collecting/host path. No snapshot
+        survives that path, the parent host read, or the next effect guard.
+        Recording these observations changes only the finalization journal;
+        collection/current-basis admission remains fresh at every invocation.
+        """
+        if self.answer_tracking is None:
+            return super()._idle_and_ended(host, controller, record, monotonic_deadline,
+                                          reviewer_observer=reviewer_observer)
+        reviewers = self._reviewers_to_observe(controller)
+        tracking = self.answer_tracking(controller) if reviewers else {}
+        if any(expected.reviewer_id not in tracking or
+                not self._completed_tracking(expected, tracking[expected.reviewer_id]) for expected in reviewers):
+            # A collection write or host read needs independent fresh admission.
+            return super()._idle_and_ended(host, controller, record, monotonic_deadline,
+                                          reviewer_observer=reviewer_observer)
+        for expected in reviewers:
+            if self._halt_wait(record, monotonic_deadline):
+                return False
+            source = tracking[expected.reviewer_id]['source_identity']
+            observation = (expected.reviewer_id, source['turn_id'], 'completed')
+            if reviewer_observer is None:
+                if not self._observe_reviewer(controller, observation,
+                        effect_guard=lambda: not self._halt_wait(record, monotonic_deadline)):
+                    return False
+            else:
+                reviewer_observer(observation)
+            with self._observations_lock:
+                self._reviewer_observations.pop(expected.reviewer_id, None)
+        # Drop source facts before the independent host boundary. Final Task/
+        # occurrence admission still happens after that host observation.
+        del tracking
+        if self._halt_wait(record, monotonic_deadline):
+            return False
+        parent = host.read_parent()
+        if not self._parent_ready(parent, controller, record):
+            return False
+        self._prepared(controller)
+        return not self._halt_wait(record, monotonic_deadline)
+
     def _failure_parent(self, host, controller, record, monotonic_deadline):
         """Fresh effect guard without requiring a failed reviewer to qualify."""
         if self._halt_wait(record, monotonic_deadline):

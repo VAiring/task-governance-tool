@@ -89,6 +89,40 @@ def invoke(
 
 
 class RunnerPlanCliTests(unittest.TestCase):
+    def test_physical_plan_actions_use_selected_resolver_and_writer_admission(self):
+        from tests.registration_output_support import registration_task
+        from task_governance_tool import storage, schema_task_event_notes, task_ownership
+        with tempfile.TemporaryDirectory() as temporary:
+            install = make_physical_install(Path(temporary).resolve(), git_managed=True)
+            ignore = install.project_root / ".gitignore"
+            ignore.write_text(ignore.read_text(encoding="utf-8")
+                + "/.agents/skills/task-governance-tool/config/verification-runner.json\n",
+                encoding="utf-8")
+            setup = install.run("setup", "--json")
+            self.assertEqual(setup.returncode, 0, setup.stdout + setup.stderr)
+            def call(*args, draft=None):
+                out, err = io.StringIO(), io.StringIO()
+                with redirect_stdout(out), redirect_stderr(err), \
+                     mock.patch.object(sys, "stdin", BinaryInput(draft or b"", readable=draft is not None)), \
+                     mock.patch.object(cli_service, "cli_script_path", return_value=install.entrypoint):
+                    code = cli_service.main([*args, "--repo", str(install.project_root), "--json"],
+                        _maintenance_enabled=False)
+                self.assertEqual(code, 0, out.getvalue() + err.getvalue())
+                return json.loads(out.getvalue())
+            task = registration_task(call("task", "add", "--title", "Plan admission",
+                "--verification", "Focused validation", "--contract-scope", "Plan action",
+                "--contract-acceptance", "Bounded selected admission"))
+            forbidden = AssertionError("Plan action entered whole-store admission")
+            with mock.patch.object(storage, "_physical_integrity_ok", side_effect=forbidden), \
+                 mock.patch.object(storage, "validate_current_schema21_admitted_rows", side_effect=forbidden), \
+                 mock.patch.object(schema_task_event_notes, "validate_note_rows", side_effect=forbidden), \
+                 mock.patch.object(task_ownership, "validate_storage_rows", side_effect=forbidden):
+                created = call("task", "edit", task["task_id"], "--runner-plan-action", "replace", draft=draft_blob())
+                self.assertEqual(created["data"]["runner_plan_update"]["status"], "updated")
+                updated = call("task", "edit", task["task_id"], "--runner-plan-action", "rebind",
+                    "--verification", "Revised focused validation")
+                self.assertEqual(updated["data"]["runner_plan_update"]["status"], "updated")
+
     def test_physical_public_cli_resolves_and_publishes_one_plan(self):
         def documented_draft(path: Path):
             examples = []

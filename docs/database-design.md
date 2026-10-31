@@ -124,8 +124,9 @@ calls `validate_task_review_storage` in that same snapshot; completion supplies
 its Task ID for the same review validator. The default remains global for other
 consumers, including the shared Task edit/write helpers. Task and review
 adapters opt into local admission through every read and locked write; explicit
-Runner Plan actions retain global admission throughout, including combined
-verification or Contract changes. This internal boolean is not an authority token or public option;
+Runner Plan actions also select local admission, including combined verification
+or Contract changes, and validate their complete selected Task/Contract/criterion/
+owner closure in preflight and the fresh writer. This internal boolean is not an authority token or public option;
 neither local admission nor its snapshots may supply a global validation proof.
 Doctor/Setup physical-check sharing is confined to the owning read call's
 [query-only scope](setup-state-design.md#doctor). It preserves independent quick,

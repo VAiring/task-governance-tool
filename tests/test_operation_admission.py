@@ -242,6 +242,7 @@ class PublicOperationAdmissionTests(unittest.TestCase):
                 return original_judgments(connection, review_task=review_task)
             with mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "00000000-0000-4000-8000-000000000001"}), \
                  mock.patch.object(cli, "cli_script_path", return_value=install.entrypoint), \
+                 mock.patch.object(storage, "_physical_integrity_ok", side_effect=forbidden), \
                  mock.patch.object(storage, "validate_current_schema21_admitted_rows", side_effect=forbidden), \
                  mock.patch.object(task_ownership, "validate_storage_rows", side_effect=forbidden), \
                  mock.patch.object(schema_task_event_notes, "validate_note_rows", side_effect=forbidden), \
@@ -311,6 +312,7 @@ class PublicHandoffAdmissionTests(unittest.TestCase):
             def forbidden(*args, **kwargs):
                 raise AssertionError("Handoff entered an unrelated semantic-history audit")
             with mock.patch.object(storage, "validate_current_schema21_admitted_rows", side_effect=forbidden), \
+                 mock.patch.object(storage, "_physical_integrity_ok", side_effect=forbidden), \
                  mock.patch.object(task_ownership, "validate_storage_rows", side_effect=forbidden), \
                  mock.patch.object(schema_task_event_notes, "validate_note_rows", side_effect=forbidden), \
                  mock.patch.object(review_answer_repository, "validate_storage_rows", side_effect=forbidden), \
@@ -416,13 +418,15 @@ class PublicHandoffAdmissionTests(unittest.TestCase):
         self.assertEqual(shown, handoff)
 
     def test_selected_operations_read_ownership_once_and_replay_keeps_source(self):
+        self.invoke("task", "add", "--title", "Ready selection candidate",
+            "--review-tier", "0", "--verification-not-required", "Selection fixture")
         from task_governance_tool import task_ownership
         original = task_ownership.read_bases
         statements = []
         def observed(connection, **options):
             connection.set_trace_callback(statements.append)
             return original(connection, **options)
-        operations = [("task", "list"), ("task", "current"),
+        operations = [("task", "list"), ("task", "current"), ("task", "next"),
             ("task", "checkpoint", self.task_id, "--summary", "Selected summary", "--next-action", "Continue"),
             ("task", "checkpoint", self.task_id, "--summary", "Selected summary", "--next-action", "Continue"),
             ("handoff", "record", self.task_id, "--summary", "Selected follow-up"),
@@ -443,7 +447,7 @@ class PublicHandoffAdmissionTests(unittest.TestCase):
         from task_governance_tool.stored_task_validation import _validated_task_facts
         from task_governance_tool import storage
         target = self.install.target
-        for fault in ("task", "connection", "write", "transaction", "closed"):
+        for fault in ("task", "connection", "write", "ddl", "temp_ddl", "transaction", "closed"):
             with self.subTest(fault=fault), closing(storage.connect(target.db_path)) as connection:
                 connection.execute("BEGIN")
                 row = connection.execute("SELECT * FROM tasks WHERE task_id=?", (self.task_id,)).fetchone()
@@ -463,6 +467,11 @@ class PublicHandoffAdmissionTests(unittest.TestCase):
                     elif fault == "transaction":
                         connection.rollback()
                         connection.execute("BEGIN")
+                        with self.assertRaises(storage.StorageError):
+                            facts.ownership(connection, self.task["project_id"], self.task_id)
+                    elif fault in ("ddl", "temp_ddl"):
+                        connection.execute("CREATE " + ("TEMP " if fault == "temp_ddl" else "")
+                            + "TABLE changed_selected_schema(value INTEGER)")
                         with self.assertRaises(storage.StorageError):
                             facts.ownership(connection, self.task["project_id"], self.task_id)
                 with self.assertRaises(storage.StorageError):

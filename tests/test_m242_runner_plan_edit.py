@@ -537,8 +537,8 @@ class RunnerPlanEditTests(unittest.TestCase):
                 real_capture = edit_module.capture_runner_plan_authoring_source
                 real_publish = edit_module.publish_verification_runner_plan
 
-                def tracked_connect(target):
-                    tracked = TrackingConnection(real_connect(target))
+                def tracked_connect(target, **options):
+                    tracked = TrackingConnection(real_connect(target, **options))
                     trackers.append(tracked)
                     return tracked
 
@@ -597,8 +597,9 @@ class RunnerPlanEditTests(unittest.TestCase):
                 else:
                     self.assert_plan_matches_basis(fixture, fixture.basis())
 
-    def test_combined_plan_action_revalidates_global_state_after_capture(self):
+    def test_plan_actions_revalidate_consumed_task_after_capture(self):
         cases = (
+            {},
             {"verification": FUTURE_VERIFICATION},
             {
                 "contract_scope": "Revised combined Task scope",
@@ -619,17 +620,11 @@ class RunnerPlanEditTests(unittest.TestCase):
                 def capture(*args, **kwargs):
                     captured = real_capture(*args, **kwargs)
                     with closing(sqlite3.connect(fixture.target.db_path)) as connection:
-                        trigger = connection.execute(
-                            "SELECT sql FROM sqlite_master "
-                            "WHERE name='trg_task_events_note_body_immutable'"
-                        ).fetchone()[0]
-                        connection.execute("DROP TRIGGER trg_task_events_note_body_immutable")
+                        connection.execute("PRAGMA ignore_check_constraints=ON")
                         connection.execute(
-                            "UPDATE task_events SET note_body='Invalid retained note' "
-                            "WHERE task_id=? AND event_type='task_added'",
+                            "UPDATE tasks SET priority='invalid' WHERE task_id=?",
                             (fixture.task_id,),
                         )
-                        connection.execute(trigger)
                         connection.commit()
                     snapshots.append(fixture.database_dump())
                     return captured
@@ -646,10 +641,139 @@ class RunnerPlanEditTests(unittest.TestCase):
                     )
                 self.assertEqual(len(snapshots), 1)
                 self.assertEqual(fixture.database_dump(), snapshots[0])
-                self.assertEqual(fixture.task_row(), task_before)
+                self.assertEqual(fixture.task_row(), {**task_before, "priority": "invalid"})
                 self.assertEqual(fixture.event_count(), events_before)
                 self.assertEqual(fixture.plan_path.read_bytes(), plan_before)
                 publish.assert_not_called()
+
+    def test_plan_actions_reject_invalid_contract_content_at_each_boundary(self):
+        # Metadata outside the authority snapshot still belongs to the selected
+        # Contract. Exercise all actions, both writers, and both read intervals.
+        invalid_values = (
+            ("change_reason", b"invalid type"),
+            ("change_reason", " noncanonical "),
+            ("change_reason", "Authorization: Bearer fixture-secret"),
+            ("contract_revision_id", ""),
+            ("contract_revision_id", b"invalid type"),
+            ("created_at", "not-a-timestamp"),
+            ("created_at", b"2026-10-31T00:00:00Z"),
+            ("created_at", "2026-02-30T00:00:00Z"),
+        )
+        changes_by_mode = ({}, {"verification": FUTURE_VERIFICATION})
+        for action in ("replace", "rebind", "detach", "disable"):
+            for changes in changes_by_mode:
+                with self.subTest(action=action, combined=bool(changes)), runner_plan_edit_fixture() as fixture:
+                    plan_before = fixture.write_exact_plan()
+                    task_before = fixture.task_row()
+                    events_before = fixture.event_count()
+                    real_capture = edit_module._capture_decoded_plan
+                    with closing(sqlite3.connect(fixture.target.db_path)) as connection:
+                        connection.row_factory = sqlite3.Row
+                        original_contract = dict(connection.execute(
+                            "SELECT * FROM task_contract_revisions WHERE task_id=?",
+                            (fixture.task_id,),
+                        ).fetchone())
+
+                    def set_field(field, value):
+                        self.assertIn(field, {"change_reason", "contract_revision_id", "created_at"})
+                        with closing(sqlite3.connect(fixture.target.db_path)) as connection:
+                            connection.execute(
+                                f"UPDATE task_contract_revisions SET {field}=? WHERE task_id=?",
+                                (value, fixture.task_id),
+                            )
+                            connection.commit()
+
+                    for phase in ("preflight", "writer"):
+                        for field, invalid in invalid_values:
+                            with self.subTest(phase=phase, field=field, invalid_type=type(invalid).__name__):
+                                set_field(field, invalid if phase == "preflight" else original_contract[field])
+                                snapshots = [fixture.database_dump()]
+
+                                def capture(*args, **kwargs):
+                                    captured = real_capture(*args, **kwargs)
+                                    set_field(field, invalid)
+                                    snapshots[0] = fixture.database_dump()
+                                    return captured
+
+                                with mock.patch.object(edit_module, "_capture_decoded_plan", side_effect=capture) as captured, \
+                                     mock.patch.object(edit_module, "publish_verification_runner_plan") as publish:
+                                    self.assert_error_code(
+                                        "internal_error",
+                                        lambda: edit_module.edit_task_with_runner_plan(
+                                            fixture.target, fixture.task_id,
+                                            runner_plan_action=action,
+                                            runner_plan_draft_blob=draft_blob() if action == "replace" else None,
+                                            caller=capture_caller_identity(), **changes,
+                                        ),
+                                    )
+                                self.assertEqual(captured.call_count, 0 if phase == "preflight" else 1)
+                                publish.assert_not_called()
+                                self.assertEqual(fixture.database_dump(), snapshots[0])
+                                self.assertEqual(fixture.task_row(), task_before)
+                                self.assertEqual(fixture.event_count(), events_before)
+                                self.assertEqual(fixture.plan_path.read_bytes(), plan_before)
+                                set_field(field, original_contract[field])
+
+    def test_plan_actions_ignore_unconsumed_note_history_and_keep_writer_local(self):
+        from task_governance_tool import storage, task_ownership, schema_task_event_notes
+        for combined in (False, True):
+            with self.subTest(combined=combined), runner_plan_edit_fixture() as fixture:
+                fixture.write_exact_plan()
+                real_capture = edit_module._capture_decoded_plan
+                def capture(*args, **kwargs):
+                    captured = real_capture(*args, **kwargs)
+                    with closing(sqlite3.connect(fixture.target.db_path)) as connection:
+                        trigger = connection.execute("SELECT sql FROM sqlite_master "
+                            "WHERE name='trg_task_events_note_body_immutable'").fetchone()[0]
+                        connection.execute("DROP TRIGGER trg_task_events_note_body_immutable")
+                        connection.execute("UPDATE task_events SET note_body='Invalid retained note' "
+                            "WHERE task_id=? AND event_type='task_added'", (fixture.task_id,))
+                        connection.execute(trigger)
+                        connection.commit()
+                    return captured
+                forbidden = AssertionError("Plan action traversed unrelated semantic history")
+                with mock.patch.object(edit_module, "_capture_decoded_plan", side_effect=capture), \
+                     mock.patch.object(storage, "validate_current_schema21_admitted_rows", side_effect=forbidden), \
+                     mock.patch.object(task_ownership, "validate_storage_rows", side_effect=forbidden), \
+                     mock.patch.object(schema_task_event_notes, "validate_note_rows", side_effect=forbidden):
+                    result = edit_module.edit_task_with_runner_plan(fixture.target, fixture.task_id,
+                        runner_plan_action="rebind", caller=capture_caller_identity(),
+                        **({"verification": FUTURE_VERIFICATION} if combined else {}))
+                self.assertEqual(result.task_mutation, "committed" if combined else "none")
+                self.assertEqual(result.runner_plan_update.status, "updated" if combined else "unchanged")
+
+    def test_config_only_validation_vm_work_does_not_scale_with_unconsumed_notes(self):
+        work = []
+        for growth in (0, 3000):
+            with self.subTest(growth=growth), runner_plan_edit_fixture() as fixture:
+                fixture.write_exact_plan(trusted_local=False)
+                with closing(sqlite3.connect(fixture.target.db_path)) as connection:
+                    connection.executemany("INSERT INTO task_events "
+                        "(task_event_id,project_id,task_id,event_type,summary,created_at,note_body) "
+                        "VALUES (?,?,?,'note_added','Retained note','2026-10-31T00:00:00Z','Unconsumed history')",
+                        [(f"tg_event_{index:016x}", fixture.target.project.project_id, fixture.task_id)
+                         for index in range(growth)])
+                    connection.commit()
+                steps = [0]
+                def progress():
+                    steps[0] += 1
+                    return 0
+                def observed(factory):
+                    def connect(*args, **kwargs):
+                        connection = factory(*args, **kwargs)
+                        connection.set_progress_handler(progress, 1)
+                        return connection
+                    return connect
+                with mock.patch.object(edit_module, "connect_initialized",
+                        side_effect=observed(edit_module.connect_initialized)), \
+                     mock.patch.object(edit_module, "connect_initialized_task_readonly",
+                        side_effect=observed(edit_module.connect_initialized_task_readonly)):
+                    result = edit_module.edit_task_with_runner_plan(fixture.target, fixture.task_id,
+                        runner_plan_action="disable", caller=capture_caller_identity())
+                self.assertEqual(result.runner_plan_update.status, "unchanged")
+                work.append(steps[0])
+        self.assertEqual(work[0], work[1], work)
+        print(f"Plan selected validation VM steps small/large={work}")
 
     def test_basis_edits_without_plan_action_remain_operation_local(self):
         from task_governance_tool import storage

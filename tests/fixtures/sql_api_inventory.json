@@ -429,10 +429,10 @@
     "stored_task_validation.py": {
       "kind": "observed_connection",
       "attributes": {
-        "execute": 9,
+        "execute": 10,
         "fetchall": 1,
         "fetchmany": 1,
-        "fetchone": 1
+        "fetchone": 2
       }
     },
     "task_ownership.py": {

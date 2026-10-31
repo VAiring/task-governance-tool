@@ -10,7 +10,9 @@ import sqlite3
 from typing import Any
 
 from task_governance_tool.tasks import TaskRepositoryError
+from task_governance_tool.storage import StorageError, validate_utc_timestamp
 from task_governance_tool.task_values import (
+    SQLITE_INT64_MAX,
     TaskValidationError,
     validate_legacy_m19_7_stored_text,
     validate_sqlite_int64,
@@ -218,6 +220,23 @@ def _validate_stored_contract(
     revision: int,
 ) -> dict[str, Any]:
     try:
+        # Match the stored-row envelope required by full authority admission.
+        # Selected readers must establish it without relying on a global scan
+        # or coercing raw SQLite values during projection.
+        if (
+            any(type(row[field]) is not str for field in (
+                "contract_revision_id", "project_id", "task_id", "scope",
+                "acceptance", "constraints_text", "authority_ref",
+                "change_reason", "created_at",
+            ))
+            or any(not row[field] for field in (
+                "contract_revision_id", "project_id", "task_id",
+            ))
+            or type(row["revision"]) is not int
+            or not 0 < row["revision"] <= SQLITE_INT64_MAX
+        ):
+            raise ValueError("invalid stored Contract row")
+        validate_utc_timestamp(row["created_at"], field="Task Contract creation time")
         stored_revision = validate_sqlite_int64(row["revision"], field="contract_revision")
         if stored_revision <= 0:
             raise ValueError("revision must be positive")
@@ -243,7 +262,7 @@ def _validate_stored_contract(
                 required=stored_revision > 1,
             ),
         }
-    except (TaskValidationError, ValueError) as exc:
+    except (TaskValidationError, StorageError, ValueError, KeyError, IndexError) as exc:
         raise TaskRepositoryError(
             "internal_error",
             "stored Task Contract is invalid",

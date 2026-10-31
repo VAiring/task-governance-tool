@@ -628,6 +628,12 @@ optional constraints (2,000), optional initial stable authority reference
 in title/description. Text normalizes line endings to LF and outer whitespace;
 internal content is preserved.
 
+Selected stored Contract reads validate the full row before projection:
+identifiers and text retain their required storage types, revision is a positive
+bounded integer, and creation time is canonical UTC. An authority-content digest
+does not validate metadata outside its encoding. Invalid selected metadata is
+rejected without scanning unrelated Contract history.
+
 Later semantic revision is Contract-only, allowed while ready, in-progress,
 paused, blocked, or review-pending, and requires at least one changed content
 field, a nonempty stable authority reference, and reason. User authority may

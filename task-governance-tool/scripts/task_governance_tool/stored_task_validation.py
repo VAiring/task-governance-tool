@@ -746,6 +746,11 @@ def validate_current_stored_task_rows(
     return validation
 
 
+def _selected_schema_cookie(connection):
+    return tuple(connection.execute(f"PRAGMA {schema}.schema_version").fetchone()[0]
+        for schema in ("main", "temp"))
+
+
 @dataclass
 class _SelectedTaskFacts:
     connection: sqlite3.Connection
@@ -754,6 +759,7 @@ class _SelectedTaskFacts:
     task_ids: frozenset[str]
     token: str
     changes: int
+    schema_cookie: tuple[int, int]
     active: bool = True
 
     def require_current(self, connection, project_id, task_id):
@@ -762,6 +768,8 @@ class _SelectedTaskFacts:
                 or not connection.in_transaction or connection.total_changes != self.changes):
             raise _stored_task_unreadable()
         try:
+            if _selected_schema_cookie(connection) != self.schema_cookie:
+                raise _stored_task_unreadable()
             connection.execute(f"RELEASE {self.token}")
             connection.execute(f"SAVEPOINT {self.token}")
         except sqlite3.Error as exc:
@@ -807,7 +815,8 @@ def _validated_task_facts(connection, rows, *, project_id, source_schema_version
             expected_project_id=project_id, source_schema_version=source_schema_version,
             _retain_ownership=True)
         facts = _SelectedTaskFacts(connection, validation, project_id,
-            frozenset(row["task_id"] for row in rows), token, connection.total_changes)
+            frozenset(row["task_id"] for row in rows), token, connection.total_changes,
+            _selected_schema_cookie(connection))
         yield facts
     finally:
         if facts is not None:

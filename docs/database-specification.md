@@ -151,8 +151,10 @@ covers core, numerical and operational stores across threads, including readers
 without an OS writer lease. It preserves rollback-journal exclusion and does
 not make raw file bytes, timestamps or descriptor ownership admission evidence.
 
-Explicit Runner Plan actions retain global admission in preflight and under
-their writer lock, including combined verification or Contract changes.
+Explicit Runner Plan actions use this operation-local admission in preflight
+and under their writer lock, including combined verification or Contract changes.
+They retain complete selected Task/Contract/criterion and ownership checks,
+fresh writer comparison and separately guarded physical Plan publication.
 Review services use the same structural boundary and their original Task's
 required review history, as defined by
 [review admission](review-completion-specification.md#operation-scoped-review-admission).

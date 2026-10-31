@@ -159,6 +159,13 @@ Combined edits use the same check in their existing Task writer. No SQLite
 writer remains open for filesystem publication, and no new reservation record
 or normal-loop confirmation is added.
 
+Plan-only and combined edits use operation-local structural admission and
+validate the complete selected Task, Contract pointer/content, criterion and
+ownership relationships in their applicable reads. Unconsumed retained notes,
+review histories and other Tasks are not audited merely to authorize an action.
+The writer independently admits its current structure and selected basis; no
+preflight result or caller-relative ownership display authorizes that writer.
+
 ### Ordered Commit And Partial Success
 
 The coordinator first captures and validates the current Task, Contract,

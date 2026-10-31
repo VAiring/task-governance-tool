@@ -242,16 +242,9 @@ def resolve_context_target(context: CommandContext) -> DatabaseTarget:
     )
 
 
-def is_ordinary_task_operation(context: CommandContext) -> bool:
-    return (
-        context.command.startswith("task.")
-        and getattr(context.args, "runner_plan_action", None) is None
-    )
-
-
 def uses_operation_local_admission(context: CommandContext) -> bool:
     return (
-        is_ordinary_task_operation(context)
+        context.command.startswith("task.")
         or context.command.startswith("review.")
         or context.command == "verification.receipt.add"
         or context.command in {"handoff.record", "handoff.list", "handoff.show", "handoff.withdraw"}

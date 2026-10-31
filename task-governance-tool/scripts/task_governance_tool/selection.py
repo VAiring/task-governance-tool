@@ -17,7 +17,7 @@ from task_governance_tool.storage import ProjectIdentity
 from task_governance_tool.tasks import row_to_task
 from task_governance_tool.stored_task_validation import (
     fetch_stored_task_rows,
-    validate_current_stored_task_rows,
+    _validated_task_facts,
 )
 from task_governance_tool.task_values import (
     KINDS,
@@ -146,12 +146,9 @@ def select_next_tasks(
         """,
         values,
     )
-    validate_current_stored_task_rows(
-        connection,
-        rows,
-        expected_project_id=project.project_id,
-    )
-    tasks = project_tasks(connection, [row_to_task(row) for row in rows], caller)
+    with _validated_task_facts(connection, rows, project_id=project.project_id) as facts:
+        tasks = project_tasks(connection, [row_to_task(row) for row in rows], caller,
+            _validated=facts)
     return TaskNextResult(
         tasks=tasks,
         count=len(tasks),

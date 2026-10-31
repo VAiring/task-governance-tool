@@ -1389,5 +1389,53 @@ class TaskContractMigrationTests(unittest.TestCase):
                 )
 
 
+class StoredContractRowValidationTests(unittest.TestCase):
+    def valid_row(self):
+        return {
+            "contract_revision_id": "tg_contract_0123456789abcdef",
+            "project_id": "project", "task_id": "task", "revision": 1,
+            "scope": "Selected scope", "acceptance": "Selected acceptance",
+            "constraints_text": "", "authority_ref": "", "change_reason": "",
+            "created_at": "2026-10-31T00:00:00Z",
+        }
+
+    def validate(self, row):
+        from task_governance_tool.contract_content import _validate_stored_contract
+        return _validate_stored_contract(row, project_id="project", task_id="task", revision=1)
+
+    def test_all_stored_fields_reject_wrong_types_and_missing_members(self):
+        from task_governance_tool.tasks import TaskRepositoryError
+        original = self.valid_row()
+        self.assertEqual(self.validate(original)["created_at"], original["created_at"])
+        for field in original:
+            invalid_values = (None, b"value", 1) if field != "revision" else (None, "1", 1.0, True, 0, -1, 1 << 63)
+            for value in invalid_values:
+                with self.subTest(field=field, value_type=type(value).__name__):
+                    with self.assertRaises(TaskRepositoryError):
+                        self.validate({**original, field: value})
+            with self.subTest(missing=field), self.assertRaises(TaskRepositoryError):
+                self.validate({key: value for key, value in original.items() if key != field})
+
+    def test_metadata_and_identity_match_full_authority_row_admission(self):
+        from task_governance_tool.storage import _validated_contract_revision_rows
+        from task_governance_tool.tasks import TaskRepositoryError
+        original = self.valid_row()
+        keys = {("project", "task", 1)}
+        self.assertEqual(_validated_contract_revision_rows([original], expected_keys=keys)[("project", "task", 1)], original)
+        faults = [(field, "") for field in ("contract_revision_id", "project_id", "task_id")]
+        faults += [("project_id", "foreign"), ("task_id", "foreign"), ("revision", 2)]
+        faults += [("created_at", value) for value in (
+            "", "not-a-timestamp", "2026-02-30T00:00:00Z",
+            "2026-10-31T00:00:00+00:00", "2026-10-31T00:00:00Z\n",
+        )]
+        for field, value in faults:
+            with self.subTest(field=field, value=value):
+                row = {**original, field: value}
+                with self.assertRaises(TaskRepositoryError):
+                    self.validate(row)
+                with self.assertRaises(StorageError):
+                    _validated_contract_revision_rows([row], expected_keys=keys)
+
+
 if __name__ == "__main__":
     unittest.main()

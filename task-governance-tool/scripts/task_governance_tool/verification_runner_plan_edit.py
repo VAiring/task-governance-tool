@@ -17,6 +17,7 @@ from task_governance_tool.session_identity import CallerIdentity
 from task_governance_tool import task_ownership
 
 from task_governance_tool.contract_content import CONTRACT_INPUT_FIELDS
+from task_governance_tool.contracts import read_current_contract
 from task_governance_tool.reviews import (
     ReviewTargetAuthorityBasis,
     read_review_target_authority_basis,
@@ -210,6 +211,13 @@ def _read_task_preflight_from_connection(
     )
     if internal is None:
         raise TaskRepositoryError("not_found", "task was not found")
+    # Pointer/authority validation does not cover all Contract metadata.
+    # Keep its content check in this same selected preflight snapshot.
+    read_current_contract(
+        connection, project_id=target.project.project_id, task_id=task_id,
+        current_revision=internal["current_contract_revision"],
+        pointer_validated_in_snapshot=True,
+    )
     public = row_to_task(internal) if public_required else None
     if public is not None and owner is not None:
         public["ownership"] = owner.projection(CallerIdentity(None))
@@ -244,7 +252,7 @@ def _read_task_preflight(
     task_ownership.OwnershipBasis | None,
 ]:
     with closing(connect_initialized_task_readonly(target)) as connection:
-        return _read_task_preflight_from_connection(
+        return _read_task_preflight_snapshot(
             connection,
             target,
             task_id,
@@ -605,12 +613,17 @@ def _edit_plan_only(
     if owner is not None:
         # Authorization is serialized before the existing bounded filesystem publication.
         # No filesystem work runs while SQLite holds its writer.
-        with closing(connect_initialized(target)) as connection:
+        with closing(connect_initialized(target, operation_local=True)) as connection:
             with connection:
-                begin_initialized_write(connection, target)
+                begin_initialized_write(connection, target, operation_local=True)
                 locked = read_internal_task(connection, target.project.project_id, task_id)
                 task_ownership.require_mutation(connection, owner, caller)
                 reject_concurrent_edit_base_change(preflight, locked)
+                read_current_contract(
+                    connection, project_id=target.project.project_id, task_id=task_id,
+                    current_revision=locked["current_contract_revision"],
+                    pointer_validated_in_snapshot=True,
+                )
                 public = task_ownership.project_tasks(connection, [public], caller)[0]
     status = _publish_action(
         repo,
@@ -643,7 +656,7 @@ def _edit_combined(
     caller: CallerIdentity,
 ) -> TaskRunnerPlanEditResult:
     computed: list[RunnerPlanActionResult] = []
-    with closing(connect_initialized(target)) as connection:
+    with closing(connect_initialized(target, operation_local=True)) as connection:
         preflight, _public, _authority, owner = _read_task_preflight_snapshot(
             connection,
             target,
@@ -658,6 +671,13 @@ def _edit_combined(
             prospective: dict[str, Any],
         ) -> None:
             reject_concurrent_edit_base_change(preflight, locked_existing)
+            # A verification-only Task edit need not project its Contract.
+            # Plan coordination nevertheless consumes that complete Contract.
+            read_current_contract(
+                connection, project_id=target.project.project_id, task_id=task_id,
+                current_revision=locked_existing["current_contract_revision"],
+                pointer_validated_in_snapshot=True,
+            )
             if not _basis_changed(locked_existing, prospective):
                 raise validation_error(
                     "invalid_option_combination",
@@ -690,6 +710,7 @@ def _edit_combined(
                 effort_profile=effort_profile,
                 runner_selector=runner_selector,
                 basis_precommit_validator=compute_candidate,
+                operation_local=True,
                 edit_input=edit_input,
                 caller=caller,
                 observed_ownership=owner,

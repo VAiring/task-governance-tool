@@ -178,6 +178,17 @@ Preflight obtains the validated internal Task and ownership together through
 the public Task from that value; ordinary and combined edits leave that unused
 projection absent. Locked writer rereads and generation checks remain fresh,
 and no preflight value is reused across a different snapshot as validation proof.
+The CLI resolver and both Plan writer branches explicitly select operation-local
+admission. `_edit_plan_only` repeats it in `begin_initialized_write` before the
+selected Task and ownership check; `_edit_combined` passes it through
+`_edit_on_connection` to the existing Task/Contract writer. Global defaults remain
+unchanged for lifecycle and unconverted consumers. The selected readers still
+validate complete Task, Contract and criterion relationships before candidate use.
+Plan preflight and both fresh writers additionally call the Contract
+repository's content validator in that same snapshot, because pointer and
+authority-snapshot checks do not cover all immutable Contract metadata. The
+combined check runs before candidate computation even for verification-only
+edits that do not otherwise project Contract content.
 
 The locked Task reread must still match the preflight basis. Candidate creation
 inside the Task transaction performs only pure computation; no temporary or

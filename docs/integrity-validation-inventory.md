@@ -96,8 +96,8 @@ They do not introduce runtime records or another Task registry.
 T-09 (B/C/D; IV-T) covers `verification_runner_plan_edit._read_task_preflight`,
 `_edit_without_action`, `_edit_plan_only`, `_edit_combined` and `_edit_on_connection`.
 Ordinary edits already choose operation-local admission. Config-only and combined
-Plan actions still enter global-default connection/writer admission. Replace those
-edges with complete selected Task/Contract/owner/criterion validation in the fresh
+At discovery, Plan actions entered global-default connection/writer admission.
+IV-T replaces those edges with complete selected Task/Contract/owner/criterion validation in the fresh
 writer; preflight is never writer authority. Preserve pure prospective Plan
 construction, rollback, writer closure before physical publication and the
 committed-Task/unconfirmed-Plan outcome. Preserve bounded publisher path/file
@@ -111,9 +111,8 @@ the new scope; retain the race test using consumed corrupt fields.
 Normal public leaves covered through adapters are Task
 add/list/current/next/context/show/effort/checkpoint/edit/complete and Handoff
 record/list/show/withdraw. Task edit includes Contract-only, state, compatibility
-done and reopen branches. Explicit Runner Plan actions retain current admission
-until T-09's targeted replacement; an ambiguous default must not switch them
-accidentally.
+done and reopen branches. Explicit Runner Plan actions use T-09's targeted
+replacement; an ambiguous default must not switch other consumers accidentally.
 
 C-03 identifies the shared physical-check implementation and its lexical reuse
 mechanism. L-12 identifies its lifecycle consumers. It is one shared helper,
@@ -130,6 +129,26 @@ fresh lane/session predicates. `PRAGMA` is not itself a deletion category.
 Global ownership/note/Runner/Review/Evidence callees inside common admission
 are explicitly domain/audit edges, not unclassified ordinary Task validators.
 
+### Ordinary Task Cutover Disposition
+
+T-01 through T-04 and T-06 through T-08 retain their existing selected-row,
+Contract, ownership, checkpoint, Handoff and event validation. Their private
+selected-facts borrow now rejects DDL through the schema cookie as well as
+connection, transaction, mutation and identity changes. No mutable gate result
+is shared across a writer or physical-effect boundary.
+
+T-05 `select_next_tasks` now lends the same `_validated_task_facts` result to
+`project_tasks`, matching list/current. It removes the second ownership batch,
+not the complete selected-row checks, exact count, lane predicates or ordering.
+
+T-09 explicitly selects operation-local admission in the public CLI resolver,
+config-only connection/writer and combined connection/Task writer. The existing
+fresh selected Task/Contract/criterion/owner checks replace blanket history
+admission; pure candidate construction, closed writer before publication and
+committed-Task/unconfirmed-Plan behavior remain. Global helper defaults are not
+changed. The earlier global-state race test now corrupts a consumed Task field;
+separate tests retain unconsumed-note isolation and config-only VM-work scaling.
+
 ### Core And Task Regression Anchors
 
 The common-entry cutover has these concrete caller dispositions. Unlisted
@@ -143,7 +162,7 @@ full admission, not an inference from a command label.
 | C-04/C-05 | `current_schema_version`, `_validated_migration_versions` and `_validate_current_schema_contract` share immutable successful facts only within `admission_scope`. Exact all-marker, owned-definition, column and FK checks remain. Direct standalone and unknown/native injected connections validate fresh. `_Schema33OwnedValidation` remains the narrower ledger/Bundle composition, not a new global certificate. |
 | C-06 | `_read_project_binding_snapshot` shares its frozen state/lineage inside the same scope. `_inspect_database`, `_admit_current_database` and Task-read admission reuse that fact; `_validate_target_binding` still compares each actual target. Independent backup binding checks and later effect/writer snapshots remain fresh. |
 | C-07 | `_validate_current_project_rows` keeps control validation. Explicit local structure/admission and Task-read callers omit cycle COUNT; global default retains it. Resolver doctor/recovery explicitly retain full project-history equality even when their domain audit is composed later. Evidence publication's selected generation checks are unchanged. |
-| C-08 | Scope owners are `_inspect_database`, `validate_current_database_structure`, `_admit_current_database`, `_validate_current_task_read_database` and standalone schema validation. They do not cache Runner, review, ownership, note or Task verdicts. CLI retained-read and later consumer composition still establish fresh scopes; IV-T/IV-R own further composition. Runner Plan actions and other unconverted global consumers remain global. |
+| C-08 | Scope owners are `_inspect_database`, `validate_current_database_structure`, `_admit_current_database`, `_validate_current_task_read_database` and standalone schema validation. They do not cache Runner, review, ownership, note or Task verdicts. CLI retained-read and later consumer composition still establish fresh scopes. IV-T converts Runner Plan actions through T-09's complete selected closure; IV-R owns further review composition. Unconverted global consumers retain their existing admission. |
 
 Removing C-02 exposes one consumed relation formerly supplied by the global
 FK scan: Handoff list/show must batch-check returned source Task/project

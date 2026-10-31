@@ -5,6 +5,7 @@ connections and reads outside a transaction always validate afresh. Native
 trace notifications observe transaction controls even through cursors, scripts
 and implicit commits; SQL text is neither retained nor logged here.
 """
+from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import wraps
 import re
@@ -72,22 +73,39 @@ class AdmissionConnection(GuardedConnection):
             pass
 
 
+@contextmanager
+def structural_read():
+    """Lexical owner for synchronous calls or an admitted connection lifetime."""
+    if _scope.get() is not None:
+        yield
+        return
+    states = {}
+    token = _scope.set(states)
+    try:
+        yield
+    finally:
+        _scope.reset(token)
+        for connection in states:
+            connection._admission_unwatch()
+        states.clear()
+
+
 def admission_scope(function):
     """Compose structural readers synchronously; discard everything on exit."""
     @wraps(function)
     def scoped(*args, **kwargs):
-        if _scope.get() is not None:
+        with structural_read():
             return function(*args, **kwargs)
-        states = {}
-        token = _scope.set(states)
-        try:
-            return function(*args, **kwargs)
-        finally:
-            _scope.reset(token)
-            for connection in states:
-                connection._admission_unwatch()
-            states.clear()
     return scoped
+
+
+def read_epoch(connection):
+    """Return an observed read identity only while its lexical owner is active."""
+    states = _scope.get()
+    if (states is None or connection not in states
+            or not getattr(connection, "_admission_watching", False)):
+        return None
+    return _basis(connection)
 
 
 def _basis(connection):

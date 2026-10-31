@@ -871,6 +871,28 @@ uses existing rollback-journal preflight, query-only read transactions or a
 short `BEGIN IMMEDIATE`; no log reads occur under the writer. Setup quick/FK
 checks and exact schema/binding checks apply independently of main admission.
 
+`sqlite_admission.structural_read` owns the lexical structural facts for an
+actual connection and its observed transaction epoch. `usage_repository._structure`
+compares exact DDL and all migration rows once per unchanged read; the separate
+`_project_binding` fact retains the complete singleton binding. `_validate`
+returns immutable `UsageAdmission` values. All ten numerical repository layers
+inherit this boundary; schema-10 reconciliation still validates its mutable
+revision control separately. Unknown/native connections do not reuse facts.
+
+`UsageRepository.admitted_read` issues a private borrowing handle after fresh
+physical/schema/binding admission. It binds the repository, path/file identity,
+schema/binding values and observed read epoch, including the temp-schema cookie.
+`connection(admission=...)` accepts only that live handle for a pure read;
+writers always open and admit a fresh connection. Borrowing fails after scope
+exit, close, transaction controls, local writes, DDL or source/binding changes.
+File identity detects replacement; it does not replace content admission.
+`usage_locator_collection._direct` passes this handle to `locator_page`, optional
+`locator_by_id` and `known_sources`, then closes it before physical log reads,
+queue CAS or collection. Standalone calls retain their independent admission.
+Evidence projection already borrows its admitted numerical connection; capture,
+snapshot publication and the final publication guard retain separate reads.
+There is no reuse across their filesystem effects or between core and Usage.
+
 `usage_values.py` validates the closed numerical representation.
 `usage_adapter.py` retains the full-prefix baseline adapter and shared closed
 projection: an explicit session

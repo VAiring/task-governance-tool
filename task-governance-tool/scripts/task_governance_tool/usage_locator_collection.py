@@ -86,13 +86,16 @@ def _pending(repository, target, roots, deadline, clock, gaps):
 
 
 def _direct(repository, roots, project, hint, work, ceiling):
-    entries = list(repository.locator_page(locator_root_fingerprints(roots), limit=DIRECT_PAGE))
-    if hint is not None and all(item.locator.source_id != hint.source_id for item in entries):
-        current = repository.locator_by_id(hint.source_id)
-        if current is not None:
-            entries.insert(min(1, len(entries)), current)
+    with repository.admitted_read() as admission:
+        entries = list(repository.locator_page(locator_root_fingerprints(roots), limit=DIRECT_PAGE, admission=admission))
+        if hint is not None and all(item.locator.source_id != hint.source_id for item in entries):
+            current = repository.locator_by_id(hint.source_id, admission=admission)
+            if current is not None:
+                entries.insert(min(1, len(entries)), current)
+        known = repository.known_sources([item.locator.source_id for item in entries], admission=admission)
+    # Physical source admission and queue/collection writers get fresh state.
     sources, selected = {}, {}
-    work.known_sources.update(repository.known_sources([item.locator.source_id for item in entries]))
+    work.known_sources.update(known)
     for entry in entries:
         if work.clock() >= work.deadline:
             work.gaps.add("usage_pending")

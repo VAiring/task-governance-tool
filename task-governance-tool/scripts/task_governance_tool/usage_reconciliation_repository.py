@@ -159,8 +159,9 @@ class UsageReconciliationRepository(UsageWorkOrderRepository):
         """Migration fault seam; a new epoch requires rebuilding derived inputs."""
 
     def _validate(self, connection):
-        super()._validate(connection)
+        admission = super()._validate(connection)
         self.reconciliation_revision(connection)
+        return admission
 
     def reconciliation_revision(self, connection):
         row = connection.execute("SELECT epoch,generation FROM usage_reconcile_state WHERE singleton=1").fetchone()

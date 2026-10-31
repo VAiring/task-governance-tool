@@ -683,9 +683,9 @@
     },
     "usage_repository.py": {
       "attributes": {
-        "execute": 31,
+        "execute": 32,
         "executemany": 2,
-        "fetchone": 9
+        "fetchone": 10
       },
       "kind": "observed_connection"
     },

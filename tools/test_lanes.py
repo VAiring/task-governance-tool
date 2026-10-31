@@ -206,6 +206,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_task_show",
         "test_task_show_projection",
         "test_task_validation",
+        "test_usage_admission_sharing",
         "test_usage_attribution",
         "test_usage_attribution_repository",
         "test_usage_batch_adapter",

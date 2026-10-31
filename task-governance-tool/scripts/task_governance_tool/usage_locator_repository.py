@@ -162,10 +162,10 @@ class UsageLocatorRepository(UsagePublicationRepository):
                 or review["reviewer_session_id"] != locator.thread_id):
             raise UsageError(code)
 
-    def locator_by_id(self, source_id, *, pending=False):
+    def locator_by_id(self, source_id, *, pending=False, admission=None):
         if not _hex(source_id):
             raise UsageError("source_unreadable")
-        with self.connection() as connection:
+        with self.connection(admission=admission) as connection:
             return self._get_locator(connection, source_id, pending=pending)
 
     def remember_locator(self, locator, *, pending_review=None):
@@ -214,14 +214,14 @@ class UsageLocatorRepository(UsagePublicationRepository):
             self._before_locator_commit(connection)
             return LocatorEntry(locator, 1, order, None if document is None else json.loads(document))
 
-    def locator_page(self, root_fingerprints, *, limit=16, pending=False):
+    def locator_page(self, root_fingerprints, *, limit=16, pending=False, admission=None):
         """Read indexed finite pages; unrelated roots never consume the page."""
         table = _table(pending)
         if type(limit) is not int or not 1 <= limit <= LOCATOR_PAGE_LIMIT:
             raise UsageError("source_unreadable")
         roots = _root_fingerprints(root_fingerprints)
         selected = []
-        with self.connection() as connection:
+        with self.connection(admission=admission) as connection:
             for kind, fingerprint in roots:
                 selected.extend(self._read_locator(row, pending=pending) for row in connection.execute(
                     "SELECT * FROM " + table + " WHERE root_kind=? AND root_fingerprint=? "
@@ -286,13 +286,13 @@ class UsageLocatorRepository(UsagePublicationRepository):
             self._before_locator_commit(connection)
             return True
 
-    def known_sources(self, source_ids):
+    def known_sources(self, source_ids, *, admission=None):
         selected = tuple(dict.fromkeys(source_ids))
         if len(selected) > LOCATOR_PAGE_LIMIT or any(not _hex(item) for item in selected):
             raise UsageError("source_unreadable")
         if not selected:
             return {}
-        with self.connection() as connection:
+        with self.connection(admission=admission) as connection:
             result = dict(connection.execute("SELECT source_id,thread_id FROM usage_sources WHERE source_id IN ("
                                              + ",".join("?" for _ in selected) + ")", selected))
         if any(not is_session_id(thread) for thread in result.values()):

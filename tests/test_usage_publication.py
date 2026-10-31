@@ -395,16 +395,19 @@ class UsagePublicationTests(unittest.TestCase):
         connect, encode = sqlite3.connect, service.encode
         create, replace = service.create_exclusive_durable_file, service._atomic_replace_temporary
         read_file = service.read_physical_file_bounded
-        class TrackedConnection(sqlite3.Connection):
-            def __init__(connection, *args, **kwargs):
-                super().__init__(*args, **kwargs)
-                live.add(connection)
-            def close(connection):
-                try:
-                    super().close()
-                finally:
-                    live.discard(connection)
         def tracked(*args, **kwargs):
+            # Keep the real opener's admission/observation subclass. Supplying
+            # another factory keyword prevents the lock exercise from starting.
+            factory = kwargs.pop("factory", sqlite3.Connection)
+            class TrackedConnection(factory):
+                def __init__(connection, *args, **kwargs):
+                    super().__init__(*args, **kwargs)
+                    live.add(connection)
+                def close(connection):
+                    try:
+                        super().close()
+                    finally:
+                        live.discard(connection)
             return connect(*args, **kwargs, factory=TrackedConnection)
         def writers(*, blocked):
             # Force a real SQLite page change; a no-op UPDATE is not sufficient.

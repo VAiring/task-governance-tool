@@ -903,6 +903,18 @@ core backup/restore does not copy this store or claim a paired numerical
 snapshot. Attribution revalidates Task/execution references against restored
 core state; immutable cycle-linked snapshots follow the contract below.
 
+Within one numerical read transaction, synchronous consumers share the exact
+schema and complete migration history admission separately from the admitted
+project/binding metadata. The repository supplies a typed, lexical borrowing
+handle; it is neither a caller certificate nor a persisted validity flag.
+Connection/transaction replacement, local mutation, DDL, source-file or binding
+change and lexical exit invalidate reuse. Each independent connection and every
+writer establishes its own admission. The locator page, optional hinted candidate
+and known-source metadata use one read, ending before physical source access or
+queue/collection writes. Source/header/cursor validation and fresh publication
+guards remain required. Setup-only physical/FK audits are unchanged. Numerical
+unavailability remains independent of core Task completion.
+
 Schema 9 adds only an index on the existing attempt number, plus its migration
 marker. Candidate ordering and partial-page coverage read only their supplied
 source identities. The oldest-candidate/current allocation, failed-attempt

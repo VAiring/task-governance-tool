@@ -8,6 +8,7 @@ permission to repair state or reject a core Task operation.
 from __future__ import annotations
 
 from contextlib import contextmanager, nullcontext
+from dataclasses import dataclass
 import os
 from pathlib import Path
 import sqlite3
@@ -23,6 +24,7 @@ from task_governance_tool.state_paths import (
     StatePathError, hash_physical_file, unlink_validated_file,
 )
 from task_governance_tool.no_replace import rename_no_replace
+from task_governance_tool.sqlite_admission import structural_read, same_read_fact, read_epoch
 from task_governance_tool.usage_adapter import CollectionBatch, Cursor
 from task_governance_tool.usage_values import GAP_CODES, METRICS, ResponseUsage, UsageError
 
@@ -77,6 +79,62 @@ def _schema(connection):
         "SELECT sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY name"))
 
 
+@same_read_fact
+def _structure(connection, statements, migrations):
+    if (_schema(connection) != tuple(sorted(statements, key=lambda sql: sql.split()[2]))
+            or tuple(tuple(row) for row in connection.execute(
+                "SELECT * FROM usage_migrations ORDER BY version")) != migrations):
+        raise UsageError("usage_schema_invalid")
+    return migrations[-1][0]
+
+
+@same_read_fact
+def _project_binding(connection):
+    return tuple(tuple(row) for row in connection.execute(
+        "SELECT project_id,binding_hash,binding_generation FROM usage_meta"))
+
+
+@dataclass(frozen=True)
+class UsageAdmission:
+    schema_version: int
+    binding: tuple[str, str, int]
+
+
+def _usage_read_stamp(connection):
+    epoch = read_epoch(connection)
+    if epoch is None:
+        raise UsageError("usage_schema_invalid")
+    return epoch, connection.execute("PRAGMA temp.schema_version").fetchone()[0]
+
+
+def _file_identity(path):
+    stat = path.stat(follow_symlinks=False)
+    if not stat.st_ino:
+        raise UsageError("usage_schema_invalid")
+    return stat.st_dev, stat.st_ino
+
+
+class _AdmittedUsageRead:
+    """Repository-issued borrowing handle, revoked at the lexical read exit."""
+    def __init__(self, repository, connection, validation, file_identity):
+        self.repository, self.connection, self.validation = repository, connection, validation
+        self.stamp = _usage_read_stamp(connection)
+        self.path, self.file_identity = repository.path, file_identity
+        self.active = True
+
+    def check(self, repository):
+        try:
+            if (not self.active or repository is not self.repository
+                    or repository.path != self.path
+                    or repository.basis != self.validation.binding
+                    or repository.migrations[-1][0] != self.validation.schema_version
+                    or _file_identity(repository.path) != self.file_identity
+                    or _usage_read_stamp(self.connection) != self.stamp):
+                raise UsageError("usage_schema_invalid")
+        except (OSError, sqlite3.Error):
+            raise UsageError("usage_schema_invalid") from None
+
+
 def _cursor(row) -> Cursor:
     incarnation, offset, prefix, file_id = (row[name] for name in
                                            ("incarnation", "offset", "prefix", "file_id"))
@@ -128,15 +186,19 @@ class UsageRepository:
         validate_operational_journal_state(self.path)
 
     def _validate(self, connection):
-        if _schema(connection) != tuple(sorted(self.schema_statements, key=lambda sql: sql.split()[2])):
-            raise UsageError("usage_schema_invalid")
-        if [tuple(r) for r in connection.execute("SELECT * FROM usage_migrations ORDER BY version")] != list(self.migrations):
-            raise UsageError("usage_schema_invalid")
-        if [tuple(r) for r in connection.execute("SELECT project_id,binding_hash,binding_generation FROM usage_meta")] != [self.basis]:
+        version = _structure(connection, self.schema_statements, self.migrations)
+        if _project_binding(connection) != (self.basis,):
             raise UsageError("usage_binding_mismatch")
+        return UsageAdmission(version, self.basis)
 
     @contextmanager
-    def connection(self, *, write=False):
+    def connection(self, *, write=False, admission=None):
+        if admission is not None:
+            if write or type(admission) is not _AdmittedUsageRead:
+                raise UsageError("usage_schema_invalid")
+            admission.check(self)
+            yield admission.connection
+            return
         connection = None
         try:
             self._physical()
@@ -146,8 +208,9 @@ class UsageRepository:
             self._configure_work(connection)
             if write:
                 connection.execute("BEGIN IMMEDIATE")
-            self._validate(connection)
-            yield connection
+            with structural_read():
+                self._validate(connection)
+                yield connection
             if write:
                 connection.commit()
         except (sqlite3.Error, OSError, StatePathError, StorageError):
@@ -155,6 +218,22 @@ class UsageRepository:
         finally:
             if connection is not None:
                 connection.close()
+
+    @contextmanager
+    def admitted_read(self):
+        """Share pure numerical reads only; close before I/O, writes or effects."""
+        try:
+            identity = _file_identity(self.path)
+        except OSError:
+            raise UsageError() from None
+        with self.connection() as connection:
+            validation = self._validate(connection)
+            read = _AdmittedUsageRead(self, connection, validation, identity)
+            read.check(self)
+            try:
+                yield read
+            finally:
+                read.active = False
 
     def _configure_work(self, connection):
         """Optional numerical worker budget; ordinary/core connections are unchanged."""

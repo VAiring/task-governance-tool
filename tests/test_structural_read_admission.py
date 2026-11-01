@@ -11,7 +11,7 @@ from unittest import mock
 from task_governance_tool import storage as s, state_resolver as resolver
 from task_governance_tool import schema_viewer_finding_index as schema
 from task_governance_tool.project_binding_repository import read_project_binding_state
-from task_governance_tool.sqlite_admission import admission_scope
+from task_governance_tool.sqlite_admission import admission_scope, structural_read, same_read_fact
 from tests.test_routine_backup import make_target
 
 
@@ -98,6 +98,160 @@ class StructuralReadAdmissionTests(unittest.TestCase):
                         connection.execute("RELEASE nested_caller")
                     compose()
                     self.assertEqual(owned.call_count, 3)
+
+    def test_control_probes_are_once_per_observed_epoch_including_nested_reads(self):
+        controls = {"PRAGMA schema_version", "PRAGMA temp.schema_version",
+                    "PRAGMA query_only", "PRAGMA foreign_keys"}
+        with closing(s.connect_readonly(self.target.db_path)) as connection:
+            trace = []
+            connection.set_trace_callback(trace.append)
+            with structural_read():
+                s._validate_current_schema_contract(connection)
+                first = [sql for sql in trace if sql in controls]
+                for _ in range(4):
+                    with structural_read():
+                        s._validate_current_schema_contract(connection)
+                self.assertEqual([sql for sql in trace if sql in controls], first)
+                # The owned-schema helper retains its independent cookie checks;
+                # the reuse observer itself reads each control only once.
+                self.assertEqual(first.count("PRAGMA temp.schema_version"), 1)
+                self.assertEqual(first.count("PRAGMA query_only"), 1)
+                self.assertEqual(first.count("PRAGMA foreign_keys"), 1)
+                connection.cursor().execute("SAVEPOINT boundary")
+                s._validate_current_schema_contract(connection)
+                self.assertEqual(trace.count("PRAGMA temp.schema_version"), 2)
+
+    def test_native_configuration_and_automatic_rollback_expire_observations(self):
+        with closing(s.connect_existing(self.target.db_path)) as connection:
+            connection.execute("CREATE TABLE rollback_probe(value PRIMARY KEY)")
+            connection.execute("INSERT INTO rollback_probe VALUES (1)")
+            connection.commit()
+            connection.execute("BEGIN")
+            with structural_read(), mock.patch.object(schema, "validate_owned_contract",
+                    wraps=schema.validate_owned_contract) as owned:
+                s._validate_current_schema_contract(connection)
+                connection.setconfig(sqlite3.SQLITE_DBCONFIG_ENABLE_FKEY, False)
+                s._validate_current_schema_contract(connection)
+                self.assertEqual(owned.call_count, 2)
+                connection.setconfig(sqlite3.SQLITE_DBCONFIG_ENABLE_FKEY, True)
+                with self.assertRaises(sqlite3.IntegrityError):
+                    connection.cursor().execute("INSERT OR ROLLBACK INTO rollback_probe VALUES (1)")
+                self.assertFalse(connection.in_transaction)
+                connection.execute("BEGIN")
+                s._validate_current_schema_contract(connection)
+                self.assertEqual(owned.call_count, 3)
+
+    def test_control_probe_callback_change_never_publishes_a_stale_fact(self):
+        with closing(s.connect_readonly(self.target.db_path)) as connection:
+            changed, calls = [], []
+            def callback(sql):
+                if sql == "PRAGMA schema_version" and not changed:
+                    changed.append(True)
+                    connection.execute("PRAGMA query_only=OFF")
+            @same_read_fact
+            def fact(current):
+                calls.append(True)
+                return current.execute("SELECT 1").fetchone()[0]
+            connection.set_trace_callback(callback)
+            with structural_read():
+                self.assertEqual(fact(connection), 1)
+                self.assertEqual(fact(connection), 1)
+                self.assertEqual(fact(connection), 1)
+            self.assertEqual(len(calls), 2)
+
+    def test_failed_native_copy_and_deserialize_expire_destination_facts(self):
+        with closing(s.connect_readonly(self.target.db_path)) as destination, \
+             closing(s.connect_readonly(self.target.db_path)) as source:
+            with structural_read(), mock.patch.object(schema, "validate_owned_contract",
+                    wraps=schema.validate_owned_contract) as owned:
+                s._validate_current_schema_contract(destination)
+                with self.assertRaises(TypeError):
+                    destination.deserialize(object())
+                s._validate_current_schema_contract(destination)
+                self.assertEqual(owned.call_count, 2)
+                # A query-only destination refuses native copy; no copy result
+                # is treated as known or reusable after the failed attempt.
+                with self.assertRaises(sqlite3.Error):
+                    source.backup(destination)
+                s._validate_current_schema_contract(destination)
+                self.assertEqual(owned.call_count, 3)
+
+    def test_native_configuration_conversion_cannot_publish_surviving_facts(self):
+        for fail in (False, True):
+            with self.subTest(fail=fail), closing(s.connect_existing(self.target.db_path)) as connection:
+                connection.execute("BEGIN")
+                calls, during = [], []
+                @same_read_fact
+                def fact(current):
+                    calls.append(True)
+                    return current.execute("PRAGMA foreign_keys").fetchone()[0]
+                class Enable:
+                    def __bool__(self):
+                        during.append(fact(connection))
+                        if fail:
+                            raise ValueError("conversion interrupted")
+                        return False
+                with structural_read():
+                    self.assertEqual(fact(connection), 1)
+                    if fail:
+                        with self.assertRaises(ValueError):
+                            connection.setconfig(sqlite3.SQLITE_DBCONFIG_ENABLE_FKEY, Enable())
+                    else:
+                        connection.setconfig(sqlite3.SQLITE_DBCONFIG_ENABLE_FKEY, Enable())
+                    previous_calls = len(calls)
+                    self.assertEqual(during, [1])
+                    self.assertEqual(fact(connection), int(fail))
+                    self.assertEqual(len(calls), previous_calls + 1)
+                    self.assertEqual(fact(connection), int(fail))
+                    self.assertEqual(len(calls), previous_calls + 1)
+
+    def test_trace_callback_cannot_publish_pre_statement_facts(self):
+        cases = (
+            ("PRAGMA query_only=ON", "PRAGMA query_only", 0, 1),
+            ("CREATE TEMP TABLE callback_probe(value)",
+             "SELECT count(*) FROM sqlite_temp_master WHERE name='callback_probe'", 0, 1),
+        )
+        for statement, query, before, after in cases:
+            for fail in (False, True):
+                with self.subTest(statement=statement, fail=fail), \
+                     closing(s.connect_existing(self.target.db_path)) as connection:
+                    connection.execute("BEGIN")
+                    during = []
+                    @same_read_fact
+                    def fact(current):
+                        return current.execute(query).fetchone()[0]
+                    def callback(sql):
+                        if sql == statement:
+                            during.append((fact(connection), connection.execute(query).fetchone()[0]))
+                            if fail:
+                                raise ValueError("trace interrupted")
+                    connection.set_trace_callback(callback)
+                    with structural_read():
+                        self.assertEqual(fact(connection), before)
+                        connection.execute(statement)
+                        # PRAGMA controls can change during preparation, while
+                        # DDL takes effect after its trace callback. Preserve
+                        # actual native timing rather than assuming either.
+                        self.assertEqual(len(during), 1)
+                        self.assertEqual(during[0][0], during[0][1])
+                        self.assertEqual(fact(connection), after)
+                        self.assertEqual(fact(connection), after)
+
+    def test_native_copy_conversion_first_observation_expires_after_failure(self):
+        with closing(s.connect_readonly(self.target.db_path)) as destination, \
+             closing(s.connect_readonly(self.target.db_path)) as source:
+            with structural_read(), mock.patch.object(schema, "validate_owned_contract",
+                    wraps=schema.validate_owned_contract) as owned:
+                class Pages:
+                    def __index__(self):
+                        s._validate_current_schema_contract(destination)
+                        return 1
+                # Watching begins only during native argument conversion.
+                with self.assertRaises(sqlite3.Error):
+                    source.backup(destination, pages=Pages())
+                self.assertEqual(owned.call_count, 1)
+                s._validate_current_schema_contract(destination)
+                self.assertEqual(owned.call_count, 2)
 
     def test_cursor_write_ddl_and_binding_mutation_invalidate_same_transaction(self):
         mutations = (

@@ -116,6 +116,10 @@ mutation, DDL or binding/source replacement expires it. Preflight facts never
 authorize a fresh writer. Migration history, attached objects and temporary
 object rejection remain complete, including every earlier marker's name/type/time.
 Separate migration/reentry and publication stages retain independent validation.
+Reuse eligibility itself is shared only within that unchanged observed epoch;
+it must not add repeated control SQL to each fact or borrowed read. Native
+connection configuration changes invalidate it too. Single-use numerical
+connections retain fresh admission without preparing unused reuse state.
 
 Every consumed Task row and Contract pointer, current ownership/execution
 relationship, note body, checkpoint and evidence relationship retains its

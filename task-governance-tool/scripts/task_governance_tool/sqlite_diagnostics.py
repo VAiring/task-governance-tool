@@ -103,6 +103,8 @@ def safe_origin(module, function):
         if not module.startswith("task_governance_tool."):
             return "other"
         module = module.removeprefix("task_governance_tool.")
+        if module == "usage_repository" and function == "_connection":
+            function = "connection"  # Same admitted opener, existing public diagnostic label.
         if function in _ORIGINS.get(module, ()):
             return f"{module}.{function}"
     except BaseException:

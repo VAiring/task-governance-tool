@@ -104,7 +104,7 @@ def _usage_read_stamp(connection):
     epoch = read_epoch(connection)
     if epoch is None:
         raise UsageError("usage_schema_invalid")
-    return epoch, connection.execute("PRAGMA temp.schema_version").fetchone()[0]
+    return epoch
 
 
 def _file_identity(path):
@@ -199,6 +199,12 @@ class UsageRepository:
             admission.check(self)
             yield admission.connection
             return
+        with self._connection(write=write) as (connection, _):
+            yield connection
+
+    @contextmanager
+    def _connection(self, *, write=False):
+        """Open and admit once; only an explicit shared reader requests reuse."""
         connection = None
         try:
             self._physical()
@@ -208,9 +214,8 @@ class UsageRepository:
             self._configure_work(connection)
             if write:
                 connection.execute("BEGIN IMMEDIATE")
-            with structural_read():
-                self._validate(connection)
-                yield connection
+            validation = self._validate(connection)
+            yield connection, validation
             if write:
                 connection.commit()
         except (sqlite3.Error, OSError, StatePathError, StorageError):
@@ -226,8 +231,7 @@ class UsageRepository:
             identity = _file_identity(self.path)
         except OSError:
             raise UsageError() from None
-        with self.connection() as connection:
-            validation = self._validate(connection)
+        with structural_read(), self._connection() as (connection, validation):
             read = _AdmittedUsageRead(self, connection, validation, identity)
             read.check(self)
             try:

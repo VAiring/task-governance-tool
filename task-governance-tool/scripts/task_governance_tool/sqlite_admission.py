@@ -50,22 +50,46 @@ class AdmissionConnection(GuardedConnection):
 
     def backup(self, target, *args, **kwargs):
         # SQLite's copy API does not emit SQL or increment target.total_changes.
-        if isinstance(target, AdmissionConnection) and getattr(target, "_admission_watching", False):
+        watched = isinstance(target, AdmissionConnection) and getattr(target, "_admission_watching", False)
+        if watched:
             target._admission_epoch += 1
-        return super().backup(target, *args, **kwargs)
+        try:
+            return super().backup(target, *args, **kwargs)
+        finally:
+            # Argument conversion or a callback may start watching mid-call.
+            if isinstance(target, AdmissionConnection) and getattr(target, "_admission_watching", False):
+                target._admission_epoch += 1
 
     def deserialize(self, *args, **kwargs):
         if getattr(self, "_admission_watching", False):
             self._admission_epoch += 1
-        return super().deserialize(*args, **kwargs)
+        try:
+            return super().deserialize(*args, **kwargs)
+        finally:
+            if getattr(self, "_admission_watching", False):
+                self._admission_epoch += 1
+
+    def setconfig(self, *args, **kwargs):
+        # Native db_config (notably FK enforcement) emits no SQL trace.
+        if getattr(self, "_admission_watching", False):
+            self._admission_epoch += 1
+        try:
+            return super().setconfig(*args, **kwargs)
+        finally:
+            # Native argument conversion can run Python and observe the old
+            # controls. Such facts must expire on success and on failure.
+            if getattr(self, "_admission_watching", False):
+                self._admission_epoch += 1
 
     def _admission_watch(self):
         self._admission_epoch = 0
+        self._admission_basis = None
         super().set_trace_callback(self._admission_trace)
         self._admission_watching = True
 
     def _admission_unwatch(self):
         self._admission_watching = False
+        self._admission_basis = None
         try:
             super().set_trace_callback(getattr(self, "_admission_user_trace", None))
         except sqlite3.ProgrammingError:
@@ -111,11 +135,24 @@ def read_epoch(connection):
 def _basis(connection):
     if not connection.in_transaction:
         return None
+    observed = (connection._admission_epoch, connection.total_changes,
+                connection.row_factory, connection.text_factory)
+    cached = connection._admission_basis
+    if cached is not None and cached[0] == observed:
+        return cached[1]
+    # The native trace expires this observation for every non-read statement,
+    # including temp DDL and PRAGMA controls. Probe once per observed epoch,
+    # not before and after every structural fact or borrowed read.
     cookie = connection.execute("PRAGMA schema_version").fetchone()[0]
+    temp_cookie = connection.execute("PRAGMA temp.schema_version").fetchone()[0]
     query_only = connection.execute("PRAGMA query_only").fetchone()[0]
     foreign_keys = connection.execute("PRAGMA foreign_keys").fetchone()[0]
-    return (connection._admission_epoch, connection.total_changes, cookie,
-            query_only, foreign_keys, connection.row_factory)
+    if (not connection.in_transaction or observed != (connection._admission_epoch,
+            connection.total_changes, connection.row_factory, connection.text_factory)):
+        return None
+    basis = (observed, cookie, temp_cookie, query_only, foreign_keys)
+    connection._admission_basis = (observed, basis)
+    return basis
 
 
 def same_read_fact(function):

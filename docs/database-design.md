@@ -891,10 +891,17 @@ compares exact DDL and all migration rows once per unchanged read; the separate
 returns immutable `UsageAdmission` values. All ten numerical repository layers
 inherit this boundary; schema-10 reconciliation still validates its mutable
 revision control separately. Unknown/native connections do not reuse facts.
+Standalone reads and writers perform one fresh admission without creating a
+reuse scope solely for their single validation. The private `_connection` owner
+yields the connection and its validated result together; it retains the existing
+`usage_repository.connection` diagnostic origin. Explicit shared readers own
+the structural scope and consume this result without a second `_validate` call.
 
 `UsageRepository.admitted_read` issues a private borrowing handle after fresh
 physical/schema/binding admission. It binds the repository, path/file identity,
 schema/binding values and observed read epoch, including the temp-schema cookie.
+The common epoch observer supplies the cookie and control observation; each
+borrow checks the live epoch without issuing another PRAGMA for unchanged state.
 `connection(admission=...)` accepts only that live handle for a pure read;
 writers always open and admit a fresh connection. Borrowing fails after scope
 exit, close, transaction controls, local writes, DDL or source/binding changes.
@@ -905,6 +912,16 @@ queue CAS or collection. Standalone calls retain their independent admission.
 Evidence projection already borrows its admitted numerical connection; capture,
 snapshot publication and the final publication guard retain separate reads.
 There is no reuse across their filesystem effects or between core and Usage.
+
+`tools/measure_admission_cost.py` compares explicit checkouts with the same
+disposable fixtures for core/numerical standalone reads, writers and shared
+reads with/without a locator hint. It reports every traced SQL and PRAGMA,
+connections, VM work and elapsed time, with separate diagnostic OFF/ON results.
+The enabled measurement includes the existing in-memory transaction/SQL
+observers, excluding sink serialization/I/O. Use real retained commits as
+baselines, report schema/environment differences, and separate necessary
+schema/column/FK admission from reuse-control probes. Timing alone is not a
+pass threshold; measurement never opens a governed project's state.
 
 `usage_values.py` validates the closed numerical representation.
 `usage_adapter.py` retains the full-prefix baseline adapter and shared closed

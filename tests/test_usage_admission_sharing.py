@@ -83,6 +83,30 @@ class UsageAdmissionSharingTests(unittest.TestCase):
                 repository._validate(first)
                 self.assertEqual(schema.call_count, 4)
 
+    def test_single_use_has_no_reuse_probes_and_shared_admission_runs_once(self):
+        repository = self.repository()
+        controls = {"PRAGMA schema_version", "PRAGMA temp.schema_version",
+                    "PRAGMA query_only", "PRAGMA foreign_keys"}
+        for write in (False, True):
+            with self.subTest(write=write):
+                trace = []
+                opener = base.connect_existing if write else base.connect_readonly
+                def opened(*args, **kwargs):
+                    connection = opener(*args, **kwargs)
+                    connection.set_trace_callback(trace.append)
+                    return connection
+                with mock.patch.object(base, 'connect_existing' if write else 'connect_readonly',
+                        side_effect=opened), repository.connection(write=write):
+                    pass
+                self.assertFalse([sql for sql in trace if sql in controls])
+                self.assertEqual(sum('FROM usage_reconcile_state' in sql for sql in trace), 1)
+        with mock.patch.object(repository, '_validate', wraps=repository._validate) as validate:
+            with repository.admitted_read() as admission:
+                for _ in range(3):
+                    with repository.connection(admission=admission):
+                        pass
+            self.assertEqual(validate.call_count, 1)
+
     def test_borrowing_refuses_transaction_restart_local_write_and_ddl(self):
         repository = self.repository()
         # Fault injection needs a writable fixture descriptor; production reads
@@ -101,6 +125,7 @@ class UsageAdmissionSharingTests(unittest.TestCase):
             lambda c: (c.execute('PRAGMA query_only=OFF'), c.execute('CREATE TABLE invalid(x)')),
             lambda c: (c.execute('PRAGMA query_only=OFF'), c.execute('CREATE TEMP TABLE usage_meta(x)')),
             lambda c: (c.execute('PRAGMA query_only=OFF'), c.execute("UPDATE usage_meta SET binding_generation=2")),
+            lambda c: c.setconfig(sqlite3.SQLITE_DBCONFIG_ENABLE_FKEY, False),
         )
         with mock.patch.object(base, 'connect_readonly', side_effect=mutable_fixture):
             for boundary in boundaries:
@@ -109,6 +134,30 @@ class UsageAdmissionSharingTests(unittest.TestCase):
                     with self.assertRaises(UsageError):
                         with repository.connection(admission=admission):
                             self.fail('stale numerical read accepted')
+
+    def test_diagnostics_observe_shared_reads_without_reintroducing_control_sql(self):
+        from task_governance_tool import sqlite_diagnostics as diagnostics, sqlite_sql_trace
+        repository = self.repository()
+        collector = diagnostics.Collector(self.root, self.root, 'transactions', operation='other',
+            marker=self.root / 'unused', directory_identity=None)
+        collector.sql_metrics = sqlite_sql_trace.Metrics('debug', lambda *a, **k: None, collector)
+        trace = []
+        opener = base.connect_readonly
+        def opened(*args, **kwargs):
+            connection = opener(*args, **kwargs)
+            connection.set_trace_callback(trace.append)
+            return connection
+        with diagnostics.bind_collector(collector), mock.patch.object(base, 'connect_readonly', side_effect=opened):
+            with repository.admitted_read() as admission:
+                for _ in range(3):
+                    self.assertEqual(repository.known_sources([], admission=admission), {})
+        self.assertEqual(trace.count('PRAGMA temp.schema_version'), 1)
+        self.assertEqual(sum('FROM usage_reconcile_state' in sql for sql in trace), 1)
+        self.assertEqual(collector.connections_registered, 1)
+        self.assertFalse(collector._open)
+        self.assertGreater(collector.sql_metrics.calls, 0)
+        self.assertEqual({record['origin'] for record in collector.records}, {'usage_repository.connection'})
+        collector.sql_metrics.finish(publish=False)
 
     def test_handle_exit_close_different_repository_and_writer_are_rejected(self):
         repository = self.repository()

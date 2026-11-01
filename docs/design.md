@@ -715,8 +715,14 @@ all other statements conservatively expire the epoch, including transaction
 controls through cursors, scripts and implicit commits. No SQL text is retained
 or logged. Existing caller trace callbacks are forwarded and restored, including
 replacement during admission. Reuse also checks native transaction presence,
-write count, schema cookie, query-only/FK controls and row factory. Native copy
-or deserialize invalidates its destination. Separate connections cannot share
+write count and row/text factories. Main/temp schema cookies and query-only/FK
+controls are read once for each observed epoch, then reused while those cheap
+observations remain unchanged. Native `setconfig`, copy and deserialize invalidate
+their affected connection before and after the attempt, including failure.
+Post-call invalidation also covers observation first established during native
+argument conversion or callbacks; a pre-call increment alone cannot cover facts
+created before the native change takes effect. A control change during probing cannot establish a
+reusable basis. Separate connections cannot share
 facts, and no savepoint owned by a consumer is released to test validity.
 
 This facility neither opens nor extends a transaction. Fresh writers retain

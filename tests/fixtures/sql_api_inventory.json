@@ -414,8 +414,8 @@
     },
     "sqlite_admission.py": {
       "attributes": {
-        "execute": 3,
-        "fetchone": 3
+        "execute": 4,
+        "fetchone": 4
       },
       "kind": "observed_connection"
     },
@@ -691,9 +691,9 @@
     },
     "usage_repository.py": {
       "attributes": {
-        "execute": 32,
+        "execute": 31,
         "executemany": 2,
-        "fetchone": 10
+        "fetchone": 9
       },
       "kind": "observed_connection"
     },

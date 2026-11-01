@@ -1593,6 +1593,26 @@ and links are idempotent. Changed components supersede overlapping current
 components; original snapshots and links remain immutable. Only non-superseded
 components contribute to a current total, including after a split or merge.
 
+Reappearing content must not revive a superseded ID. Freeze the ordinary
+predecessor set R for the selected component and look up each candidate by its
+primary key. Insert an absent candidate normally. Reuse an existing candidate
+only after its complete body, exact original membership and predecessor edges
+match, and only while it is not superseded. Mismatch fails closed without
+repairing history. For a matching superseded candidate, derive the next ID
+from R union the most recent colliding ID; repeat the same checks on collision.
+Earlier collision IDs remain transitive history, not an accumulating list of
+direct edges. Unchanged active components keep their original IDs.
+
+Candidate resolution remains inside the existing snapshot/member/edge/cycle
+link and adoption transaction, with cooperative budget checks and a repeated-ID
+guard. Failure rolls back that unit and preserves last-good publication;
+stable finite inputs can be retried without a new history pointer or schema.
+Current schema 10 resolves only selected candidates and their indexed relations;
+unrelated history does not enlarge these reads. Retained older schemas,
+including schema 9 without the successor-first index, retain their existing
+full-scan validation strategy and the same correctness rules. The bounded-read
+performance requirement applies to schema 10, not those retained paths.
+
 Snapshot format `taskgov-usage-snapshot-v1` and algorithm
 `inclusive-turn-components-v1` contain only project ID, execution IDs,
 response-set digest/cardinality, per-provider/model counters, registered-only

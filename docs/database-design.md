@@ -1808,9 +1808,31 @@ It derives completion periods from ordered core transitions and links every
 pre-completion execution to the immutable cycle selected by its final execution.
 Each selected snapshot, original-key membership, supersession and cycle link
 commits together. The final capture basis is adopted only after all selected
-work and the fresh fence pass. An unchanged current component is reused. A changed component
-includes predecessors in its hashed identity, so later counter/conflict changes
-cannot revive an already superseded snapshot or form a successor cycle.
+work and the fresh fence pass. Both the retained `_refresh` and current selected
+`_component` call the repository's `_save_snapshot_candidate` in that writer.
+It freezes ordinary predecessor IDs R and preserves an unchanged candidate's
+original ID. Each candidate receives a primary-key lookup. An existing row is
+checked by a transaction-local `SnapshotRead` against the complete candidate,
+exact members, original counters and exact incoming predecessor edges. The
+caller passes its existing read from that same repository and writer, preserving
+bulk original reads for already validated frozen predecessors. Saving appends
+only new immutable bodies and incoming relations, not changes to those validated
+facts or their originals. An unseen collision receives a new complete read;
+no value crosses a capture transaction. Every outgoing-edge check is fresh,
+since an earlier component may retire a frozen predecessor. A retired
+match derives a successor from R union that colliding ID and repeats. The
+previous collisions are transitive predecessors, so each new candidate has at
+most |R| + 1 direct predecessors. An absent row uses ordinary inserts; conflicts
+and invalid stored relations are not ignored or repaired.
+The loop checks the active transaction, cooperative budget where available,
+and a local visited-ID set. Rollback preserves immutable history and last-good
+publication. Selected capture keeps its frozen normal lineage obligations even
+when reusing an already committed active candidate after an interrupted round;
+unchanged reuse adds no self-lineage. No state persists the collision search.
+Schema 10 uses its successor-first index for exact incoming edges; retained
+schema 9 and earlier keep their existing scan-based relation checks without a
+schema change. Only the current schema's resolution has the unrelated-history
+bounded-read guarantee.
 No callback touches the core writer; late replay requires no ownership takeover.
 
 `usage_evidence_service.py` supplies safe explicit-audit/internal Task usage projection and a

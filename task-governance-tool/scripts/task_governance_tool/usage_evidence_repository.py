@@ -203,6 +203,63 @@ class UsageEvidenceRepository(UsageAttributionRepository):
         with self.connection(write=True) as connection, core_reader() as core:
             return self._refresh(core, connection)["current"]
 
+    def _save_snapshot_candidate(self, connection, component, previous, *, read=None):
+        """Resolve recurring content without reviving or modifying immutable history.
+
+        The caller owns the writer and the adoption/cycle-link transaction. Keep
+        its ordinary predecessors fixed; only the last collision is a new
+        direct predecessor, with earlier collisions retained transitively.
+        """
+        from task_governance_tool.usage_snapshot_read import SnapshotRead
+
+        if read is not None:
+            if read.connection is not connection or read.repository is not self:
+                raise UsageError()
+            read.check()
+        predecessors = frozenset(item["snapshot_id"] for item in previous)
+        candidate = snapshot(self.basis[0], component)
+        comparable = lambda value: {key: value for key, value in value.items()
+                                    if key not in {"snapshot_id", "predecessors"}}
+        if len(previous) == 1 and comparable(candidate) == comparable(previous[0]):
+            candidate = previous[0]
+        else:
+            candidate = snapshot(self.basis[0], component, predecessors)
+        visited = set()
+        while True:
+            if not connection.in_transaction:
+                raise UsageError()
+            check = getattr(self, "check_budget", None)
+            if check is not None:
+                check()
+            identity = candidate["snapshot_id"]
+            if identity in visited:
+                raise UsageError()
+            visited.add(identity)
+            row = connection.execute(
+                "SELECT snapshot_id,document FROM usage_snapshots WHERE snapshot_id=?", (identity,)).fetchone()
+            if row is None:
+                connection.execute("INSERT INTO usage_snapshots VALUES (?,?)", (identity, encode(candidate).decode("utf-8")))
+                connection.executemany("INSERT INTO usage_snapshot_members VALUES (?,?,?)",
+                                       [(identity, *key) for key in component["response_keys"]])
+                connection.executemany("INSERT INTO usage_supersessions VALUES (?,?)",
+                                       [(predecessor, identity) for predecessor in candidate["predecessors"]])
+                return candidate
+            document = self._snapshot_document(row)
+            # Capture already validated its frozen predecessors in this writer.
+            # This save loop only appends new immutable rows; it changes neither
+            # their incoming relations nor originals. Reuse that lexical proof,
+            # but always query retirement afresh: earlier components may retire
+            # a frozen predecessor. Previously unseen collisions need full reads.
+            selected = read if read is not None and identity in read.by_id else None
+            if selected is None:
+                selected = SnapshotRead(self, connection, [row], {identity: document})
+            if (selected.by_id[identity] != document or document != candidate
+                    or selected.members[identity] != sorted(map(tuple, component["response_keys"]))):
+                raise UsageError()
+            if not connection.execute("SELECT 1 FROM usage_supersessions WHERE predecessor_id=? LIMIT 1", (identity,)).fetchone():
+                return candidate
+            candidate = snapshot(self.basis[0], component, predecessors | {identity})
+
     def _refresh(self, core, connection):
         """One admitted writer/read basis; callers own both transactions."""
         fingerprint, periods, previous, projected, read = self._capture_projection(core, connection)
@@ -211,18 +268,7 @@ class UsageEvidenceRepository(UsageAttributionRepository):
             if projected["unresolved_operations"]:
                 component = {**component, "diagnostics": sorted(set(component["diagnostics"]) | {"operation_unbound"})}
             overlaps = self._overlapping_snapshots(connection, previous, component, read=read)
-            candidate = snapshot(self.basis[0], component)
-            comparable = lambda value: {k: v for k, v in value.items() if k not in {"snapshot_id", "predecessors"}}
-            if len(overlaps) == 1 and comparable(candidate) == comparable(overlaps[0]):
-                candidate = overlaps[0]
-            else:
-                candidate = snapshot(self.basis[0], component, (item["snapshot_id"] for item in overlaps))
-                identity = candidate["snapshot_id"]
-                connection.execute("INSERT INTO usage_snapshots VALUES (?,?)", (identity, encode(candidate).decode("utf-8")))
-                connection.executemany("INSERT INTO usage_snapshot_members VALUES (?,?,?)",
-                                       [(identity, *key) for key in component["response_keys"]])
-                connection.executemany("INSERT INTO usage_supersessions VALUES (?,?)",
-                                       [(predecessor, identity) for predecessor in candidate["predecessors"]])
+            candidate = self._save_snapshot_candidate(connection, component, overlaps, read=read)
             adopted.append(candidate)
             for period in periods:
                 if period["completion_cycle_id"] is not None and period["executions"].intersection(candidate["executions"]):

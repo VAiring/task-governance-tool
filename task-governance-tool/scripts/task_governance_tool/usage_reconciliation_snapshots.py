@@ -5,7 +5,7 @@ has been adopted and the fresh input fence still matches. Splits share the
 same old predecessors even when their successors commit in different steps.
 """
 
-from .usage_evidence import digest, encode, snapshot, RESPONSE_FORMAT
+from .usage_evidence import digest, encode, RESPONSE_FORMAT
 from .usage_response_repository import component_identity
 from .usage_reconciliation_core import _decode
 from .usage_reconciliation_basis import require_inputs
@@ -140,19 +140,10 @@ def _component(repository, connection, identity):
     read = SnapshotRead(repository, connection, rows, {row["snapshot_id"]: repository._snapshot_document(row) for row in rows})
     component["models"] = _models(read.responses(component["response_keys"]))
     previous = read.documents
-    candidate = snapshot(repository.basis[0], component)
-    comparable = lambda value: {key: value for key, value in value.items() if key not in {"snapshot_id", "predecessors"}}
-    if len(previous) == 1 and comparable(candidate) == comparable(previous[0]):
-        candidate = previous[0]
-    else:
-        candidate = snapshot(repository.basis[0], component, [value["snapshot_id"] for value in previous])
-        connection.execute("INSERT INTO usage_snapshots VALUES (?,?)", (candidate["snapshot_id"], encode(candidate).decode()))
-        connection.executemany("INSERT INTO usage_snapshot_members VALUES (?,?,?)",
-                               [(candidate["snapshot_id"], *key) for key in component["response_keys"]])
-        connection.executemany("INSERT INTO usage_supersessions VALUES (?,?)",
-                               [(predecessor, candidate["snapshot_id"]) for predecessor in candidate["predecessors"]])
-        connection.executemany("INSERT OR IGNORE INTO usage_reconcile_snapshot_lineage VALUES (?,?)",
-                               [(item["snapshot_id"], execution) for item in previous for execution in item["executions"]])
+    candidate = repository._save_snapshot_candidate(connection, component, previous, read=read)
+    connection.executemany("INSERT OR IGNORE INTO usage_reconcile_snapshot_lineage VALUES (?,?)",
+                           [(item["snapshot_id"], execution) for item in previous
+                            if item["snapshot_id"] != candidate["snapshot_id"] for execution in item["executions"]])
     periods = connection.execute("SELECT DISTINCT period.task_id,period.completion_cycle_id FROM json_each(?) execution "
         "CROSS JOIN usage_reconcile_period_executions member ON member.execution_id=execution.value "
         "JOIN usage_reconcile_periods period USING(task_id,ordinal) WHERE period.completion_cycle_id IS NOT NULL",

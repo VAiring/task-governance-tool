@@ -2,7 +2,9 @@
 
 from contextlib import closing
 from dataclasses import replace
+import json
 import unittest
+from unittest import mock
 
 from tests import test_usage_reconciliation_runtime as support
 from tests.test_usage_collection import THREAD, event, usage, COUNTS
@@ -84,7 +86,8 @@ class ChangedRuntimeTests(unittest.TestCase):
         from unittest import mock
         from tests.test_usage_reconciliation_oracle import previous_classifier
         if restart:
-            self.fixture.drain_effects()
+            if self.repository.migrations[-1][0] >= 10:
+                self.fixture.drain_effects()
             self.repository = type(self.repository)(self.repository.path, *self.repository.basis)
             self.fixture.repository = self.repository
         with mock.patch("task_governance_tool.usage_response_repository.project_responses", previous_classifier()):
@@ -179,6 +182,26 @@ class ChangedRuntimeTests(unittest.TestCase):
         self.remove_and_restore_position(later_stop)
 
     def test_base_owner_removal_revisits_original_without_position(self):
+        self.check_base_owner_reappearance()
+
+    def test_schema9_base_owner_reappearance_keeps_full_replay_correctness(self):
+        from task_governance_tool.usage_work_order_repository import UsageWorkOrderRepository
+        with mock.patch.object(support, "UsageReconciliationRepository", UsageWorkOrderRepository):
+            self.setUp()
+        self.check_base_owner_reappearance()
+
+    def publish_same(self, *, restart=False):
+        from task_governance_tool import usage_evidence_service as service
+        index = self.assert_frozen_same(restart=restart)
+        with mock.patch.object(service, "repository_for", return_value=self.repository):
+            self.assertEqual(service.refresh_usage(self.fixture.target)["publication"], "current")
+        self.assertEqual(json.loads(self.fixture.target.resolved_usage_index.read_bytes()), index)
+        for identity in index["snapshots"]:
+            self.assertEqual(json.loads((self.fixture.target.resolved_usage_snapshots / (identity + ".json")).read_bytes()),
+                             self.repository.publication_snapshot(identity))
+        return index
+
+    def check_base_owner_reappearance(self):
         self.append(usage("r", turn=turn(1)))
         self.transition("paused", "pause", pause_reason="Fixture interruption")
         self.repeat_response("r")
@@ -195,19 +218,36 @@ class ChangedRuntimeTests(unittest.TestCase):
         with self.repository.connection(write=True) as connection:
             connection.execute("DELETE FROM usage_response_positions WHERE source_id=? AND response_id='r'", (self.fixture.source.source_id,))
             connection.execute("INSERT INTO usage_turn_conflicts VALUES (?,?)", (third, turn(4)))
-        self.assert_frozen_same()
+        self.publish_same()
         with self.repository.connection(write=True) as connection:
             saved = tuple(connection.execute("SELECT * FROM usage_response_positions WHERE source_id=? AND response_id='r1'", (second.source_id,)).fetchone())
             connection.execute("DELETE FROM usage_response_positions WHERE source_id=? AND response_id='r1'", (second.source_id,))
-        self.assert_frozen_same(restart=True)
+        self.publish_same(restart=True)
         with self.repository.connection(write=True) as connection:
             connection.execute("INSERT INTO usage_response_positions VALUES (" + ",".join("?" for _ in saved) + ")", saved)
-        self.repository = type(self.repository)(self.repository.path, *self.repository.basis)
-        self.fixture.repository = self.repository
-        # Verify reinserted membership independently of publication: the
-        # retained schema-9 full publisher also rejects this exact historical
-        # snapshot-ID recurrence. That separate pre-existing failure is handed off.
-        self.assert_frozen_geometry()
+        self.publish_same(restart=True)
+        original_files = {path: path.read_bytes() for path in self.fixture.target.resolved_usage_snapshots.glob("*.json")}
+        with self.repository.connection() as connection:
+            original_relations = {table: set(map(tuple, connection.execute("SELECT * FROM " + table)))
+                for table in ("usage_snapshots", "usage_snapshot_members", "usage_supersessions", "usage_cycle_links")}
+        # Repeated recurrence and restarts must retain both disjoint active
+        # partitions, all old bytes/relations, and original-key deduplication.
+        for _ in range(4):
+            with self.repository.connection(write=True) as connection:
+                connection.execute("DELETE FROM usage_response_positions WHERE source_id=? AND response_id='r1'", (second.source_id,))
+            self.publish_same(restart=True)
+            with self.repository.connection(write=True) as connection:
+                connection.execute("INSERT INTO usage_response_positions VALUES (" + ",".join("?" for _ in saved) + ")", saved)
+            index = self.publish_same(restart=True)
+            self.assertEqual(len(index["current_snapshot_ids"]), 2)
+            with self.repository.connection() as connection:
+                retired = {row[0] for row in connection.execute("SELECT predecessor_id FROM usage_supersessions")}
+                self.assertFalse(retired.intersection(index["current_snapshot_ids"]))
+                for table, rows in original_relations.items():
+                    self.assertTrue(rows <= set(map(tuple, connection.execute("SELECT * FROM " + table))))
+            for path, data in original_files.items():
+                self.assertEqual(path.read_bytes(), data)
+        self.assertEqual(self.publish_same(restart=True), index)
 
     def test_source_replacement_and_diagnostic_removal_reconcile_without_rewriting_history(self):
         before = self.assert_same()

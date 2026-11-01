@@ -485,10 +485,10 @@
     },
     "usage_evidence_repository.py": {
       "attributes": {
-        "execute": 22,
+        "execute": 24,
         "executemany": 2,
         "fetchall": 2,
-        "fetchone": 3
+        "fetchone": 5
       },
       "kind": "observed_connection"
     },
@@ -654,8 +654,8 @@
     },
     "usage_reconciliation_snapshots.py": {
       "attributes": {
-        "execute": 40,
-        "executemany": 5,
+        "execute": 39,
+        "executemany": 3,
         "fetchone": 9
       },
       "kind": "observed_connection"

@@ -389,6 +389,14 @@
       },
       "kind": "observed_connection"
     },
+    "schema_viewer_finding_index.py": {
+      "attributes": {
+        "execute": 29,
+        "fetchall": 1,
+        "fetchone": 10
+      },
+      "kind": "observed_connection"
+    },
     "schema_viewer_projection.py": {
       "attributes": {
         "execute": 31,
@@ -742,15 +750,15 @@
     },
     "viewer_metadata_repository.py": {
       "attributes": {
-        "execute": 13,
+        "execute": 12,
         "fetchone": 2
       },
       "kind": "observed_connection"
     },
     "viewer_projection_repository.py": {
       "attributes": {
-        "execute": 15,
-        "fetchone": 5
+        "execute": 17,
+        "fetchone": 7
       },
       "kind": "observed_connection"
     },

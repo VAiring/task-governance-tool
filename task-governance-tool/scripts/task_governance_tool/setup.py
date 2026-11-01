@@ -375,7 +375,7 @@ def _viewer_status(
     )
     if artifact_status == "current" and not maintenance_viewer_succeeded:
         return "repair_required"
-    if artifact_status == "current" and current_snapshot.get("source_schema_version") in {34, 35}:
+    if artifact_status == "current" and current_snapshot.get("source_schema_version") in {34, 35, 36}:
         # Explicit Setup checks the disposable cache too. A current HTML file
         # alone must not hide missing/corrupt bytes or an orphan cache tuple.
         from .viewer_metadata_repository import read_projection_basis

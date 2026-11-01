@@ -667,7 +667,7 @@ class ViewerIncrementalReviewTests(unittest.TestCase):
     def test_collected_review_continuation_and_completion_match_full(self):
         from tests.review_answer_fixture_support import review_fixture
         from task_governance_tool.backup_metadata_repository import configure_project_maintenance
-        with review_fixture(schema_version=35) as fixture:
+        with review_fixture(schema_version=36) as fixture:
             fixture.collected_source_artifact()
             configure_project_maintenance(fixture.target, requested_interval_minutes=None,
                                           requested_generations=None, enabled_at=FIXED_TIME)

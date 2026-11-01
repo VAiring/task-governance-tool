@@ -9,7 +9,7 @@ import unittest
 from unittest import mock
 
 from task_governance_tool import storage as s, state_resolver as resolver
-from task_governance_tool import schema_runner_lookup_indexes as schema
+from task_governance_tool import schema_viewer_finding_index as schema
 from task_governance_tool.project_binding_repository import read_project_binding_state
 from task_governance_tool.sqlite_admission import admission_scope
 from tests.test_routine_backup import make_target

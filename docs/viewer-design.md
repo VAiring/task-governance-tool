@@ -12,7 +12,7 @@ existing owners.
 
 ## Snapshot And Publication
 
-Current schema-35 and compatible schema-34 maintenance use the
+Current schema-36 maintenance uses the
 [incremental protocol](#incremental-cache-and-publication). This section
 documents the retained full-capture reader and common v4 rendering/path
 boundaries used by explicit inspection and compatible older sources.
@@ -65,7 +65,7 @@ crosses the capture's transaction into a guard, another capture or outcome write
 
 The repository selects complete rows for all project Tasks in list order and
 validates them as one source-schema-aware stored-Task/Contract batch before any
-Task, review, or history projection. Exact v18-v35 snapshot validation first
+Task, review, or history projection. Exact v18-v36 snapshot validation first
 validates the complete Task batch as part of the full Evidence Ledger, then the
 same-transaction list-order query consumes the
 [private batch proof](task-operation-design.md#shared-stored-task-rowbatch-validator) instead of
@@ -101,16 +101,16 @@ before projection, while the event allow-list remains summary-only. Full note
 bodies never enter Viewer snapshot JSON or generated HTML.
 
 Source schemas v5-v14 synthesize empty/incomplete completion history;
-v15-v35 use stored cycles, reading completion histories in batches of at most
-500 Task IDs. Sources v17-v35 validate version-1 cycle Receipt links; v19-v35
-also validate and discard Bundle linkage, and v20-v35 validate the source-
-appropriate closed verification basis and Runner graph. Sources v21-v35 validate
+v15-v36 use stored cycles, reading completion histories in batches of at most
+500 Task IDs. Sources v17-v36 validate version-1 cycle Receipt links; v19-v36
+also validate and discard Bundle linkage, and v20-v36 validate the source-
+appropriate closed verification basis and Runner graph. Sources v21-v36 validate
 the complete tagged union before discarding every Runner field. Every snapshot
 reports its actual source schema and selects all
 project Tasks; 500 Tasks is the accepted performance fixture rather than a
 selection cap. The rendered artifact is capped at 64 MiB.
 
-Sources 30, 31, 32, 33 and 34 go through their exact source-schema storage admission, including
+Sources 30 through 36 go through their exact source-schema storage admission, including
 [collected-answer persistence](database-specification.md#collected-answer-persistence)
 and [versioned continuation graph validation](evidence-design.md#continuation-graph-validation).
 The batch proof remains transaction-local. Bundle 4/graph 2 and v2 provenance
@@ -214,8 +214,17 @@ history follow the [database migration owner](database-design.md#migration-seque
 
 Let S be the current existing Viewer source generation, I the invalidation
 generation, C the accepted cache generation, and R the accepted HTML generation.
-Changed IDs are `project_id = P AND source_generation > C AND
-source_generation <= S`, ordered by generation/ID using the index. C below I
+Changed IDs have `project_id = P AND C < source_generation <= S`.
+The admitted database has exactly one project. Before selecting its revisions,
+two disjoint index ranges below and above P reject any foreign project partition,
+including BLOB owners, without walking the valid project's applied revisions.
+The indexed candidate read then seeks generations above C for exact P, without
+an upper SQL bound that would hide TEXT/BLOB generation values.
+Each returned revision must have exact TEXT project/Task ownership and an
+INTEGER generation within the captured range; future or malformed values fail
+before cache application. A separate indexed negative-range probe rejects
+negative generations without scanning already-applied revisions. Results remain
+ordered by generation/ID. C below I
 requires rebuilding all display Tasks. A missing cache tuple also requires a
 rebuild. Queries return IDs/revisions only; capture of their source rows occurs
 in the same read snapshot as S/I. A missing Task for a recorded ID fails closed:
@@ -316,15 +325,19 @@ the following sequence, at most twice per opportunity:
    Bundle/history relations explicitly, using the single-Task boundary or its
    equivalent selected batch. It must not silently reuse the old assumption.
    `viewer_task_projection_repository.py` owns that selected read. Its Finding
-   query enumerates the closed status/severity domains to seek the existing
-   compound index by Receipt; same-snapshot schema and physical CHECK admission
-   prevents those predicates from hiding invalid domain values. All own
+   query seeks the schema-36 Receipt-only Finding index without status/severity
+   predicates. Every selected row receives explicit domain, privacy and parent
+   validation before it contributes to display counts. Selected References
+   provide the reverse ownership arm, rejecting detached/foreign Findings
+   without scanning unrelated orphans. All own
    judgment rows are checked even when no continuation is present. Own cycles
    are validated in bounded chunks before retaining their newest display window.
    Event ownership is checked in both directions: all selected-Task events and
    the identities of their referenced cycles, plus all incoming links to each
-   selected cycle. These indexed reads include links older than the displayed
-   ten events and do not validate another Task's cycle evidence.
+   selected cycle. Incoming selection seeks both TEXT and BLOB ID aliases, then
+   rejects non-TEXT identity or foreign ownership. These indexed reads include
+   links older than the displayed ten events and do not validate another Task's
+   cycle evidence.
    Each chunk validates historical Receipt/Bundle links without interpreting its
    last cycle as current. After the complete ordered stream, only the actual
    latest cycle is compared with a done Task's current verification requirement.
@@ -382,13 +395,21 @@ the following sequence, at most twice per opportunity:
    generation tuple; stale outcomes cannot overwrite a later success. They
    never perform historical audits or certify C/R.
 
-Structural admission retains existing physical/foreign-key/schema checks; this
-change does not turn their cost into a promise of constant total DB work.
+Structural admission checks exact schema/history/project/binding and the
+consumed maintenance/tracking rows in every fresh snapshot and writer. It does
+not run whole-database quick/FK audits. Selected readers retain explicit value
+and relationship validation, including own cycle rows with a foreign project
+and both event-cycle ownership arms. The retained metadata-only publication and
+outcome writers use this same operation-local admission in current runtimes;
+retained pre-incremental runtimes keep their original full admission. Explicit diagnosis and
+lifecycle acceptance retain physical/FK audits; required full-display reads,
+cache validation and HTML rendering are not constant total work.
 Normal capture, guard and outcome must not call the full Evidence Ledger or
 global Task-history validators. Full rebuild means rebuilding every display
 Task and its consumed relations, not validating unrelated hidden state. Legacy
-v5-v33 captures keep their original full admission and never accept this cache.
-The retained full-capture reader is independent of cache reuse.
+v5-v35 source inspection keeps full admission; pre-incremental v5-v33 sources
+never accept this cache. The retained full-capture reader is independent of
+cache reuse, and ordinary operations require explicit migration to current.
 
 | Interruption or inconsistency | Next eligible action |
 |---|---|

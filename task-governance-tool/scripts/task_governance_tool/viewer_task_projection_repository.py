@@ -26,8 +26,9 @@ def _review_evidence(connection, project_id, rows):
         return []
     # Start with the selected Receipt owners. The global orphan disjunction in
     # the legacy Viewer stream would force a scan of all unrelated Findings.
-    # Physical FK admission still rejects dangling parents; selected aliases
-    # remain visible to the unchanged semantic parent validator.
+    # The receipt-only index seeks every actual selected row, including invalid
+    # domains. Selected References provide the reverse ownership arm and expose
+    # detached/foreign parents without an unrelated orphan scan.
     with closing(connection.execute("""
         WITH selected(value, ordinal) AS (
             SELECT value, CAST(key AS INTEGER) FROM json_each(?)
@@ -49,14 +50,10 @@ def _review_evidence(connection, project_id, rows):
         CROSS JOIN review_findings AS finding
           ON finding.review_receipt_id IN (receipt.review_receipt_id,
                                            CAST(receipt.review_receipt_id AS BLOB))
-         AND finding.status IN ('open','resolved')
-         AND finding.severity IN ('high','medium','low')
         ORDER BY aliases.ordinal, finding.rowid
         """, (json.dumps([row["task_id"] for row in rows]),))) as cursor:
-        # All leading columns of the existing compound index are constrained.
-        # Fresh schema admission plus quick_check in this same snapshot checks
-        # the closed status/severity CHECK domains, including malformed rows;
-        # these seek predicates cannot conceal a corrupt out-of-domain Finding.
+        # The unchanged semantic reader validates each Finding's complete value
+        # and Reference before applying status/severity to counts or display.
         stream = _ViewerFindingStream(cursor)
         result = []
         for row in rows:
@@ -100,8 +97,8 @@ def _history(connection, task):
     # All own cycles, not just the visible ten, receive the same selected Bundle
     # validation. Fixed chunks satisfy the existing single-Task Bundle boundary.
     with closing(connection.execute("""SELECT * FROM task_completion_cycles
-            WHERE project_id=? AND task_id IN (?,CAST(? AS BLOB)) ORDER BY saved_cycle_ordinal""",
-            (project_id, task_id, task_id))) as cursor:
+            WHERE task_id IN (?,CAST(? AS BLOB)) ORDER BY saved_cycle_ordinal""",
+            (task_id, task_id))) as cursor:
         while rows := cursor.fetchmany(10):
             cycles = tuple(_cycle_from_row(row) for row in rows)
             for cycle in cycles:
@@ -110,12 +107,13 @@ def _history(connection, task):
                         or cycle.saved_cycle_ordinal != total):
                     raise completion_history_inconsistent()
                 incomplete |= cycle.completeness == "partial"
-                links = connection.execute("""SELECT project_id,task_id,event_type
-                    FROM task_events WHERE completion_cycle_id=?""",
-                    (cycle.completion_cycle_id,)).fetchall()
+                links = connection.execute("""SELECT project_id,task_id,event_type,completion_cycle_id
+                    FROM task_events WHERE completion_cycle_id IN (?,CAST(? AS BLOB))""",
+                    (cycle.completion_cycle_id, cycle.completion_cycle_id)).fetchall()
                 complete = reopened = 0
                 for link in links:
-                    if (link["project_id"], link["task_id"]) != (project_id, task_id):
+                    if ((link["project_id"], link["task_id"]) != (project_id, task_id)
+                            or link["completion_cycle_id"] != cycle.completion_cycle_id):
                         raise completion_history_inconsistent()
                     if link["event_type"] in {"task_updated", "review_tier_changed"}:
                         complete += 1

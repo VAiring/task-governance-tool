@@ -446,6 +446,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_verification_results",
         "test_viewer_capture_admission",
         "test_viewer_config",
+        "test_viewer_finding_index_migration",
         "test_viewer_incremental",
         "test_viewer_incremental_scale",
         "test_viewer_maintenance",
@@ -453,6 +454,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_viewer_renderer",
         "test_viewer_review_inventory",
         "test_viewer_snapshot",
+        "test_viewer_targeted_admission",
         "test_write_contention",
     ),
     "release": (

@@ -99,7 +99,7 @@ def _validate_header(payload):
             raise _invalid()
     if (payload["cache_format_version"] != CACHE_FORMAT_VERSION
             or payload["projection_version"] != PROJECTION_VERSION
-            or payload["source_schema_version"] not in {34, 35}):
+            or payload["source_schema_version"] not in {34, 35, 36}):
         raise _invalid()
     if type(payload["project_id"]) is not str or not payload["project_id"]:
         raise _invalid()

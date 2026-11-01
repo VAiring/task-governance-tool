@@ -22,9 +22,9 @@ The public v4 shape below is shared by the current
 [incremental projection](#conditional-incremental-projection) and the retained
 full-capture reader. Complete-source admission described below belongs to that
 full reader for explicit inspection and compatible older sources; routine
-schema-34/35 maintenance uses the selected-Task boundary below.
+current schema-36 maintenance uses the selected-Task boundary below.
 
-Snapshot v4 accepts source schemas v5-v35. One query-only transaction validates
+Snapshot v4 accepts source schemas v5-v36. One query-only transaction validates
 schema/project/binding, reads generation, validates the complete source-aware
 Task batch through the stored-row and Contract-relationship boundary, and
 assembles rows; rendering and
@@ -40,13 +40,13 @@ Older source schemas retain independent compatible admission.
 It contains version/UTC `generated_at`, project ID/display, source schema,
 seven status counts, explicit Task allow-list, newest at most 10 sanitized
 events/review receipts/findings, and the exact completion-history projection. Sources
-v5-v14 synthesize zero cycles with `legacy_history_incomplete=true`; v15-v35
+v5-v14 synthesize zero cycles with `legacy_history_incomplete=true`; v15-v36
 read stored history in query batches of at most 500 Task IDs. For sources
-v17-v35, the batch reader validates version-1 completion-cycle Verification
+v17-v36, the batch reader validates version-1 completion-cycle Verification
 Receipt links; v18+ additionally validates subject, provenance, manifest, and
-Reference relations, while v19-v35 validate and discard the Bundle
-discriminator. Sources v20-v35 additionally validate the Bundle
-verification basis and Runner graph appropriate to the source schema; v21-v35
+Reference relations, while v19-v36 validate and discard the Bundle
+discriminator. Sources v20-v36 additionally validate the Bundle
+verification basis and Runner graph appropriate to the source schema; v21-v36
 validate the complete tagged union. These reads discard every Runner field without
 exposing it. Schema-23 declaration reasons are validated but not added to the
 Viewer projection or UI.
@@ -54,7 +54,7 @@ Source 29 also validates the sealed continuation graph when Bundle format three
 applies, and selects the same effective review heads as the native gates. Old
 judgments and Findings remain in durable/audit evidence; pagination never
 qualifies an incomplete graph or substitutes historical PASS as current PASS.
-Sources 30, 31, 32, 33 and 34 additionally validate [collected v2 provenance, Bundle 4/index 3
+Sources 30 through 36 additionally validate [collected v2 provenance, Bundle 4/index 3
 and graph 2](evidence-specification.md#collected-answer-evidence), including
 typed source/capture relations and the shared effective unable blocker.
 Preserved old Bundle formats retain their exact validators. No original body,
@@ -112,6 +112,20 @@ related records needed by those Tasks. Unchanged Task projections are reused;
 they are not rejoined to their historical Receipts, Bundles, originals or other
 evidence. All Task display bytes may be checked and the whole HTML is still
 rendered. These costs are distinct from a database-wide semantic audit.
+
+Ordinary eligibility, capture, publication and outcome admission perform no
+whole-database physical or foreign-key audit. They freshly validate exact
+structure, project/binding, opt-in, generation/epoch and publication metadata.
+Finding selection must not filter invalid status/severity values out before
+validation. The schema-36 Receipt-only index bounds this read to selected owners;
+selected References retain the reverse parent check. Explicit full inspection
+and lifecycle acceptance retain their complete-source responsibilities.
+Pending revision selection likewise validates stored generation types and the
+captured upper bound after indexed retrieval, so malformed or future revisions
+cannot disappear and make stale cached content appear current.
+The single admitted project's revision partition is also checked through bounded
+index ranges: a foreign project owner must not hide a pending change. Rejection
+preserves the last accepted cache/HTML generations and last-good artifacts.
 
 Each selected Task retains stored-value/privacy, Contract-parent, review-target,
 Receipt/Finding/provenance, continuation-head and completion-history checks for
@@ -174,11 +188,12 @@ the Viewer lock so interruption remains due. These metadata invalidations never
 remove the last-good HTML file. Failure/outcome recording does not make a generation current.
 Primary-command success and the existing fixed warnings remain independent.
 
-Supported sources v5-v33 retain their full-capture compatibility path. They
-cannot consume the new cache or receive tracking writes; ordinary commands do
-not migrate them. Explicit Setup owns migration, restoration and rebind.
+Supported predecessors v5-v35 retain the full-capture compatibility reader.
+Pre-incremental sources v5-v33 cannot consume the cache or receive tracking
+writes. Ordinary commands require the current schema and never migrate an
+older source; explicit Setup owns migration, restoration and rebind.
 The full-capture reader remains available for those compatibility and explicit
-inspection responsibilities; routine schema-34/35 publication uses this contract.
+inspection responsibilities; routine schema-36 publication uses this contract.
 
 ## Optional Visibility-Aware Reload
 

@@ -10,7 +10,7 @@ from tests.review_answer_fixture_support import review_fixture, ReviewContract
 from tests.verification_receipt_test_support import run_taskgov, payload, add_receipt, completion
 from tests.test_review_continuation import A, B
 from task_governance_tool import storage, reviews
-from task_governance_tool import schema_runner_lookup_indexes as current_schema
+from task_governance_tool import schema_viewer_finding_index as current_schema
 from task_governance_tool import review_answer_repository, review_collected_results
 from task_governance_tool.review_answer_transport import (
     CollectedItem, frame_collected_submission, decode_collected_submission,
@@ -72,7 +72,7 @@ class CollectedFindingMutationTests(TestCase):
                 for criteria in (False, True):
                     with self.subTest(collected=collected, count=count, criteria=criteria):
                         contract = ReviewContract("Inspect source", "Source reviewed", "AGENTS.md") if criteria else None
-                        with review_fixture(schema_version=35, contract=contract) as f:
+                        with review_fixture(schema_version=36, contract=contract) as f:
                             original = submission(f, count)
                             saved = (register(f, original) if collected else f.register([
                                 f.original(A, findings=original.items[0].answer.payload["findings"]),
@@ -94,7 +94,7 @@ class CollectedFindingMutationTests(TestCase):
                             self.healthy(f)
 
     def test_carried_and_new_selected_receipts_reject_additions(self):
-        with review_fixture(schema_version=35) as f:
+        with review_fixture(schema_version=36) as f:
             consumer = f.register_collected_source()
             with closing(storage.connect_initialized_readonly(f.target)) as connection:
                 ids = [connection.execute(query, (consumer.continuation_id,)).fetchone()[0] for query in (
@@ -106,7 +106,7 @@ class CollectedFindingMutationTests(TestCase):
 
     def test_initial_batch_rejects_nonoriginal_and_duplicate_prefix_atomically(self):
         for changed in ("unknown", "duplicate"):
-            with self.subTest(changed=changed), review_fixture(schema_version=35) as f:
+            with self.subTest(changed=changed), review_fixture(schema_version=36) as f:
                 submitted = submission(f, 2)
                 before = state(f)
                 actual = review_collected_results.add_review_finding
@@ -127,7 +127,7 @@ class CollectedFindingMutationTests(TestCase):
 
     def test_material_sharing_batch_does_not_authorize_registered_append(self):
         from task_governance_tool.review_material_repository import finding_batch
-        with review_fixture(schema_version=35) as f:
+        with review_fixture(schema_version=36) as f:
             saved = register(f, submission(f, 1))
             rid = saved["receipts"][0]["receipt"]["review_receipt_id"]
             before = state(f)
@@ -143,7 +143,7 @@ class CollectedFindingMutationTests(TestCase):
             self.healthy(f)
 
     def test_grouped_resolution_rollback_and_immutable_originals(self):
-        with review_fixture(schema_version=35) as f:
+        with review_fixture(schema_version=36) as f:
             saved = register(f, submission(f, 2))
             ids = [row["finding"]["review_finding_id"] for row in saved["receipts"][0]["findings"]]
             def facts():
@@ -172,7 +172,7 @@ class CollectedFindingMutationTests(TestCase):
             self.healthy(f)
 
     def test_existing_corruption_stays_detected_and_is_not_implicitly_repaired(self):
-        with review_fixture(schema_version=35) as f:
+        with review_fixture(schema_version=36) as f:
             rid = register(f, submission(f))["receipts"][0]["receipt"]["review_receipt_id"]
             # Reproduce the old successful writer on a disposable DB, not raw repair SQL.
             with mock.patch.object(review_answer_repository, "require_initial_payload_finding"):
@@ -194,7 +194,7 @@ class CollectedFindingMutationTests(TestCase):
 
     def test_reassessment_keeps_both_original_sets_and_explicit_resolution_links(self):
         for timing in ("before", "with", "after"):
-            with self.subTest(timing=timing), review_fixture(schema_version=35) as f:
+            with self.subTest(timing=timing), review_fixture(schema_version=36) as f:
                 initial = submission(f, 1)
                 saved = register(f, initial)
                 old = saved["receipts"][0]["receipt"]["review_receipt_id"]
@@ -228,7 +228,7 @@ class CollectedFindingMutationTests(TestCase):
 
     def test_sealed_bundle_and_reopened_history_keep_original_bytes(self):
         from tests.test_m23s_schema22_validation import _bundle_artifacts
-        with review_fixture(schema_version=35) as f:
+        with review_fixture(schema_version=36) as f:
             rid = register(f, submission(f, 1))["receipts"][0]["receipt"]["review_receipt_id"]
             self.rejected_add(f, rid)
             verified = add_receipt(f.db, f.repo, f.task_id, f.basis["target_generation"])

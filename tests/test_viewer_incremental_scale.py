@@ -208,8 +208,10 @@ class ViewerIncrementalScaleTests(unittest.TestCase):
                 self.assertTrue(any("SEARCH cycle USING INDEX sqlite_autoindex_task_completion_cycles" in plan
                                     for plan in plans), plans)
                 self.assertFalse(any("SCAN event" in plan or "SCAN cycle" in plan for plan in plans), plans)
-                self.assertTrue(any("SEARCH r USING" in plan and "source_generation>? AND source_generation<?" in plan
+                self.assertTrue(any("SEARCH r USING COVERING INDEX idx_viewer_task_revisions_generation" in plan
+                                    and "project_id=? AND source_generation>?" in plan
                                     for plan in plans), plans)
+                self.assertFalse(any("SCAN r" in plan for plan in plans), plans)
                 self.assertFalse(any("SCAN finding" in plan or "SCAN receipt" in plan for plan in plans), plans)
                 self.assertFalse(active_transactions)
                 self.assertTrue(any(item["access"] == "read" for item in lifetimes))

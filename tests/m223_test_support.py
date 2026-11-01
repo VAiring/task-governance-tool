@@ -198,11 +198,12 @@ def remove_v24_ownership_for_test(connection: sqlite3.Connection) -> None:
     from task_governance_tool import schema_own_review_indexes as review_indexes
     from task_governance_tool import schema_viewer_projection as viewer_tracking
     from task_governance_tool import schema_runner_lookup_indexes as runner_indexes
+    from task_governance_tool import schema_viewer_finding_index as finding_index
     version = storage.current_schema_version(connection)
-    if version not in (24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35):
+    if version not in (24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36):
         return
     connection.commit()
-    (runner_indexes if version == 35 else viewer_tracking if version == 34 else review_indexes if version == 33 else slot_index if version == 32 else collector if version == 31 else answers if version == 30 else continuation if version == 29 else notes if version == 28 else reacquisition if version == 27 else slot if version == 26 else reviewer if version == 25 else ownership).validate_storage(connection)
+    (finding_index if version == 36 else runner_indexes if version == 35 else viewer_tracking if version == 34 else review_indexes if version == 33 else slot_index if version == 32 else collector if version == 31 else answers if version == 30 else continuation if version == 29 else notes if version == 28 else reacquisition if version == 27 else slot if version == 26 else reviewer if version == 25 else ownership).validate_storage(connection)
     if (any(connection.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone()
             for table in ("task_executions", "task_owner_transitions", "task_execution_cycles"))
         or connection.execute("SELECT 1 FROM task_ownership WHERE generation != 0 LIMIT 1").fetchone()
@@ -226,6 +227,9 @@ def remove_v24_ownership_for_test(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA legacy_alter_table=ON")
     try:
         connection.execute("BEGIN IMMEDIATE")
+        if version >= 36:
+            for name in finding_index.INDEX_SQL:
+                connection.execute('DROP INDEX ' + name)
         if version >= 35:
             for name in runner_indexes.INDEX_SQL:
                 connection.execute('DROP INDEX ' + name)
@@ -265,7 +269,7 @@ def remove_v24_ownership_for_test(connection: sqlite3.Connection) -> None:
         for sql in statements:
             if storage._schema20_statement_identity(sql)[0] != "table":
                 connection.execute(sql)
-        connection.execute("DELETE FROM schema_migrations WHERE version IN (24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35)")
+        connection.execute("DELETE FROM schema_migrations WHERE version IN (24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36)")
         declaration.validate_storage(connection)
         connection.commit()
     except Exception:

@@ -43,22 +43,23 @@ def _database_identity(target):
 
 
 def _basis(connection, target, identity):
-    from .storage import current_schema_version
+    from .storage import current_schema_version, validate_utc_timestamp
     from .backup_metadata_repository import read_project_maintenance
     from .project_binding_repository import read_project_binding_state
     from .viewer_projection_repository import read_state
     if _database_identity(target) != identity:
         raise ViewerBasisChanged()
-    # These physical relational checks are intentionally database-wide. They
-    # are not the removed historical Evidence/Task semantic audit, and each
-    # fresh effect boundary must establish them for its own transaction.
-    if ([row[0] for row in connection.execute("PRAGMA quick_check")] != ["ok"]
-            or connection.execute("PRAGMA foreign_key_check").fetchone() is not None):
-        raise StorageError("project_state_unreadable", "Viewer source integrity is invalid")
+    # The caller freshly admits exact schema/history/project/binding in this
+    # transaction. Only consumed control rows belong here; full physical/FK
+    # audits remain with explicit diagnosis and lifecycle acceptance.
     maintenance = read_project_maintenance(connection, target.project.project_id)
     viewer = read_viewer_maintenance(connection, target.project.project_id)
     if maintenance is None or viewer is None:
         raise StorageError("project_state_unreadable", "Viewer maintenance is unavailable")
+    enabled_at = connection.execute("SELECT enabled_at FROM project_maintenance WHERE project_id=?",
+                                    (target.project.project_id,)).fetchone()[0]
+    if enabled_at is not None:
+        validate_utc_timestamp(enabled_at, field="Viewer opt-in time")
     return ProjectionBasis(identity, read_project_binding_state(connection),
                            read_state(connection, target.project.project_id), viewer, maintenance.enabled_at,
                            current_schema_version(connection))
@@ -333,6 +334,7 @@ def record_viewer_publication(
     published_at: str,
 ) -> None:
     from task_governance_tool.storage import (
+        SCHEMA_VERSION,
         begin_initialized_write,
         connect_initialized,
         validate_utc_timestamp,
@@ -351,9 +353,13 @@ def record_viewer_publication(
         published_at,
         field="Viewer publication time",
     )
-    with closing(connect_initialized(target)) as connection:
+    identity = _database_identity(target)
+    operation_local = SCHEMA_VERSION >= 34
+    with closing(connect_initialized(target, operation_local=operation_local)) as connection:
         try:
-            begin_initialized_write(connection, target)
+            begin_initialized_write(connection, target, operation_local=operation_local)
+            if operation_local:
+                _basis(connection, target, identity)
             cursor = connection.execute(
                 """
                 UPDATE viewer_maintenance_state
@@ -410,6 +416,7 @@ def record_viewer_attempt_outcome(
     occurred_at: str,
 ) -> None:
     from task_governance_tool.storage import (
+        SCHEMA_VERSION,
         begin_initialized_write,
         connect_initialized,
         validate_utc_timestamp,
@@ -421,9 +428,13 @@ def record_viewer_attempt_outcome(
         occurred_at,
         field="Viewer outcome time",
     )
-    with closing(connect_initialized(target)) as connection:
+    identity = _database_identity(target)
+    operation_local = SCHEMA_VERSION >= 34
+    with closing(connect_initialized(target, operation_local=operation_local)) as connection:
         try:
-            begin_initialized_write(connection, target)
+            begin_initialized_write(connection, target, operation_local=operation_local)
+            if operation_local:
+                _basis(connection, target, identity)
             cursor = connection.execute(
                 """
                 UPDATE viewer_maintenance_state

@@ -411,7 +411,7 @@ def _validated_verification_runner_graph(
     )
 
     physical_schema_version = current_schema_version(connection)
-    if physical_schema_version not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
+    if physical_schema_version not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
         PRIVATE_SCHEMA20_VERSION,
         PRIVATE_SCHEMA21_VERSION,
         PRIVATE_SCHEMA22_VERSION,
@@ -419,7 +419,7 @@ def _validated_verification_runner_graph(
         return (), {}
     allowed_eligibility_versions = (
         {0, 1}
-        if physical_schema_version in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
+        if physical_schema_version in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
             PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
         }
         else {0}
@@ -427,7 +427,7 @@ def _validated_verification_runner_graph(
     if selected_generation is not None:
         project_id, task_id, target_generation = selected_generation
         if (
-            physical_schema_version not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
+            physical_schema_version not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
                 PRIVATE_SCHEMA20_VERSION, PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
             }
             or type(project_id) is not str
@@ -903,7 +903,7 @@ def _validated_verification_runner_graph(
             current = resolutions.get((project_id, task_id, generation))
             if marker == 2:
                 if (
-                    physical_schema_version not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
+                    physical_schema_version not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
                         PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
                     }
                     or current is None
@@ -1013,7 +1013,7 @@ def _validated_verification_runner_graph(
                 ),
                 _validated_runner_eligibility_version=(
                     observation.gate_eligibility_version
-                    if physical_schema_version in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
+                    if physical_schema_version in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
                         PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
                     }
                     else 0
@@ -1176,7 +1176,7 @@ def read_current_verification_runner_target_basis(
 
     schema_version = current_schema_version(connection)
     if (
-        schema_version not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
+        schema_version not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
             PRIVATE_SCHEMA20_VERSION,
             PRIVATE_SCHEMA21_VERSION,
             PRIVATE_SCHEMA22_VERSION,
@@ -1253,7 +1253,7 @@ def read_current_verification_runner_target_basis(
         or task["review_target_runner_basis_version"] not in {0, 2}
         or (
             task["review_target_runner_basis_version"] == 2
-            and schema_version not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
+            and schema_version not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
                 PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
             }
         )
@@ -1437,7 +1437,7 @@ def _read_current_verification_runner_gate_snapshot(
 
 
     if (
-        current_schema_version(connection) not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
+        current_schema_version(connection) not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
             PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
         }
         or type(project_id) is not str

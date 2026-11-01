@@ -96,7 +96,7 @@ class ViewerReviewInventoryTests(unittest.TestCase):
     def test_invalid_finding_preserves_last_good_viewer_and_due_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             target = make_target(Path(tmp), enabled=True)
-            seed_reviews(target)
+            selected = seed_reviews(target)[0]
             viewer_maintenance.publish_setup_viewer(target, observed_at=FIXED_TIME)
             output = resolve_canonical_viewer_output_target(target)
             last_good = output.path.read_bytes()
@@ -109,6 +109,10 @@ class ViewerReviewInventoryTests(unittest.TestCase):
                     "WHERE rowid = (SELECT MIN(rowid) FROM review_findings)",
                     ("tg_review_receipt_" + "f" * 16,),
                 )
+                # This is the selected projection boundary; an unsupported
+                # edit to unchanged unrelated evidence is not a delta audit.
+                from task_governance_tool.viewer_projection_repository import mark_tasks_locked
+                mark_tasks_locked(connection, target.project.project_id, (selected,))
                 connection.commit()
             result = viewer_maintenance.run_routine_viewer_refresh(
                 target, observed_at="2026-07-27T00:00:01Z",

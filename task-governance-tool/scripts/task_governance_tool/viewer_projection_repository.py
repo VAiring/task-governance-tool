@@ -141,13 +141,30 @@ def changed_tasks(connection, project_id, *, after, through):
     state = read_state(connection, project_id)
     _integer(through, state.source_generation)
     _integer(after, through)
-    rows = connection.execute("""SELECT r.task_id,r.source_generation,t.project_id AS parent_project
+    # Admission establishes one project. Seek either outside partition before
+    # selecting its revisions, so an invalid owner cannot hide a pending row.
+    # The project-leading index makes both empty-range probes bounded; != would
+    # walk all of the valid project's already-applied revisions.
+    if connection.execute("""SELECT 1 FROM viewer_task_revisions WHERE project_id<?
+        UNION ALL SELECT 1 FROM viewer_task_revisions WHERE project_id>? LIMIT 1""",
+        (project_id, project_id)).fetchone() is not None:
+        raise _invalid()
+    # Seek the invalid lower range separately; a broad typeof predicate would
+    # inspect every already-applied revision. Normal writers enforce this bound.
+    if connection.execute("""SELECT 1 FROM viewer_task_revisions
+        WHERE project_id=? AND source_generation<0 LIMIT 1""",
+        (project_id,)).fetchone() is not None:
+        raise _invalid()
+    # SQLite sorts TEXT/BLOB after numbers. An upper SQL bound hides those
+    # malformed pending revisions, so validate the captured ceiling below.
+    rows = connection.execute("""SELECT r.project_id,r.task_id,r.source_generation,t.project_id AS parent_project
         FROM viewer_task_revisions AS r LEFT JOIN tasks AS t ON t.task_id=r.task_id
-        WHERE r.project_id=? AND r.source_generation>? AND r.source_generation<=?
-        ORDER BY r.source_generation,r.task_id""", (project_id, after, through))
+        WHERE r.project_id=? AND r.source_generation>?
+        ORDER BY r.source_generation,r.task_id""", (project_id, after))
     result = []
     for row in rows:
-        if type(row["task_id"]) is not str or row["parent_project"] != project_id:
+        if (row["project_id"] != project_id or type(row["task_id"]) is not str
+                or row["parent_project"] != project_id):
             raise _invalid()
         result.append((row["task_id"], _integer(row["source_generation"], through, after + 1)))
     return tuple(result)

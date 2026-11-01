@@ -39,7 +39,7 @@ def observe_directories():
 class ReviewFixtureTests(unittest.TestCase):
     def test_declared_schema_and_contract_are_captured_before_review_target(self):
         before = runtime_versions()
-        for version in (29, 30, 31, 32, 33, 34, 35):
+        for version in (29, 30, 31, 32, 33, 34, 35, 36):
             for contract in (None, CONTRACT):
                 with self.subTest(schema=version, contract=contract is not None):
                     with support.review_fixture(schema_version=version, contract=contract) as fixture:

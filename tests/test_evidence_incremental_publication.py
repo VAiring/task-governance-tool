@@ -218,7 +218,7 @@ class IncrementalEvidencePublicationTests(unittest.TestCase):
         original = path.read_bytes()
         before = target.resolved_evidence_index.read_bytes()
         for raw in (original.replace(b'"format_version":1', b'"format_version":true', 1),
-                    original.replace(b'"schema_version":35', b'"schema_version":34', 1),
+                    original.replace(b'"schema_version":36', b'"schema_version":35', 1),
                     b'{"format_version":1,"format_version":1}\n'):
             with self.subTest(raw_length=len(raw)):
                 path.write_bytes(raw)

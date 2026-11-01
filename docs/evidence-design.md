@@ -430,7 +430,7 @@ until a fully constructed replacement is published.
 
 ## Continuation Graph Validation
 
-Schema-30, schema-31, schema-32, schema-33, schema-34 and schema-35 sealing use Bundle 4 and index 3 under their versioned digest domains,
+Schema-30, schema-31, schema-32, schema-33, schema-34, schema-35 and schema-36 sealing use Bundle 4 and index 3 under their versioned digest domains,
 without changing a previously sealed format. Format 4 always carries nullable
 `review_continuation_basis`; continuation completions freeze graph 2, whose
 only added root field is `collected_captures`. Ordinary completion keeps null.

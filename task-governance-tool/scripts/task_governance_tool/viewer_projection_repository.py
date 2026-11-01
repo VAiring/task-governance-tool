@@ -170,12 +170,23 @@ def changed_tasks(connection, project_id, *, after, through):
     return tuple(result)
 
 
-def reset_restored_database(target):
+def reset_restored_database(target, *, source_schema_version=None):
     """Setup-only private candidate normalization after source comparison."""
-    from .storage import connect_initialized, begin_initialized_write
-    with closing(connect_initialized(target)) as connection:
+    from .storage import SCHEMA_VERSION, connect_initialized, begin_initialized_write, read_setup_state
+    version = SCHEMA_VERSION if source_schema_version is None else source_schema_version
+    if type(version) is not int or not 34 <= version <= SCHEMA_VERSION:
+        raise _invalid()
+    migration_source = version < SCHEMA_VERSION
+    with closing(connect_initialized(target, managed_backup_source=migration_source)) as connection:
         try:
-            begin_initialized_write(connection, target)
+            # Restore normalizes the source schema before Setup migrates it.
+            # The historical reader retains its exact schema, rows and binding;
+            # admission is repeated under the writer, never inferred from copy.
+            if migration_source and read_setup_state(connection, target).schema_version != version:
+                raise _invalid()
+            begin_initialized_write(connection, target, managed_backup_source=migration_source)
+            if migration_source and read_setup_state(connection, target).schema_version != version:
+                raise _invalid()
             invalidate_locked(connection, target.project.project_id, rotate_epoch=True)
             state = read_state(connection, target.project.project_id)
             connection.commit()

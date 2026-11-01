@@ -402,6 +402,16 @@ retains the realistic 12-Task/191-event fixture and historical completion/
 review trace through every supported source version. No migration parses
 private prose to invent structure.
 
+Lifecycle readers may share a successful physical/reference check only within
+the same query-only connection, transaction epoch, schema and unchanged data.
+Quick, full integrity and foreign-key checks certify distinct guarantees.
+Scope exit, transaction replacement, writes, schema changes or an observed
+writable interval invalidate reuse; failures are not retained. Source admission,
+independent copies, normalized outputs and effect-time guards retain separate
+acceptance. Migration stages and numerical initialization are not coalesced
+merely because their checks have the same names. This sharing creates no
+durable proof for mutable data and does not change immutable backup certification.
+
 History admission checks every stored marker, including earlier generations:
 an integer version in the supported sequence, the exact migration name for
 that version, and a text application time in the existing canonical UTC

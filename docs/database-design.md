@@ -128,10 +128,15 @@ Runner Plan actions also select local admission, including combined verification
 or Contract changes, and validate their complete selected Task/Contract/criterion/
 owner closure in preflight and the fresh writer. This internal boolean is not an authority token or public option;
 neither local admission nor its snapshots may supply a global validation proof.
-Doctor/Setup physical-check sharing is confined to the owning read call's
+Lifecycle physical-check sharing is confined to the owning read call's
 [query-only scope](setup-state-design.md#doctor). It preserves independent quick,
-full-integrity and FK outcomes; a private savepoint guards transaction identity
-before reuse. No writer, later snapshot or standalone validator inherits it.
+full-integrity and FK outcomes; a private savepoint, write count and schema
+cookie guard transaction and state identity before reuse. An observed writable
+interval discards prior successes. No writer, later snapshot or standalone
+validator inherits them. Resolver observations and backup inspection phases
+each own a scope; source, copy, normalized output and publication guards remain
+independent. Migration predecessor/delta/marker checks and numerical Setup
+audits retain their original states and guarantees.
 Setup's supported schema21–32 exact validators also lend their complete Task
 batch to the immediate reader after all version-specific validation succeeds;
 the [Setup reader composition](setup-state-design.md#doctor) owns its lifetime.

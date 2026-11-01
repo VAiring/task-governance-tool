@@ -4,7 +4,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
-from contextlib import closing, contextmanager
+from contextlib import ExitStack, closing, contextmanager
 from pathlib import Path
 from unittest import mock
 
@@ -255,20 +255,30 @@ class M17RecoveryHardeningTests(unittest.TestCase):
             backup_root = target.resolved_backups_path
             before_files = _backup_snapshot(backup_root)
             before_repository = read_managed_backup_repository(target)
-            real_reconcile = backup_service._reconcile_v11
-
-            with mock.patch.object(
-                backup_service,
-                "_reconcile_v11",
-                wraps=real_reconcile,
-            ) as reconcile:
+            # Reconciliation owns candidate admission. Its read-only entry may
+            # run, but a divergent artifact must reach no import, pointer,
+            # retention or publication effect (failure-outcome recording is
+            # separately permitted by the maintenance contract).
+            effect_names = (
+                "import_managed_backup_generations",
+                "delete_managed_backup_generation",
+                "normalize_managed_backup_pointer",
+                "_copy", "_delete", "record_managed_backup",
+            )
+            with ExitStack() as stack:
+                effects = [
+                    stack.enter_context(mock.patch.object(
+                        backup_service, name, wraps=getattr(backup_service, name)))
+                    for name in effect_names
+                ]
                 result = backup_service.run_routine_backup(
                     target,
                     observed_at=SECOND_BACKUP_TIME,
                 )
 
             self.assertEqual((result.code, result.attempted), ("failed", True))
-            reconcile.assert_not_called()
+            for effect in effects:
+                effect.assert_not_called()
             self.assertEqual(_backup_snapshot(backup_root), before_files)
             after_repository = read_managed_backup_repository(target)
             self.assertEqual(

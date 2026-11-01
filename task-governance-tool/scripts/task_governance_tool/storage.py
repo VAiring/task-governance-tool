@@ -4466,14 +4466,10 @@ def _validate_schema20_owned_contract(connection: sqlite3.Connection) -> None:
 _read_integrity_scope = ContextVar("taskgov_read_integrity_scope", default=None)
 
 
-def _reuse_read_integrity(function=None, *, doctor_only=False):
+def _reuse_read_integrity(function):
     """Own one lexical read's successes; nested readers join, never export it."""
-    if function is None:
-        return lambda selected: _reuse_read_integrity(selected, doctor_only=doctor_only)
     @wraps(function)
     def scoped(*args, **kwargs):
-        if doctor_only and kwargs.get("doctor_current_root") is None:
-            return function(*args, **kwargs)
         if _read_integrity_scope.get() is not None:
             return function(*args, **kwargs)
         records = {}
@@ -4482,7 +4478,7 @@ def _reuse_read_integrity(function=None, *, doctor_only=False):
             return function(*args, **kwargs)
         finally:
             _read_integrity_scope.reset(token)
-            for connection, (name, _, _) in records.items():
+            for connection, (name, _, _, _) in records.items():
                 try:
                     connection.execute(f"RELEASE {name}")
                 except sqlite3.Error:
@@ -4498,9 +4494,10 @@ def _physical_integrity_ok(connection: sqlite3.Connection, check: str) -> bool:
     successes = None
     if (records is not None and connection.in_transaction
             and connection.execute("PRAGMA query_only").fetchone()[0] == 1):
+        schema_cookie = connection.execute("PRAGMA schema_version").fetchone()[0]
         previous = records.pop(connection, None)
         if previous is not None:
-            name, changes, previous_successes = previous
+            name, changes, previous_schema, previous_successes = previous
             try:
                 # A rollback/commit followed by BEGIN cannot keep this token.
                 connection.execute(f"RELEASE {name}")
@@ -4508,16 +4505,24 @@ def _physical_integrity_ok(connection: sqlite3.Connection, check: str) -> bool:
                 if is_sqlite_busy_or_locked(exc):
                     raise
                 previous_successes = set()
-            if changes != connection.total_changes:
+            if changes != connection.total_changes or previous_schema != schema_cookie:
                 previous_successes = set()
             successes = previous_successes
         else:
             successes = set()
         name = "taskgov_integrity_" + secrets.token_hex(8)
         connection.execute(f"SAVEPOINT {name}")
-        records[connection] = (name, connection.total_changes, successes)
+        records[connection] = (name, connection.total_changes, schema_cookie, successes)
         if check in successes:
             return True
+    elif records is not None:
+        previous = records.pop(connection, None)
+        if previous is not None:
+            try:
+                connection.execute(f"RELEASE {previous[0]}")
+            except sqlite3.Error as exc:
+                if is_sqlite_busy_or_locked(exc):
+                    raise
     cursor = connection.execute("PRAGMA " + check)
     if check == "foreign_key_check":
         passed = cursor.fetchone() is None

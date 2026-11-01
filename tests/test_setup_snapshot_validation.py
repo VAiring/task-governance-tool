@@ -259,6 +259,11 @@ class SetupSnapshotValidationTests(unittest.TestCase):
                 connection.execute("PRAGMA query_only=ON")
                 self.assertTrue(storage._physical_integrity_ok(connection, "quick_check"))
                 self.assertEqual(statements.count("PRAGMA quick_check"), 3)
+                connection.execute("PRAGMA query_only=OFF")
+                self.assertTrue(storage._physical_integrity_ok(connection, "quick_check"))
+                connection.execute("PRAGMA query_only=ON")
+                self.assertTrue(storage._physical_integrity_ok(connection, "quick_check"))
+                self.assertEqual(statements.count("PRAGMA quick_check"), 5)
             read()
             self.assertIsNone(storage._read_integrity_scope.get())
 
@@ -277,6 +282,154 @@ class SetupSnapshotValidationTests(unittest.TestCase):
                     self.assertEqual(result.schema_version, version)
                     for check in ("quick_check", "integrity_check", "foreign_key_check"):
                         self.assertEqual(statements.count("PRAGMA " + check), 1, (version, check))
+
+    def test_recovery_observation_shares_checks_only_inside_each_read(self):
+        original = state_resolver.connect_readonly
+        statements = []
+        def opened(*args, **kwargs):
+            connection = original(*args, **kwargs)
+            connection.set_trace_callback(statements.append)
+            return connection
+        with mock.patch.object(state_resolver, "connect_readonly", side_effect=opened):
+            for expected in (1, 2):
+                observation = state_resolver._inspect_database(
+                    self.target.db_path, classify_recovery_content=True)
+                self.assertTrue(observation.recovery_content_valid)
+                for check in ("quick_check", "integrity_check", "foreign_key_check"):
+                    self.assertEqual(statements.count("PRAGMA " + check), expected)
+
+    def test_publication_checks_do_not_escape_the_phase_or_connection(self):
+        from task_governance_tool import backup
+        with closing(storage.connect_readonly(self.target.db_path)) as connection:
+            statements = []
+            connection.set_trace_callback(statements.append)
+            for expected in (1, 2):
+                self.assertEqual(backup._validate_publication_source(connection, self.target),
+                                 storage.SCHEMA_VERSION)
+                for check in ("quick_check", "integrity_check", "foreign_key_check"):
+                    self.assertEqual(statements.count("PRAGMA " + check), expected)
+        with closing(storage.connect_readonly(self.target.db_path)) as connection:
+            statements = []
+            connection.set_trace_callback(statements.append)
+            backup._validate_publication_source(connection, self.target)
+            for check in ("quick_check", "integrity_check", "foreign_key_check"):
+                self.assertEqual(statements.count("PRAGMA " + check), 1)
+
+    def test_ddl_invalidates_checks_without_a_row_write(self):
+        with closing(sqlite3.connect(":memory:")) as connection:
+            connection.execute("CREATE TABLE fixture(value INTEGER)")
+            connection.execute("BEGIN")
+            connection.execute("PRAGMA query_only=ON")
+            statements = []
+            connection.set_trace_callback(statements.append)
+            @storage._reuse_read_integrity
+            def read():
+                for check in ("quick_check", "integrity_check", "foreign_key_check"):
+                    self.assertTrue(storage._physical_integrity_ok(connection, check))
+                before_changes = connection.total_changes
+                connection.execute("PRAGMA query_only=OFF")
+                connection.execute("CREATE INDEX fixture_value ON fixture(value)")
+                connection.execute("PRAGMA query_only=ON")
+                self.assertEqual(connection.total_changes, before_changes)
+                for check in ("quick_check", "integrity_check", "foreign_key_check"):
+                    self.assertTrue(storage._physical_integrity_ok(connection, check))
+                    self.assertTrue(storage._physical_integrity_ok(connection, check))
+                    self.assertEqual(statements.count("PRAGMA " + check), 2)
+            read()
+            self.assertIsNone(storage._read_integrity_scope.get())
+
+    def test_recovery_pair_keeps_writers_uncached_and_each_read_fresh(self):
+        from task_governance_tool import backup
+        with closing(storage.connect_readonly(self.target.db_path)) as connection:
+            statements = []
+            connection.set_trace_callback(statements.append)
+            for expected in (1, 2):
+                self.assertEqual(backup._inspect_recovery_database(connection, self.target),
+                                 (storage.SCHEMA_VERSION, True))
+                for check in ("quick_check", "integrity_check", "foreign_key_check"):
+                    self.assertEqual(statements.count("PRAGMA " + check), expected)
+        with closing(storage.connect_existing(self.target.db_path)) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            statements = []
+            connection.set_trace_callback(statements.append)
+            version = backup._validate_database(connection, self.target)
+            self.assertTrue(backup._recovery_content_valid(connection, version, self.target))
+            checks = ("quick_check", "integrity_check", "foreign_key_check")
+            baseline = {check: statements.count("PRAGMA " + check) for check in checks}
+            for check in ("quick_check", "foreign_key_check"):
+                self.assertGreaterEqual(baseline[check], 2)
+            statements.clear()
+            self.assertEqual(backup._inspect_recovery_database(connection, self.target),
+                             (storage.SCHEMA_VERSION, True))
+            # Writable state has no admitted query-only lifetime: retain both
+            # obligations, including nested exact-schema checks, just as the
+            # separate pre-composition calls do on this unchanged writer.
+            self.assertEqual(
+                {check: statements.count("PRAGMA " + check) for check in checks}, baseline)
+            connection.rollback()
+
+    def test_failed_physical_checks_are_repeated_and_scope_is_released(self):
+        with closing(sqlite3.connect(":memory:")) as connection:
+            connection.executescript("CREATE TABLE parent(id INTEGER PRIMARY KEY);"
+                "CREATE TABLE child(id INTEGER REFERENCES parent(id)); INSERT INTO child VALUES (1);")
+            connection.execute("BEGIN")
+            connection.execute("PRAGMA query_only=ON")
+            statements = []
+            connection.set_trace_callback(statements.append)
+            @storage._reuse_read_integrity
+            def read():
+                self.assertTrue(storage._physical_integrity_ok(connection, 'quick_check'))
+                for _ in range(2):
+                    self.assertFalse(storage._physical_integrity_ok(connection, 'foreign_key_check'))
+                raise RuntimeError('isolated scope exit')
+            with self.assertRaises(RuntimeError):
+                read()
+            self.assertEqual(statements.count('PRAGMA foreign_key_check'), 2)
+            self.assertIsNone(storage._read_integrity_scope.get())
+            self.assertTrue(connection.in_transaction)
+
+    def test_shared_physical_audit_reduces_actual_sqlite_vm_work(self):
+        import json
+        import time
+        with closing(sqlite3.connect(":memory:")) as connection:
+            connection.execute("CREATE TABLE fixture(id INTEGER PRIMARY KEY, value TEXT CHECK(length(value)>0))")
+            connection.executemany("INSERT INTO fixture VALUES (?,?)", [(i, 'synthetic') for i in range(1000)])
+            connection.commit()
+            connection.execute("BEGIN")
+            connection.execute("PRAGMA query_only=ON")
+            def measure(shared):
+                steps = 0
+                statements = []
+                def progress():
+                    nonlocal steps
+                    steps += 1
+                    return 0
+                connection.set_progress_handler(progress, 100)
+                connection.set_trace_callback(statements.append)
+                started = time.perf_counter()
+                def inspect():
+                    return [storage._physical_integrity_ok(connection, check) for _ in range(2)
+                            for check in ('quick_check', 'integrity_check', 'foreign_key_check')]
+                try:
+                    results = storage._reuse_read_integrity(inspect)() if shared else inspect()
+                finally:
+                    elapsed = time.perf_counter() - started
+                    connection.set_progress_handler(None, 0)
+                    connection.set_trace_callback(None)
+                scans = {check: statements.count('PRAGMA ' + check)
+                         for check in ('quick_check', 'integrity_check', 'foreign_key_check')}
+                return results, steps, scans, elapsed
+            baseline, baseline_work, baseline_scans, baseline_seconds = measure(False)
+            shared, shared_work, shared_scans, shared_seconds = measure(True)
+            self.assertEqual(baseline, [True] * 6)
+            self.assertEqual(shared, baseline)
+            self.assertTrue(all(value == 2 for value in baseline_scans.values()))
+            self.assertTrue(all(value == 1 for value in shared_scans.values()))
+            self.assertLess(shared_work, baseline_work)
+            print(json.dumps({'physical_audit_vm_quanta_100': [baseline_work, shared_work],
+                              'scans_before': baseline_scans, 'scans_after': shared_scans,
+                              'inclusive_seconds': [baseline_seconds, shared_seconds],
+                              'connections': 1, 'read_transactions': 1}))
 
 
 class LegacySetupTaskBatchTests(unittest.TestCase):

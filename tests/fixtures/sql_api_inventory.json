@@ -11,8 +11,8 @@
     },
     "backup.py": {
       "attributes": {
-        "execute": 3,
-        "fetchall": 3
+        "execute": 1,
+        "fetchall": 1
       },
       "kind": "observed_connection"
     },
@@ -435,11 +435,11 @@
     },
     "storage.py": {
       "attributes": {
-        "execute": 428,
+        "execute": 430,
         "executescript": 2,
         "fetchall": 107,
         "fetchmany": 2,
-        "fetchone": 134
+        "fetchone": 135
       },
       "kind": "observed_connection"
     },

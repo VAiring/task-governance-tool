@@ -1400,7 +1400,7 @@ def _database_target(
     )
 
 
-@_reuse_read_integrity(doctor_only=True)
+@_reuse_read_integrity
 @admission_scope
 def _inspect_database(
     path: Path,

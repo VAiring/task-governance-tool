@@ -249,8 +249,12 @@ normalization, then revalidate the normalized candidate; never weaken backup
 selection or alter the source backup. The normalized recovery observation must
 explicitly allow only this derived-state delta in addition to its existing
 repository normalization. Reentry after canonical publication sees the rotated
-epoch; it does not rotate repeatedly or replay restore. Restoring an old schema
-gets a fresh epoch on explicit migration. Confirmed rebind invalidates in the
+epoch; it does not rotate repeatedly or replay restore. A schema34-or-later
+predecessor is normalized under its exact source schema before migration: the
+private restoration entry carries that version, admits its complete historical
+Setup state and binding before and under the writer, and rejects version drift.
+It does not require the destination schema merely to reset derived state.
+Pre-incremental sources get a fresh epoch on explicit migration. Confirmed rebind invalidates in the
 same binding writer; fresh capture must match the new binding generation/hash.
 These changes are part of the approved Setup operation, never ordinary implicit
 repair. Physical DB replacement also invalidates a saved cache by file identity;

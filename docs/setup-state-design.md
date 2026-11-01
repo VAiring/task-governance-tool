@@ -892,15 +892,17 @@ counts. For a matching current-schema Doctor observation, resolver admission
 checks structure and project metadata, then the exact-schema Setup reader owns
 the global Runner, ownership, review, note, cycle and ledger row audit on that
 same connection. It does not first repeat that row audit in the resolver.
-The matching Doctor resolver and its nested Setup reader share successful
-physical checks only inside a lexical query-only read scope. Quick, full
+Each resolver observation, its nested Setup reader, and each backup publication
+or paired recovery-content phase share successful physical checks only inside
+their own lexical query-only read scope. Quick, full
 integrity and FK are separate results: quick success never replaces the full
-integrity check. A private savepoint token, exact connection and write count
-guard each reuse; ending/replacing the transaction or intervening writes drops
+integrity check. A private savepoint token, exact connection, schema cookie and
+write count guard each reuse; ending/replacing the transaction, schema changes,
+intervening writes or an observed non-query-only interval drops
 the successes. Failed checks are never retained. Scope exit releases its tokens
 and values, including when the owner already closed the connection. Standalone
-Setup/Doctor reads create fresh scopes; direct validators and non-Doctor resolver
-observations do not inherit an earlier call's checks. This is no persisted proof
+Setup/Doctor reads and resolver observations create fresh scopes; standalone
+validators do not inherit an earlier call's checks. This is no persisted proof
 and does not alter diagnostics, recovery or migration gates.
 The exact-schema validator privately returns its complete validated Task batch
 to the Setup reader, which checks the target project association without
@@ -1023,7 +1025,12 @@ lexical rollback journal beside a missing canonical DB is rejected before
 selection and publication and never opened/deleted. A concurrently appearing
 canonical DB is never overwritten.
 
-A supported old recovery migrates normally; current recovery proceeds to
+A supported old recovery migrates normally. If its source schema already owns
+Viewer projection state (schema34 or later), private epoch normalization uses
+that exact source version and its full Setup reader before and under the writer;
+it rejects source-version or binding drift without prematurely requiring the
+current schema. Post-normalization source validation and later migration remain
+separate gates. Current recovery proceeds to
 Evidence and then Viewer. Fresh initialization repeats candidate/journal absence under the lock
 immediately before creation. Setup never silently substitutes initialization
 for a stale recovery plan.
@@ -1070,7 +1077,13 @@ No artifact-local successes flow to another artifact or later mutable source.
 Each publication phase performs common structural/binding/maintenance admission
 and its exact-schema full row audit once in the same SQLite read transaction;
 the common admission does not repeat the exact-schema history traversal. The
-private copy starts its own read transaction after copying. Recovery-content
+physical quick/FK obligations use the shared integrity helper, so the paired
+exact-schema audit does not scan them again within that same phase. The full
+integrity obligation remains separate. `_validate_publication_source` and
+`_inspect_recovery_database` own only their immediate inspection scopes, ending
+before copying, normalization, hashing or publication. A writable copy or
+migration transaction does not borrow a read-only success; its checks remain.
+The private copy starts its own read transaction after copying. Recovery-content
 classification uses the same composition within its own snapshot, including
 when canonical artifact inspection invokes it. Initial structural/set
 inspection, reconciliation, source, copy and fresh pre-publication observations

@@ -91,6 +91,57 @@ class ViewerProjectionStorageTests(unittest.TestCase):
         self.assertIsNone(second.cache_generation)
         self.assertIsNone(second.html_generation)
 
+    def test_supported_old_restore_rotates_before_migration(self):
+        from dataclasses import replace
+        from task_governance_tool import backup, backup_validation
+        from tests.test_routine_backup import make_target as backup_target, metadata
+        self.assertEqual(backup_validation.SCHEMA_VERSION, storage.SCHEMA_VERSION)
+        for version in (34, 35):
+            with self.subTest(version=version), tempfile.TemporaryDirectory() as directory:
+                with candidate_runtime(version):
+                    target = backup_target(Path(directory))
+                    backup._copy(target, metadata(1, 0, 3))
+                with closing(storage.connect_readonly(target.db_path)) as connection:
+                    before = projection.read_state(connection, target.project.project_id)
+                restored = replace(target, db_path=target.db_path.parent / 'restored.sqlite',
+                                   canonical_fixed=False)
+                candidate = backup.select_managed_backup_for_recovery(restored)
+                self.assertEqual(backup.restore_managed_backup(restored, candidate), version)
+                with closing(storage.connect_readonly(restored.db_path)) as connection:
+                    self.assertEqual(storage.current_schema_version(connection), version)
+                    after = projection.read_state(connection, target.project.project_id)
+                self.assertNotEqual(before.database_epoch, after.database_epoch)
+                self.assertEqual(after.source_generation, before.source_generation + 1)
+                self.assertEqual(after.invalidated_generation, after.source_generation)
+                self.assertIsNone(after.cache_generation)
+                self.assertIsNone(after.html_generation)
+                result = storage.migrate_bound_database(restored)
+                self.assertEqual(result.schema_version, storage.SCHEMA_VERSION)
+
+    def test_restore_source_schema_mismatch_and_foreign_binding_do_not_write(self):
+        from dataclasses import replace
+        from tests.test_routine_backup import make_target as backup_target
+        with tempfile.TemporaryDirectory() as directory:
+            with candidate_runtime(34):
+                target = backup_target(Path(directory))
+            before = target.db_path.read_bytes()
+            for version in (None, 33, 35, 37, True):
+                with self.subTest(version=version), self.assertRaises(storage.StorageError):
+                    projection.reset_restored_database(target, source_schema_version=version)
+                self.assertEqual(target.db_path.read_bytes(), before)
+            with self.assertRaises(storage.StorageError):
+                projection.reset_restored_database(replace(target, binding_path_hash='a' * 64),
+                                                   source_schema_version=34)
+            self.assertEqual(target.db_path.read_bytes(), before)
+            original = projection.invalidate_locked
+            def failed(*args, **kwargs):
+                original(*args, **kwargs)
+                raise storage.StorageError('project_state_unreadable', 'isolated failure')
+            with mock.patch.object(projection, 'invalidate_locked', side_effect=failed), \
+                 self.assertRaises(storage.StorageError):
+                projection.reset_restored_database(target, source_schema_version=34)
+            self.assertEqual(target.db_path.read_bytes(), before)
+
     def test_tuple_types_parent_and_future_revision_fail_closed(self):
         add_viewer_event(self.target, "Bound display")
         before = self.snapshot()

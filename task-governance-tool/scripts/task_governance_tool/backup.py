@@ -50,6 +50,8 @@ from task_governance_tool.storage import (
     SetupStorageState,
     StorageError,
     StoredTaskVerificationError,
+    _physical_integrity_ok,
+    _reuse_read_integrity,
     configure_connection,
     connect_readonly,
     current_schema_version,
@@ -348,18 +350,16 @@ def _validate_database(
                 "project_mismatch",
                 "task database belongs to a different project",
             )
-        if [
-            str(row[0])
-            for row in connection.execute("PRAGMA quick_check").fetchall()
-        ] != ["ok"]:
+        if not _physical_integrity_ok(connection, "quick_check"):
             raise _failure()
-        if connection.execute("PRAGMA foreign_key_check").fetchall():
+        if not _physical_integrity_ok(connection, "foreign_key_check"):
             raise _failure()
         return version
     except sqlite3.Error as exc:
         raise _failure() from exc
 
 
+@_reuse_read_integrity
 def _validate_publication_source(
     connection: sqlite3.Connection,
     target: DatabaseTarget,
@@ -514,6 +514,17 @@ def _recovery_content_valid(
     except StoredTaskVerificationError:
         return False
     return True
+
+
+@_reuse_read_integrity
+def _inspect_recovery_database(
+    connection: sqlite3.Connection,
+    target: DatabaseTarget,
+    expected_version: int | None = None,
+) -> tuple[int, bool]:
+    """Compose one phase's structural and exact recovery-content obligations."""
+    version = _validate_database(connection, target, expected_version)
+    return version, _recovery_content_valid(connection, version, target)
 
 
 def _source_version(target: DatabaseTarget) -> int:
@@ -990,8 +1001,8 @@ def restore_managed_backup(
                 source.backup(destination)
                 source_scope.close()
                 if expected_recovery is None:
-                    _validate_database(destination, target, source_version)
-                    if not _recovery_content_valid(destination, source_version, target):
+                    _, valid = _inspect_recovery_database(destination, target, source_version)
+                    if not valid:
                         raise _restore_failure()
 
         temporary_target = DatabaseTarget(
@@ -1020,7 +1031,7 @@ def restore_managed_backup(
         projection = None
         if source_version >= 34:
             from .viewer_projection_repository import reset_restored_database
-            projection = reset_restored_database(temporary_target)
+            projection = reset_restored_database(temporary_target, source_schema_version=source_version)
         if expected_recovery is not None:
             from task_governance_tool.state_resolver import (
                 recovery_database_matches_observation,
@@ -1037,8 +1048,8 @@ def restore_managed_backup(
                 raise _restore_failure()
         else:
             with closing(connect_readonly(temporary)) as restored:
-                _validate_database(restored, target, source_version)
-                if not _recovery_content_valid(restored, source_version, target):
+                _, valid = _inspect_recovery_database(restored, target, source_version)
+                if not valid:
                     raise _restore_failure()
 
         with temporary.open("r+b") as stream:
@@ -1134,28 +1145,23 @@ def copy_database_snapshot(
                 source_version = source_observation.stored_project.source_schema_version
             else:
                 source = source_scope.enter_context(closing(connect_readonly(source_path)))
-                source_version = _validate_database(source, source_target)
-                if require_recovery_content_valid and not _recovery_content_valid(
-                    source, source_version, source_target,
-                ):
-                    raise _failure()
+                if require_recovery_content_valid:
+                    source_version, valid = _inspect_recovery_database(source, source_target)
+                    if not valid:
+                        raise _failure()
+                else:
+                    source_version = _validate_database(source, source_target)
             with closing(
                 configure_connection(connect_traced(destination, access="create", role="backup", file_guard_path=destination))
             ) as copied:
                 source.backup(copied)
                 source_scope.close()
-                _validate_database(
-                    copied,
-                    destination_target,
-                    source_version,
-                )
-                if (require_recovery_content_valid and expected_recovery_observation is None
-                        and not _recovery_content_valid(
-                    copied,
-                    source_version,
-                    destination_target,
-                )):
-                    raise _failure()
+                if require_recovery_content_valid and expected_recovery_observation is None:
+                    _, valid = _inspect_recovery_database(copied, destination_target, source_version)
+                    if not valid:
+                        raise _failure()
+                else:
+                    _validate_database(copied, destination_target, source_version)
         if (
             expected_recovery_observation is not None
             and recovery_database_matches_observation is not None

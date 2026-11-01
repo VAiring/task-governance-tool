@@ -1571,6 +1571,32 @@ the manual route preserves project-required hooks, signing and those layouts.
 Core connections are closed during Git work; operational writer leases do not
 hold SQLite transactions across subprocesses.
 
+`Finalizer.execute` owns a lexical `snapshot_commit_validation` scope from
+`git_snapshot.py` and explicitly passes it through the Git adapter and Core's
+native completion/check preflight. No ambient context or database proof is
+shared. `verify_git_snapshot_commit` alone populates its one successful value
+after complete streaming validation and matching before/after source identity.
+Its key binds physical resolved project, Git and common directories (including
+device/inode), governed Git prefix, full resolved candidate, tree, expected
+base/fingerprint and decoder rules. Each consumption re-resolves the source and
+commit, checks its parent/header and root tree availability; content-addressed
+Git objects supply the immutable content identity. This is not a durable Git
+object-corruption audit. A different key requires complete validation; any
+failed observation clears the value. Closed scopes fall back to full validation,
+and another thread cannot consume an active scope.
+
+Explicit optional internal parameters carry the same value through
+`handle_task_complete`, `completion_workflow`, `prepare_completion_plan` and
+`revalidate_done_git_evidence`; the native writer receives only the existing
+CompletionPlan, not a cache. Runner successor comparison may reuse that same
+parent/fingerprint result, but retains its own current plan/implementation,
+materialization and stored-basis checks. Compatibility edit, standalone/manual
+completion, direct Git validators and later finalizer invocations have no
+inherited value. Fresh source checks and small commit/header reads remain;
+only repeated recursive candidate fingerprint walks are shared. The adapter's
+index observations and publication locks/CAS, all Core reads and registration/
+quality/ownership checks, and existing unknown-effect reconciliation are unchanged.
+
 `review_finalization.py` composes the existing typed CLI registration/completion
 handlers and their bounded maintenance, with the genuine parent caller identity.
 Its Core detail reader shares Task/Contract, selected review, verification,

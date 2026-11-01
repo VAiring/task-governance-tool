@@ -695,6 +695,7 @@ def preflight_runner_snapshot_successor_material_digest(
     *,
     expected_base_revision: str,
     expected_fingerprint: str,
+    git_validation=None,
 ) -> str:
     """Bind one exact reviewed snapshot to its immutable successor commit."""
 
@@ -709,6 +710,7 @@ def preflight_runner_snapshot_successor_material_digest(
             completion_revision,
             expected_base_revision=expected_base_revision,
             expected_fingerprint=expected_fingerprint,
+            git_validation=git_validation,
         )
         if (
             committed.artifact.comparison_base != expected_base_revision

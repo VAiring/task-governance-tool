@@ -1865,6 +1865,21 @@ project-relative snapshots also retain the manual path.
 Their existing manual completion and material reads use the governed-subtree
 binding below; this does not extend integrated finalization to nested projects.
 
+Within one integrated finalizer execution, a successful complete candidate
+parent/tree/fingerprint validation may be shared by candidate creation,
+publication observation, native completion preflight and the final report.
+The internal value binds the actual repository/worktree and governed scope,
+full candidate ID, exact expected base/fingerprint and validation rules. It
+contains no Task eligibility claim. Initial validation consumes every leaf;
+failed, unavailable or changed observations never populate a successful value.
+Git source identity, commit resolution/header and tree availability are checked
+again when consuming it. HEAD/branch equality, current index, ref/index locks,
+old-ID publication, current Task/Contract/owner/target, all-severity Findings,
+exact registered originals and native writer admission remain fresh.
+The value expires at execution exit, including failure. Recovery and standalone
+checks validate the saved candidate anew; manual calls do not inherit an active
+finalizer's value. There is no persistent cache, public bypass or evidence change.
+
 Registration, commit publication, completion and notification have separate
 not-started, successful and uncertain outcomes. A failed later stage never undoes
 earlier success. A published commit is reused for completion recovery; an unknown

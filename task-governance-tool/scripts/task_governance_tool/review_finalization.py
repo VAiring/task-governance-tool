@@ -15,6 +15,7 @@ from . import cli, review_handoff_transport as files, review_finalization_git as
 from .review_handoff_scope import resolve, error_code as _code
 from .review_finalization_repository import FinalizationRecord, FinalizationRepository, registered_originals, reported_review_evidence
 from .review_finalization_basis import FinalizationBasis, require_no_findings
+from .git_snapshot import snapshot_commit_validation
 from .review_session_transport import decode_submission, frame_submission
 from .review_wait_basis import wait_basis
 from .tasks import read_internal_task
@@ -80,11 +81,11 @@ class Core:
         return self._maintain(context, cli.handle_review_command(context, submission=submission,
             finalization_basis=basis, registration_recovery=registration_recovery))
 
-    def complete(self, task_id, candidate, *, basis, check=False):
+    def complete(self, task_id, candidate, *, basis, check=False, git_validation=None):
         context = self.context("task.complete", task_id=task_id, check=check,
             verification_complete=True, review_complete=True, completion_evidence_kind="git_commit",
             completion_revision=candidate)
-        result = cli.handle_task_complete(context, finalization_basis=basis)
+        result = cli.handle_task_complete(context, finalization_basis=basis, git_validation=git_validation)
         return _result(result) if check else self._maintain(context, result)
 
     def _maintain(self, context, result):
@@ -472,6 +473,10 @@ class Finalizer:
         return decode_submission(framed), tuple((source.packet_path, source.result_path) for source in sources), retained
 
     def execute(self, *, check=False, guard=lambda observe: None):
+        with snapshot_commit_validation() as git_validation:
+            return self._execute(check=check, guard=guard, git_validation=git_validation)
+
+    def _execute(self, *, check, guard, git_validation):
         if self.journal is None:
             _fail("finalization_not_prepared")
         available, state, error, gate = [], None, None, None
@@ -570,7 +575,8 @@ class Finalizer:
             if record.candidate is None:
                 guarded()
                 self._require_registration(record)
-                candidate = git.create_candidate(self.repo, **binding, task_id=self.task_id)
+                candidate = git.create_candidate(self.repo, **binding, task_id=self.task_id,
+                                                 git_validation=git_validation)
                 record = self.journal.advance(lease, candidate=candidate)
             def ready():
                 nonlocal gate
@@ -579,11 +585,12 @@ class Finalizer:
                 self._match(record, fresh)
                 self._require_registration(record)
                 require_no_findings(fresh["review_evidence"])
-                gate = self.core.complete(self.task_id, record.candidate, basis=FinalizationBasis.from_record(record), check=True)
+                gate = self.core.complete(self.task_id, record.candidate, basis=FinalizationBasis.from_record(record),
+                                          check=True, git_validation=git_validation)
                 if gate["ready"] is not True:
                     _fail(gate["blocking_codes"][0])
             if record.commit != "succeeded":
-                if git.published(self.repo, candidate=record.candidate, **binding):
+                if git.published(self.repo, candidate=record.candidate, **binding, git_validation=git_validation):
                     if record.commit != "dispatching":
                         _fail("finalization_commit_unexpected")
                 else:
@@ -594,14 +601,16 @@ class Finalizer:
                     # an earlier delayed writer cannot publish a second commit.
                     if record.commit == "not_started":
                         record = self.journal.advance(lease, commit="dispatching")
-                    git.publish_candidate(self.repo, candidate=record.candidate, **binding, revalidate=ready)
+                    git.publish_candidate(self.repo, candidate=record.candidate, **binding,
+                                          revalidate=ready, git_validation=git_validation)
                 record = self.journal.advance(lease, commit="succeeded")
             ready()
             if record.completion == "not_started":
                 record = self.journal.advance(lease, completion="dispatching")
             guarded()
             self._require_registration(record)
-            self.core.complete(self.task_id, record.candidate, basis=FinalizationBasis.from_record(record))
+            self.core.complete(self.task_id, record.candidate, basis=FinalizationBasis.from_record(record),
+                               git_validation=git_validation)
             state = self.core.read(self.task_id)
             self._match(record, state, allow_done=True)
             self.journal.advance(lease, completion="succeeded")
@@ -658,7 +667,7 @@ class Finalizer:
             binding = dict(base=record.basis["target_base_revision"], fingerprint=record.basis["target_value"],
                            expected_branch=record.branch)
             try:
-                if git.published(self.repo, candidate=record.candidate, **binding):
+                if git.published(self.repo, candidate=record.candidate, **binding, git_validation=git_validation):
                     result["commit_observation"] = "published"
                     result["commit_id"] = record.candidate
                 else:

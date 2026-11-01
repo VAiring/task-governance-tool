@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 from dataclasses import replace
 from datetime import timedelta
+from contextlib import nullcontext
 from unittest import mock
 
 from tests import test_review_handoff_preparation as fixtures
@@ -145,16 +146,16 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
         task = self.task("Focused isolated verification")
         return self.prepare_task(task)
 
-    def prepare_task(self, task):
+    def prepare_task(self, task, *, directory="reviews/g1"):
         (self.root / "source.py").write_text("value = 2\n", encoding="utf-8")
         self.git("add", "source.py")
-        target_call = self.invoke("prepare-finalization", "--repo", str(self.root), "--directory=reviews/g1",
+        target_call = self.invoke("prepare-finalization", "--repo", str(self.root), "--directory=" + directory,
                                  "target", task, "--kind=git_snapshot")
         self.assertEqual(target_call.returncode, 0, target_call.stdout or target_call.stderr)
         target = json.loads(target_call.stdout)
         self.assertEqual(target["handoff"], {"status": "not_applicable"})
         self.assertEqual(target["source"]["verification_route"], "receipt_required")
-        completed = self.invoke("prepare-finalization", "--repo", str(self.root), "--directory=reviews/g1",
+        completed = self.invoke("prepare-finalization", "--repo", str(self.root), "--directory=" + directory,
             "receipt", task, "--result=pass", "--duration-ms=1", "--scope-coverage=full",
             "--expected-target-generation=" + str(target["source"]["review_target"]["generation"]))
         self.assertEqual(completed.returncode, 0, completed.stdout or completed.stderr)
@@ -226,6 +227,44 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
         for index in range(2):
             self.save(context, index)
         return task, self.service(task)
+
+    def test_candidate_walk_count_and_bytes_drop_without_changing_completion(self):
+        from task_governance_tool import git_snapshot
+        self.committed_fixture()
+        measurements, outcomes = [], []
+        for reuse in (False, True):
+            task = self.task("Fixed candidate validation measurement")
+            _, context = self.prepare_task(task, directory="reviews/measurement-" + str(reuse))
+            for index in range(2):
+                self.save(context, index)
+            service = self.service(task)
+            observed = []
+            original = git_snapshot.stream_tree_entries
+            def measure(*args, **kwargs):
+                result = original(*args, **kwargs)
+                observed.append(result.identity.byte_count)
+                return result
+            factory = finalization.snapshot_commit_validation if reuse else lambda: nullcontext(None)
+            with mock.patch.object(finalization, "snapshot_commit_validation", factory), \
+                    mock.patch.object(git_snapshot, "stream_tree_entries", side_effect=measure):
+                report = service.execute()
+            self.assertEqual(report["status"], "completed", report)
+            self.assertEqual(self.cli("task", "show", task)["task"]["status"], "done")
+            self.assertEqual(report["commit_id"], self.git("rev-parse", "HEAD").decode().strip())
+            outcomes.append((report["status"], report["task_status"], report["stages"],
+                             report["commit_observation"], report["blocking_code"],
+                             len(report["registered_receipt_ids"]), report["registered_findings"]))
+            measurements.append((len(observed), sum(observed)))
+            if reuse:
+                with mock.patch.object(git_snapshot, "stream_tree_entries", side_effect=measure):
+                    again = service.execute(check=True)
+                self.assertEqual(again["status"], "completed", again)
+                self.assertEqual(len(observed), 2, "completed recovery must validate anew")
+        self.assertEqual(outcomes[0], outcomes[1])
+        self.assertEqual(measurements[0][0], 10)
+        self.assertEqual(measurements[1][0], 1)
+        self.assertGreater(measurements[1][1], 0)
+        self.assertEqual(measurements[0][1], measurements[1][1] * 10)
 
     def test_complete_exact_target_and_duplicate_is_read_only(self):
         task, context = self.prepared()
@@ -465,6 +504,42 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
         self.assertEqual(result["blocking_code"], "finalization_findings_require_judgment", result)
         self.assertEqual(result["stages"]["commit"], "not_started")
         self.assertEqual(self.git("rev-parse", "HEAD"), before)
+
+    def _assert_candidate_does_not_cover_changed_task_basis(self, change):
+        self.committed_fixture()
+        task = self.cli("task", "add", "--title", "Contract-bound candidate race", "--review-tier", "2",
+            "--status", "in_progress", "--verification", "Focused isolated verification",
+            "--contract-scope", "Initial explicit scope",
+            "--contract-acceptance", "Initial explicit acceptance")["task"]["task_id"]
+        self.cli("task", "edit", task, "--status", "review_pending")
+        _, context = self.prepare_task(task)
+        for index in range(2):
+            self.save(context, index)
+        service = self.service(task)
+        before = self.git("rev-parse", "HEAD")
+        original = finalization.git.create_candidate
+        def race(*args, **kwargs):
+            candidate = original(*args, **kwargs)
+            change(task)
+            return candidate
+        with mock.patch.object(finalization.git, "create_candidate", side_effect=race), \
+                mock.patch.object(finalization.git, "publish_candidate") as publish:
+            report = service.execute()
+        publish.assert_not_called()
+        self.assertEqual(report["blocking_code"], "review_target_mismatch", report)
+        self.assertEqual(report["stages"]["commit"], "not_started")
+        self.assertEqual(self.git("rev-parse", "HEAD"), before)
+        self.assertNotEqual(self.cli("task", "show", task)["task"]["status"], "done")
+
+    def test_contract_change_after_validated_candidate_blocks_publication(self):
+        self._assert_candidate_does_not_cover_changed_task_basis(lambda task: self.cli(
+            "task", "edit", task, "--contract-scope", "Explicitly changed scope",
+            "--contract-acceptance", "Updated acceptance", "--contract-change-reason", "Isolated race fixture",
+            "--contract-authority-ref", f"user_instruction:{task}:2"))
+
+    def test_target_change_after_validated_candidate_blocks_publication(self):
+        self._assert_candidate_does_not_cover_changed_task_basis(lambda task: self.cli(
+            "review", "target", "set", task, "--kind", "git_snapshot"))
 
     def test_new_low_after_native_preflight_blocks_locked_completion_and_manual_path_still_allows_it(self):
         from task_governance_tool import tasks

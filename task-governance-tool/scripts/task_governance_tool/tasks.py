@@ -2007,6 +2007,7 @@ def prepare_completion_plan(
     request: CompletionRequest,
     *,
     defer_gate_validation: bool = False,
+    git_validation=None,
 ) -> CompletionPlan:
     """Resolve and validate one completion request with no open DB transaction."""
     if request.task_id != str(basis.task["task_id"]):
@@ -2042,6 +2043,7 @@ def prepare_completion_plan(
         proposed,
         repo=project.canonical_repo,
         status_was_provided=True,
+        git_validation=git_validation,
     )
     return CompletionPlan(
         request=request,
@@ -2255,6 +2257,7 @@ def revalidate_done_git_evidence(
     *,
     repo: Path,
     status_was_provided: bool,
+    git_validation=None,
 ) -> None:
     if not status_was_provided or task["status"] != "done":
         return
@@ -2323,6 +2326,7 @@ def revalidate_done_git_evidence(
                 completion_revision,
                 expected_base_revision=target_base_revision,
                 expected_fingerprint=target_value,
+                git_validation=git_validation,
             )
         except GitSnapshotError as exc:
             raise validation_error(exc.code, exc.message, exc.field) from exc

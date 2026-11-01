@@ -2164,7 +2164,7 @@ def completion_domain_error_result(
     )
 
 
-def handle_task_complete(context: CommandContext, *, finalization_basis=None) -> CommandResult:
+def handle_task_complete(context: CommandContext, *, finalization_basis=None, git_validation=None) -> CommandResult:
     from task_governance_tool.completion_workflow import (
         COMPLETION_BLOCKING_CODES,
         check_completion_request,
@@ -2233,11 +2233,13 @@ def handle_task_complete(context: CommandContext, *, finalization_basis=None) ->
                 initial_connection=context.read_connection_override,
                 caller=context.caller,
                 finalization_basis=finalization_basis,
+                git_validation=git_validation,
                 runner_selector=lambda task, completion_revision: (
                     select_current_verification_runner_basis(
                         target,
                         task=task,
                         completion_revision=completion_revision,
+                        git_validation=git_validation,
                     )
                 ),
             )
@@ -2269,11 +2271,13 @@ def handle_task_complete(context: CommandContext, *, finalization_basis=None) ->
             input_error=input_preflight_error,
             caller=context.caller,
             finalization_basis=finalization_basis,
+            git_validation=git_validation,
             runner_selector=lambda task, completion_revision: (
                 select_current_verification_runner_basis(
                     target,
                     task=task,
                     completion_revision=completion_revision,
+                    git_validation=git_validation,
                 )
             ),
         )

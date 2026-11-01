@@ -73,6 +73,7 @@ def _stored_runner_physical_basis_matches(
     snapshot: dict[str, Any],
     *,
     completion_revision: str | None = None,
+    git_validation=None,
 ) -> bool:
     if target.skill_root is None:
         raise StorageError(
@@ -135,6 +136,7 @@ def _stored_runner_physical_basis_matches(
                         completion_revision,
                         expected_base_revision=resolution.target_base_revision,
                         expected_fingerprint=resolution.target_value,
+                        git_validation=git_validation,
                     )
                 )
                 target_matches = (
@@ -212,6 +214,7 @@ def select_current_verification_runner_basis(
     *,
     task: Mapping[str, Any],
     completion_revision: str | None = None,
+    git_validation=None,
 ) -> VerificationRunnerGateSelection | None:
     """Select one live Runner gate without holding SQLite during physical checks."""
 
@@ -261,6 +264,7 @@ def select_current_verification_runner_basis(
                 target,
                 snapshot,
                 completion_revision=completion_revision,
+                git_validation=git_validation,
             )
         )
     except StorageError as exc:

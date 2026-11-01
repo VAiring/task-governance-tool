@@ -1,7 +1,10 @@
 """Real isolated Git checks for the sole integrated local-commit exception."""
 
 from contextlib import contextmanager
+import os
 import tempfile
+import shutil
+import stat
 import unittest
 from unittest.mock import patch
 from pathlib import Path
@@ -13,9 +16,245 @@ from task_governance_tool.git_snapshot import (
 )
 from task_governance_tool.artifact_manifest import observe_staged_git_manifest, build_artifact_entries
 from task_governance_tool import review_finalization_git as adapter
+from task_governance_tool import git_snapshot as snapshots
 
 
 class FinalizationGitTests(unittest.TestCase):
+    def test_candidate_content_walk_is_shared_but_manual_and_later_calls_are_fresh(self):
+        with self.project() as (repo, binding), patch.object(snapshots, "stream_tree_entries",
+                wraps=snapshots.stream_tree_entries) as walks:
+            with snapshots.snapshot_commit_validation() as validation:
+                candidate = adapter.create_candidate(repo, **binding, task_id="tg_task_0123456789abcdef",
+                                                     git_validation=validation)
+                self.assertFalse(adapter.published(repo, candidate=candidate, **binding, git_validation=validation))
+                adapter.publish_candidate(repo, candidate=candidate, **binding, git_validation=validation)
+                self.assertTrue(adapter.published(repo, candidate=candidate, **binding, git_validation=validation))
+                self.assertEqual(walks.call_count, 1)
+                # Explicit manual work nested inside the scope is independent.
+                verify_git_snapshot_commit(repo, candidate, expected_base_revision=binding["base"],
+                                           expected_fingerprint=binding["fingerprint"])
+                self.assertEqual(walks.call_count, 2)
+            adapter.published(repo, candidate=candidate, **binding, git_validation=validation)
+            self.assertEqual(walks.call_count, 3)
+            with snapshots.snapshot_commit_validation() as restarted:
+                adapter.published(repo, candidate=candidate, **binding, git_validation=restarted)
+                self.assertEqual(walks.call_count, 4)
+
+    def test_content_reuse_never_skips_mutable_publication_checks(self):
+        for changed in ("index", "base", "branch", "lock", "gate"):
+            with self.subTest(changed=changed), self.project() as (repo, binding), \
+                    snapshots.snapshot_commit_validation() as validation:
+                candidate = adapter.create_candidate(repo, **binding, task_id="tg_task_0123456789abcdef",
+                                                     git_validation=validation)
+                if changed == "index":
+                    (repo / "tracked.txt").write_text("later")
+                    git(repo, "add", "tracked.txt")
+                elif changed == "base":
+                    git(repo, "commit", "--quiet", "-m", "other")
+                elif changed == "branch":
+                    git(repo, "checkout", "-b", "other")
+                elif changed == "lock":
+                    (repo / ".git/index.lock").write_bytes(b"foreign")
+                def revalidate():
+                    if changed == "gate":
+                        raise adapter.FinalizationGitError("completion_check_stale")
+                before = git(repo, "rev-parse", "HEAD").stdout
+                with self.assertRaises(adapter.FinalizationGitError) as rejected:
+                    adapter.publish_candidate(repo, candidate=candidate, **binding,
+                                              git_validation=validation, revalidate=revalidate)
+                expected_code = {"lock": "finalization_git_busy", "gate": "completion_check_stale"}.get(
+                    changed, "review_target_mismatch")
+                self.assertEqual(rejected.exception.code, expected_code)
+                self.assertEqual(git(repo, "rev-parse", "HEAD").stdout, before)
+                if changed == "lock":
+                    self.assertEqual((repo / ".git/index.lock").read_bytes(), b"foreign")
+
+    def test_exact_candidate_source_scope_and_failed_observation_bound_reuse(self):
+        with self.project() as (repo, binding):
+            candidate = self.candidate(repo, binding)
+            other = repo.parent / "copy"
+            tree = git(repo, "rev-parse", candidate + "^{tree}").stdout.strip()
+            bad_parent = commit_tree(repo, tree, candidate, message="wrong parent")
+            wrong_tree = commit_tree(repo, git(repo, "rev-parse", binding["base"] + "^{tree}").stdout.strip(),
+                                     binding["base"], message="wrong tree")
+            # The replacement must retain the malformed objects being tested.
+            shutil.copytree(repo, other)
+            options = dict(expected_base_revision=binding["base"], expected_fingerprint=binding["fingerprint"])
+            with snapshots.snapshot_commit_validation() as validation, patch.object(snapshots, "stream_tree_entries",
+                    wraps=snapshots.stream_tree_entries) as walks:
+                def verify(path=repo, revision=candidate, **changes):
+                    return verify_git_snapshot_commit(path, revision, **(options | changes), git_validation=validation)
+                original = verify()
+                self.assertEqual(verify(), original)
+                self.assertEqual(walks.call_count, 1)
+                self.assertEqual(verify(other), original)
+                self.assertEqual(walks.call_count, 2)
+                nested = capture_git_snapshot(repo / "nested")
+                verify(repo / "nested", expected_fingerprint=nested.fingerprint)
+                self.assertEqual(walks.call_count, 3)
+                verify()
+                before = walks.call_count
+                repo.rename(repo.parent / "replaced")
+                shutil.copytree(other, repo)
+                self.assertEqual(verify(), original)
+                self.assertEqual(walks.call_count, before + 1, "replaced physical repository is a new source")
+                for revision, changes, expected_code in (
+                        (candidate, {"expected_fingerprint": "sha256:" + "0" * 64}, "review_target_mismatch"),
+                        (candidate, {"expected_base_revision": candidate}, "review_target_mismatch"),
+                        (bad_parent, {}, "review_target_mismatch"),
+                        (wrong_tree, {}, "review_target_mismatch"),
+                        ("1" * 40, {}, "git_commit_not_found_or_ambiguous")):
+                    with self.subTest(revision=revision, changes=changes):
+                        verify()
+                        with self.assertRaises(GitSnapshotError) as rejected:
+                            verify(revision=revision, **changes)
+                        self.assertEqual(rejected.exception.code, expected_code)
+                        before = walks.call_count
+                        self.assertEqual(verify(), original)
+                        self.assertEqual(walks.call_count, before + 1)
+
+    def test_missing_cached_tree_preserves_completion_error_and_invalidates_reuse(self):
+        with self.project() as (repo, binding), snapshots.snapshot_commit_validation() as validation:
+            candidate = self.candidate(repo, binding)
+            tree = git(repo, "rev-parse", candidate + "^{tree}").stdout.strip()
+            loose_tree = repo / ".git" / "objects" / tree[:2] / tree[2:]
+            original_tree = loose_tree.read_bytes()
+            original_mode = stat.S_IMODE(loose_tree.stat().st_mode)
+            options = dict(expected_base_revision=binding["base"], expected_fingerprint=binding["fingerprint"])
+            with patch.object(snapshots, "stream_tree_entries", wraps=snapshots.stream_tree_entries) as walks:
+                expected = verify_git_snapshot_commit(repo, candidate, **options, git_validation=validation)
+                loose_tree.chmod(original_mode | stat.S_IWRITE)
+                loose_tree.unlink()
+                try:
+                    errors = []
+                    for scope in (validation, None):
+                        with self.assertRaises(GitSnapshotError) as rejected:
+                            verify_git_snapshot_commit(repo, candidate, **options, git_validation=scope)
+                        errors.append((rejected.exception.code, rejected.exception.field))
+                    self.assertEqual(errors, [("review_target_mismatch", "completion_revision")] * 2)
+                finally:
+                    loose_tree.write_bytes(original_tree)
+                    loose_tree.chmod(original_mode)
+                before = walks.call_count
+                self.assertEqual(verify_git_snapshot_commit(repo, candidate, **options, git_validation=validation), expected)
+                self.assertEqual(walks.call_count, before + 1)
+
+    def test_source_observation_failures_use_completion_errors_and_invalidate_reuse(self):
+        for failed_arguments in (["rev-parse", "--path-format=absolute", "--git-dir"],
+                                 ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+                                 ["rev-parse", "--show-prefix"]):
+            with self.subTest(arguments=failed_arguments), self.project() as (repo, binding), \
+                    snapshots.snapshot_commit_validation() as validation:
+                candidate = self.candidate(repo, binding)
+                options = dict(expected_base_revision=binding["base"], expected_fingerprint=binding["fingerprint"])
+                read = snapshots.run_git_bytes
+                def unavailable_source(project, arguments, **kwargs):
+                    if arguments == failed_arguments:
+                        arguments = ["rev-parse", "--verify", "refs/heads/missing-source-observation"]
+                    return read(project, arguments, **kwargs)
+                with patch.object(snapshots, "stream_tree_entries", wraps=snapshots.stream_tree_entries) as walks:
+                    expected = verify_git_snapshot_commit(repo, candidate, **options, git_validation=validation)
+                    with patch.object(snapshots, "run_git_bytes", side_effect=unavailable_source):
+                        with self.assertRaises(GitSnapshotError) as rejected:
+                            verify_git_snapshot_commit(repo, candidate, **options, git_validation=validation)
+                    self.assertEqual((rejected.exception.code, rejected.exception.field),
+                                     ("review_target_mismatch", "completion_revision"))
+                    self.assertEqual(verify_git_snapshot_commit(repo, candidate, **options, git_validation=validation), expected)
+                    self.assertEqual(walks.call_count, 2)
+
+    def test_missing_repository_preserves_fresh_error_precedence_and_invalidates_reuse(self):
+        with self.project() as (repo, binding), snapshots.snapshot_commit_validation() as validation:
+            candidate = self.candidate(repo, binding)
+            options = dict(expected_base_revision=binding["base"], expected_fingerprint=binding["fingerprint"])
+            moved = repo.parent / "moved"
+            with patch.object(snapshots, "stream_tree_entries", wraps=snapshots.stream_tree_entries) as walks:
+                expected = verify_git_snapshot_commit(repo, candidate, **options, git_validation=validation)
+                for changes, code, field in (({}, "git_commit_not_found_or_ambiguous", "completion_revision"),
+                        ({"expected_base_revision": "invalid"}, "review_target_mismatch", "review_target_value"),
+                        ({"expected_fingerprint": "invalid"}, "review_target_mismatch", "review_target_value")):
+                    with self.subTest(changes=changes):
+                        verify_git_snapshot_commit(repo, candidate, **options, git_validation=validation)
+                        repo.rename(moved)
+                        try:
+                            errors = []
+                            for scope in (validation, None):
+                                with self.assertRaises(GitSnapshotError) as rejected:
+                                    verify_git_snapshot_commit(repo, candidate, **(options | changes),
+                                                               git_validation=scope)
+                                errors.append((rejected.exception.code, rejected.exception.field))
+                            self.assertEqual(errors, [(code, field)] * 2)
+                        finally:
+                            moved.rename(repo)
+                        before = walks.call_count
+                        self.assertEqual(verify_git_snapshot_commit(repo, candidate, **options,
+                                                                   git_validation=validation), expected)
+                        self.assertEqual(walks.call_count, before + 1)
+
+    def test_source_filesystem_and_encoding_failures_are_bounded_on_both_observations(self):
+        for failure in ("root_resolve", "git_resolve", "root_stat", "git_stat", "encoding", "nul_path"):
+            for observation in (1, 2):
+                with self.subTest(failure=failure, observation=observation), self.project() as (repo, binding), \
+                        snapshots.snapshot_commit_validation() as validation:
+                    candidate = self.candidate(repo, binding)
+                    options = dict(expected_base_revision=binding["base"], expected_fingerprint=binding["fingerprint"])
+                    expected = verify_git_snapshot_commit(repo, candidate, **options, git_validation=validation)
+                    resolve, read_stat, read_git = Path.resolve, Path.stat, snapshots.run_git_bytes
+                    identity = snapshots._read_snapshot_source_identity
+                    seen = 0
+                    def resolving(path, *args, **kwargs):
+                        if kwargs.get("strict") and ((failure == "root_resolve" and path == repo)
+                                or (failure == "git_resolve" and path == repo / ".git")):
+                            raise FileNotFoundError("isolated source unavailable")
+                        return resolve(path, *args, **kwargs)
+                    def stating(path, *args, **kwargs):
+                        if ((failure == "root_stat" and path == repo)
+                                or (failure == "git_stat" and path == repo / ".git")):
+                            raise PermissionError("isolated source unavailable")
+                        return read_stat(path, *args, **kwargs)
+                    def reading(project, arguments, **kwargs):
+                        if arguments == ["rev-parse", "--path-format=absolute", "--git-dir"]:
+                            if failure == "encoding":
+                                return b"\xff\n"
+                            if failure == "nul_path":
+                                return b"bad\x00path\n"
+                        return read_git(project, arguments, **kwargs)
+                    def observe(project):
+                        nonlocal seen
+                        seen += 1
+                        if seen != observation:
+                            return identity(project)
+                        with patch.object(Path, "resolve", resolving), patch.object(Path, "stat", stating), \
+                                patch.object(snapshots, "run_git_bytes", side_effect=reading):
+                            return identity(project)
+                    with patch.object(snapshots, "_read_snapshot_source_identity", side_effect=observe):
+                        with self.assertRaises(GitSnapshotError) as rejected:
+                            verify_git_snapshot_commit(repo, candidate, **options, git_validation=validation)
+                    self.assertEqual((rejected.exception.code, rejected.exception.field),
+                                     ("review_target_mismatch", "completion_revision"))
+                    self.assertIsNone(validation.key)
+                    self.assertIsNone(validation.snapshot)
+                    with patch.object(snapshots, "stream_tree_entries", wraps=snapshots.stream_tree_entries) as walks:
+                        self.assertEqual(verify_git_snapshot_commit(repo, candidate, **options,
+                                                                   git_validation=validation), expected)
+                        self.assertEqual(walks.call_count, 1)
+
+    def test_source_paths_preserve_unicode_separators_and_filesystem_bytes(self):
+        names = ["repo-" + value + "-path" for value in ("\u0085", "\u2028", "\u2029")]
+        if os.name != "nt":
+            names += ["repo-with\nembedded-and-final\n", os.fsdecode(b"repo-\xff-path")]
+        for name in names:
+            with self.subTest(name=name), self.project(name=name) as (repo, binding), \
+                    snapshots.snapshot_commit_validation() as validation:
+                candidate = self.candidate(repo, binding)
+                options = dict(expected_base_revision=binding["base"], expected_fingerprint=binding["fingerprint"])
+                expected = verify_git_snapshot_commit(repo, candidate, **options)
+                with patch.object(snapshots, "stream_tree_entries", wraps=snapshots.stream_tree_entries) as walks:
+                    self.assertEqual(verify_git_snapshot_commit(repo, candidate, **options,
+                                                               git_validation=validation), expected)
+                    self.assertEqual(verify_git_snapshot_commit(repo, candidate, **options,
+                                                               git_validation=validation), expected)
+                    self.assertEqual(walks.call_count, 1)
+
     def test_sha256_candidate_preserves_full_fingerprint_and_index(self):
         with tempfile.TemporaryDirectory() as temporary:
             repo = Path(temporary) / "project"
@@ -70,8 +309,14 @@ class FinalizationGitTests(unittest.TestCase):
             index, worktree = (repo / ".git/index").read_bytes(), (repo / "tracked.txt").read_bytes()
             binding = dict(base=base, fingerprint=snapshot.fingerprint, expected_branch=adapter.branch(repo))
             candidate = self.candidate(repo, binding)
-            verified = verify_git_snapshot_commit(repo, candidate, expected_base_revision=base,
-                                                  expected_fingerprint=snapshot.fingerprint)
+            with snapshots.snapshot_commit_validation() as validation, patch.object(snapshots, "stream_tree_entries",
+                    wraps=snapshots.stream_tree_entries) as walks:
+                verified = verify_git_snapshot_commit(repo, candidate, expected_base_revision=base,
+                    expected_fingerprint=snapshot.fingerprint, git_validation=validation)
+                repeated = verify_git_snapshot_commit(repo, candidate, expected_base_revision=base,
+                    expected_fingerprint=snapshot.fingerprint, git_validation=validation)
+                self.assertEqual(repeated, verified)
+                self.assertEqual(walks.call_count, 1)
             self.assertEqual(verified.fingerprint, snapshot.fingerprint)
             self.assertEqual(verified.entry_count, 60_001)
             self.assertEqual((repo / ".git/index").read_bytes(), index)
@@ -81,17 +326,18 @@ class FinalizationGitTests(unittest.TestCase):
             replacement = git(repo, "rev-parse", ":tracked.txt").stdout.strip()
             git(repo, "update-index", "--cacheinfo", f"100644,{replacement},{paths[0]}")
             wrong = commit_tree(repo, git(repo, "write-tree").stdout.strip(), base, message="Wrong unchanged leaf")
-            with self.assertRaises(GitSnapshotError):
+            with self.assertRaises(GitSnapshotError) as rejected:
                 verify_git_snapshot_commit(repo, wrong, expected_base_revision=base,
                                            expected_fingerprint=snapshot.fingerprint)
+            self.assertEqual(rejected.exception.code, "review_target_mismatch")
             with self.assertRaises(adapter.FinalizationGitError):
                 self.candidate(repo, binding)
             self.assertEqual(git(repo, "rev-parse", "HEAD").stdout.strip(), base)
 
     @contextmanager
-    def project(self):
+    def project(self, *, name="project"):
         with tempfile.TemporaryDirectory() as temporary:
-            repo = Path(temporary) / "project"
+            repo = Path(temporary) / name
             init_git_repo(repo)
             git(repo, "config", "user.name", "TaskGov Test")
             git(repo, "config", "user.email", "taskgov@example.invalid")

@@ -68,7 +68,7 @@ def _object_id(raw):
     return value
 
 
-def create_candidate(repo, *, base, fingerprint, expected_branch, task_id):
+def create_candidate(repo, *, base, fingerprint, expected_branch, task_id, git_validation=None):
     """Create immutable objects from the reviewed entries, leaving refs untouched.
 
     Nested governed directories cannot safely publish a whole-repository tree
@@ -101,7 +101,8 @@ def create_candidate(repo, *, base, fingerprint, expected_branch, task_id):
     # Project rules requiring them use the explicit manual completion path.
     candidate = _object_id(_write(repo, ["-c", "commit.gpgSign=false", "commit-tree", tree, "-p", base],
                                   ("Complete reviewed Task " + task_id + "\n").encode("ascii")))
-    verify_git_snapshot_commit(repo, candidate, expected_base_revision=base, expected_fingerprint=fingerprint)
+    verify_git_snapshot_commit(repo, candidate, expected_base_revision=base, expected_fingerprint=fingerprint,
+                               git_validation=git_validation)
     matching_snapshot(repo, base=base, fingerprint=fingerprint, expected_branch=expected_branch)
     return candidate
 
@@ -135,9 +136,10 @@ def _git_locks(repo):
             path.unlink()
 
 
-def published(repo, *, candidate, base, fingerprint, expected_branch):
+def published(repo, *, candidate, base, fingerprint, expected_branch, git_validation=None):
     """Observe publication; a different ref or HEAD never authorizes replay."""
-    verify_git_snapshot_commit(repo, candidate, expected_base_revision=base, expected_fingerprint=fingerprint)
+    verify_git_snapshot_commit(repo, candidate, expected_base_revision=base, expected_fingerprint=fingerprint,
+                               git_validation=git_validation)
     if branch(repo) != expected_branch:
         _fail("review_target_mismatch")
     return resolve_git_commit(repo, "HEAD") == candidate and resolve_git_commit(repo, expected_branch) == candidate
@@ -202,19 +204,22 @@ def _publish_transaction(repo, *, candidate, base, expected_branch, revalidate):
             process.stdout.close()
 
 
-def publish_candidate(repo, *, candidate, base, fingerprint, expected_branch, revalidate=lambda: None):
+def publish_candidate(repo, *, candidate, base, fingerprint, expected_branch, revalidate=lambda: None,
+                      git_validation=None):
     """CAS the existing branch after exact checks, then verify the actual result.
 
     The caller persists publishing intent first. Failure or lost response must
     be reconciled through published(), not an automatic update-ref retry.
     """
-    verify_git_snapshot_commit(repo, candidate, expected_base_revision=base, expected_fingerprint=fingerprint)
+    verify_git_snapshot_commit(repo, candidate, expected_base_revision=base, expected_fingerprint=fingerprint,
+                               git_validation=git_validation)
     with _git_locks(repo):
         matching_snapshot(repo, base=base, fingerprint=fingerprint, expected_branch=expected_branch)
         revalidate()
         matching_snapshot(repo, base=base, fingerprint=fingerprint, expected_branch=expected_branch)
         _publish_transaction(repo, candidate=candidate, base=base, expected_branch=expected_branch,
                              revalidate=revalidate)
-        if not published(repo, candidate=candidate, base=base, fingerprint=fingerprint, expected_branch=expected_branch):
+        if not published(repo, candidate=candidate, base=base, fingerprint=fingerprint,
+                         expected_branch=expected_branch, git_validation=git_validation):
             _fail("finalization_git_outcome_unknown")
     return candidate

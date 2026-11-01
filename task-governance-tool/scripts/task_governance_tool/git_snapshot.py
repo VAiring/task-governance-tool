@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
+import stat
 import subprocess
 import threading
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -95,6 +98,69 @@ class GitIndexObservation:
 class GitTreeObservation:
     identity: GitStreamIdentity
     entry_count: int
+
+
+class _SnapshotCommitValidation:
+    """One lexical execution's successful immutable-content observation only."""
+
+    def __init__(self):
+        self.thread = threading.get_ident()
+        self.active = True
+        self.key = None
+        self.snapshot = None
+
+    def clear(self):
+        self.key = self.snapshot = None
+
+
+@contextmanager
+def snapshot_commit_validation():
+    """Internal finalizer scope; never inherited by standalone/manual calls."""
+    validation = _SnapshotCommitValidation()
+    try:
+        yield validation
+    finally:
+        validation.clear()
+        validation.active = False
+
+
+def _snapshot_source_identity(repo: Path) -> tuple:
+    # Resolve the real worktree/common repository each time. The path alone is
+    # insufficient after a .git file redirect or replacement of a directory.
+    try:
+        return _read_snapshot_source_identity(repo)
+    except (OSError, ValueError, RuntimeError) as exc:
+        # Filesystem races, invalid path encoding and strict-resolution failures
+        # are failed completion observations, never an unbounded host exception.
+        raise snapshot_error("review_target_mismatch", "Git source identity is unavailable",
+                             "completion_revision") from exc
+
+
+def _read_snapshot_source_identity(repo: Path) -> tuple:
+    root = Path(repo).resolve(strict=True)
+
+    def directory(option: str) -> Path:
+        # One path per command: embedded LF and Unicode line separators belong
+        # to the filename. Remove only Git's final byte, using filesystem decoding.
+        raw = run_git_bytes(root, ["rev-parse", "--path-format=absolute", option],
+                            code="review_target_mismatch", field="completion_revision",
+                            message="Git source identity is unavailable")
+        if not raw.endswith(b"\n") or raw == b"\n" or b"\0" in raw:
+            raise snapshot_error("review_target_mismatch", "Git source identity is unavailable", "completion_revision")
+        path = Path(os.fsdecode(raw[:-1]))
+        if not path.is_absolute():
+            raise snapshot_error("review_target_mismatch", "Git source identity is unavailable", "completion_revision")
+        return path.resolve(strict=True)
+
+    identities = []
+    for path in (root, directory("--git-dir"), directory("--git-common-dir")):
+        details = path.stat()
+        if not stat.S_ISDIR(details.st_mode):
+            raise snapshot_error("review_target_mismatch", "Git source identity is unavailable", "completion_revision")
+        identities.append((str(path), details.st_dev, details.st_ino))
+    return (*identities, run_git_bytes(root, ["rev-parse", "--show-prefix"],
+                                      code="review_target_mismatch", field="completion_revision",
+                                      message="Git source identity is unavailable"))
 
 
 def snapshot_error(code: str, message: str, field: str) -> GitSnapshotError:
@@ -799,7 +865,26 @@ def verify_git_snapshot_commit(
     *,
     expected_base_revision: str,
     expected_fingerprint: str,
+    git_validation: _SnapshotCommitValidation | None = None,
 ) -> GitSnapshot:
+    try:
+        return _verify_git_snapshot_commit(repo, revision,
+            expected_base_revision=expected_base_revision,
+            expected_fingerprint=expected_fingerprint, git_validation=git_validation)
+    except BaseException:
+        if type(git_validation) is _SnapshotCommitValidation:
+            git_validation.clear()
+        raise
+
+
+def _verify_git_snapshot_commit(
+    repo: Path, revision: str, *, expected_base_revision: str,
+    expected_fingerprint: str, git_validation: _SnapshotCommitValidation | None,
+) -> GitSnapshot:
+    if git_validation is not None and (type(git_validation) is not _SnapshotCommitValidation
+            or git_validation.thread != threading.get_ident()):
+        raise snapshot_error("review_target_mismatch", "Git validation scope is invalid", "completion_revision")
+    reusable = git_validation is not None and git_validation.active
     if (
         not FULL_GIT_OBJECT_ID.fullmatch(expected_base_revision)
         or set(expected_base_revision) == {"0"}
@@ -828,6 +913,24 @@ def verify_git_snapshot_commit(
             "completion commit must have exactly the reviewed base as its parent",
             "completion_revision",
         )
+    # Keep the independent validator's input/commit/topology error precedence.
+    # Source proof is needed only before inspecting or sharing tree contents.
+    source = _snapshot_source_identity(repo) if reusable else None
+    # Full object IDs, actual source/scope, exact expectations and decoder rules
+    # bind the value. Commit resolution/header reads remain fresh on every hit.
+    key = (source, canonical_commit, tree_id, expected_base_revision,
+           expected_fingerprint, MANIFEST_PREFIX, GIT_RECORD_BYTE_LIMIT,
+           frozenset(INDEX_LEAF_MODES), frozenset(SPARSE_DIRECTORY_MODES))
+    if reusable:
+        if git_validation.key == key and git_validation.snapshot is not None:
+            if run_git_bytes(repo, ["cat-file", "-t", tree_id],
+                             code="review_target_mismatch", field="completion_revision",
+                             message="completion commit tree output is malformed").strip() != b"tree":
+                raise snapshot_error("review_target_mismatch", "completion tree is unavailable", "completion_revision")
+            if source != _snapshot_source_identity(repo):
+                raise snapshot_error("review_target_mismatch", "Git source identity changed", "completion_revision")
+            return git_validation.snapshot
+        git_validation.clear()
     # Hash every validated leaf without buffering the whole listing/manifest.
     # stream_tree_entries preserves the governed subtree, strict raw ordering,
     # object format, record bound and subprocess timeout/cleanup contract.
@@ -846,8 +949,13 @@ def verify_git_snapshot_commit(
             "completion commit tree does not match the reviewed Git snapshot",
             "completion_revision",
         )
-    return GitSnapshot(
+    snapshot = GitSnapshot(
         base_revision=parent_ids[0],
         fingerprint=fingerprint,
         entry_count=observation.entry_count,
     )
+    if reusable:
+        if source != _snapshot_source_identity(repo):
+            raise snapshot_error("review_target_mismatch", "Git source identity changed", "completion_revision")
+        git_validation.key, git_validation.snapshot = key, snapshot
+    return snapshot

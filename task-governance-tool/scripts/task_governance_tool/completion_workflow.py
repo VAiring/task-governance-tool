@@ -122,6 +122,7 @@ def prepare_request_against_basis(
     *,
     input_error: TaskValidationError | TaskRepositoryError | None = None,
     defer_gate_validation: bool = False,
+    git_validation=None,
 ) -> CompletionPlan:
     """Run the same state-first completion preflight for check and write."""
     if input_error is not None:
@@ -132,6 +133,7 @@ def prepare_request_against_basis(
         target.project,
         request,
         defer_gate_validation=defer_gate_validation,
+        git_validation=git_validation,
     )
 
 
@@ -144,6 +146,7 @@ def check_completion_request(
     runner_selector: RunnerSelectionProvider | None = None,
     caller: CallerIdentity = CallerIdentity(None),
     finalization_basis=None,
+    git_validation=None,
 ) -> CompletionCheckOutcome:
     """Check one request with read/close/Git/read and no stored authority."""
     manager = (
@@ -176,6 +179,7 @@ def check_completion_request(
                 first_preselector_basis,
                 target,
                 request,
+                git_validation=git_validation,
                 defer_gate_validation=(
                     first_preselector_basis.task.get(
                         "review_target_runner_basis_version", 0
@@ -300,6 +304,7 @@ def execute_completion_request(
     runner_selector: RunnerSelectionProvider | None = None,
     caller: CallerIdentity = CallerIdentity(None),
     finalization_basis=None,
+    git_validation=None,
 ) -> EditTaskResult:
     """Observe outside the lock, then delegate one locked existing transition."""
     with closing(connect_initialized_readonly(target, review_task_id=request.task_id, operation_local=True)) as connection:
@@ -323,6 +328,7 @@ def execute_completion_request(
         preselector_basis,
         target,
         request,
+        git_validation=git_validation,
         defer_gate_validation=(
             preselector_basis.task.get(
                 "review_target_runner_basis_version", 0

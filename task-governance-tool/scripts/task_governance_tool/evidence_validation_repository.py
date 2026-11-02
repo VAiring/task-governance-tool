@@ -907,6 +907,7 @@ def _validate_selected_reference_source_chunk(
 
     from task_governance_tool.evidence_repository import (
         _artifact_manifest_target_key,
+        _read_reference_source_rows,
     )
     from task_governance_tool.review_repository import (
         REVIEW_FINDING_ID_PATTERN,
@@ -1186,43 +1187,10 @@ def _validate_selected_reference_source_chunk(
         if observed_target_keys != not_required_target_keys:
             raise evidence_ledger_inconsistent()
 
-    selected_sources_json = json.dumps(
-        [list(key) for key in sorted(source_owners)],
-        ensure_ascii=True,
-        separators=(",", ":"),
+    reference_rows = _read_reference_source_rows(
+        connection, project_id=expected_project_id, source_keys=source_owners.keys(),
+        schema_version=source_schema_version, expected_count=len(source_owners), identity_only=True,
     )
-    # Seek every Reference with this source identity before checking its owner.
-    # Do not restrict the seek to the expected Task: a different owner is corruption.
-    source_join = (
-        """CROSS JOIN evidence_references AS reference
-                       INDEXED BY idx_evidence_references_source_identity
-                 CROSS JOIN tasks AS owner
-                       INDEXED BY idx_tasks_project_task_identity
-                 WHERE reference.project_id = ?"""
-        if current_schema_version(connection) >= 37 else
-        """CROSS JOIN tasks AS owner
-               INDEXED BY idx_tasks_project_task_identity
-         CROSS JOIN evidence_references AS reference
-               INDEXED BY idx_evidence_references_source
-         WHERE owner.project_id = ?"""
-    )
-    reference_rows = connection.execute(
-        f"""
-        WITH selected_sources(value) AS (
-            SELECT value FROM json_each(?)
-        )
-        SELECT reference.evidence_reference_id, reference.project_id,
-               reference.task_id, reference.source_kind, reference.source_id
-          FROM selected_sources AS selected
-                 {source_join}
-           AND reference.project_id = owner.project_id
-           AND reference.task_id = owner.task_id
-           AND reference.source_kind = json_extract(selected.value, '$[0]')
-           AND reference.source_id = json_extract(selected.value, '$[1]')
-         LIMIT ?
-        """,
-        (selected_sources_json, expected_project_id, len(source_owners) + 1),
-    ).fetchall()
     seen: set[tuple[str, str]] = set()
     for row in reference_rows:
         reference_id = row["evidence_reference_id"]

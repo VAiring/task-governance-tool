@@ -11,6 +11,7 @@ import json
 import re
 import secrets
 import sqlite3
+from collections.abc import Collection
 from typing import Any
 
 
@@ -1414,47 +1415,62 @@ def _read_owner_indexed_evidence_references(
     }
     if len(selected_source_keys) != len(selected_source_owners):
         raise evidence_ledger_inconsistent()
-    selected_sources_json = json.dumps(
-        [list(key) for key in sorted(selected_source_keys)],
-        ensure_ascii=True,
-        separators=(",", ":"),
+    return _read_reference_source_rows(
+        connection, project_id=selected_project_id, source_keys=selected_source_keys,
+        schema_version=_storage.current_schema_version(connection),
+        expected_count=expected_count, identity_only=False,
     )
-    # One row beyond the expected set proves inconsistency and bounds
-    # materialization. Pre-37 schemas retain their owner-leading lookup.
-    # Seek every Reference with this source identity before checking its owner.
-    # Do not restrict the seek to the expected Task: a different owner is corruption.
-    source_join = (
-        """CROSS JOIN evidence_references AS reference
-                       INDEXED BY idx_evidence_references_source_identity
-                 CROSS JOIN tasks AS owner
-                       INDEXED BY idx_tasks_project_task_identity
-                 WHERE reference.project_id = ?"""
-        if _storage.current_schema_version(connection) >= 37 else
-        """CROSS JOIN tasks AS owner
-                       INDEXED BY idx_tasks_project_task_identity
-                 CROSS JOIN evidence_references AS reference
-                       INDEXED BY idx_evidence_references_source
-                 WHERE owner.project_id = ?"""
+
+
+def _read_reference_source_rows(
+    connection: sqlite3.Connection, *, project_id: str,
+    source_keys: Collection[tuple[str, str]], schema_version: int,
+    expected_count: int, identity_only: bool,
+) -> list[sqlite3.Row]:
+    """Select actual References first; an absent owner is a fault, not a filter."""
+    if not source_keys:
+        return []
+    columns = (
+        "reference.evidence_reference_id, reference.project_id, reference.task_id, "
+        "reference.source_kind, reference.source_id" if identity_only else "reference.*"
     )
-    reference_rows = connection.execute(
-        f"""
-                WITH selected_sources(value) AS (
-                    SELECT value FROM json_each(?)
-                )
-                SELECT reference.*
-                  FROM selected_sources AS selected
-                 {source_join}
-                   AND reference.project_id = owner.project_id
-                   AND reference.task_id = owner.task_id
-                   AND reference.source_kind =
-                         json_extract(selected.value, '$[0]')
-                   AND reference.source_id =
-                         json_extract(selected.value, '$[1]')
-                 LIMIT ?
-                """,
-        (selected_sources_json, selected_project_id, expected_count + 1),
+    if schema_version >= 37:
+        source = """selected_sources AS selected CROSS JOIN evidence_references AS reference
+                    INDEXED BY idx_evidence_references_source_identity"""
+        owner_match = ""
+    else:
+        # Seek past each distinct owner in the Reference index. This includes
+        # orphan keys and skips all intervening generations for the same owner.
+        source = """(
+            WITH RECURSIVE owner_keys(task_id) AS (
+                SELECT (SELECT task_id FROM evidence_references INDEXED BY idx_evidence_references_source
+                         WHERE project_id = :project_id ORDER BY task_id LIMIT 1)
+                UNION ALL
+                SELECT (SELECT r.task_id FROM evidence_references AS r INDEXED BY idx_evidence_references_source
+                         WHERE r.project_id = :project_id AND r.task_id > prior.task_id
+                         ORDER BY r.task_id LIMIT 1)
+                  FROM owner_keys AS prior WHERE prior.task_id IS NOT NULL
+            )
+            SELECT task_id FROM owner_keys WHERE task_id IS NOT NULL
+        ) AS indexed_owner
+        CROSS JOIN selected_sources AS selected
+        CROSS JOIN evidence_references AS reference INDEXED BY idx_evidence_references_source"""
+        owner_match = "AND reference.task_id = indexed_owner.task_id"
+    rows = connection.execute(
+        f"""WITH selected_sources(value) AS (SELECT value FROM json_each(:source_keys))
+            SELECT {columns}, owner.task_id AS matched_owner FROM {source}
+            LEFT JOIN tasks AS owner INDEXED BY idx_tasks_project_task_identity
+              ON owner.project_id = reference.project_id AND owner.task_id = reference.task_id
+            WHERE reference.project_id = :project_id {owner_match}
+              AND reference.source_kind = json_extract(selected.value, '$[0]')
+              AND reference.source_id = json_extract(selected.value, '$[1]')
+            LIMIT :limit""",
+        {"source_keys": json.dumps(sorted(source_keys), separators=(",", ":")),
+         "project_id": project_id, "limit": expected_count + 1},
     ).fetchall()
-    return reference_rows
+    if any(row["matched_owner"] is None for row in rows):
+        raise _storage.evidence_ledger_inconsistent()
+    return rows
 
 
 def validate_manifest_evidence_references(

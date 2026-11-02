@@ -818,12 +818,18 @@ Earlier migration definitions and owned fingerprints remain immutable.
 
 `evidence_repository._read_owner_indexed_evidence_references` and
 `evidence_validation_repository._validate_selected_reference_source_chunk`
-order the current query as selected source keys, exact project/kind/ID Reference
-seeks, then Task identity lookups. The Task join validates actual owners without
-enumerating all Tasks in the project. The two consumers retain their complete
-source expectations, type/owner checks and expected-count-plus-one limit. The
-old owner-first query remains only for supported source schemas through 36;
-the current schema requires the exact new index, with no missing-index fallback.
+share the same source-row selector. An empty selection returns before reading
+References on every supported schema. On schema 37 it seeks References by exact
+project/kind/ID for each selected source. A left join on the actual project/Task
+identity preserves missing owners for rejection. Each consumer then validates
+its expected ownership, types and duplicates within the expected-count-plus-one
+bound. Through schema 36, the selector seeks the first stored owner key in the
+project's Reference index, then seeks the next strictly greater owner key. For
+each distinct owner it probes the full project/owner/kind/source key. This
+keeps orphan owners visible and skips intervening rows when an unrelated owner
+accumulates history. The compatibility cost depends on the number of distinct
+stored owner keys and selected sources. The current schema requires its
+exact source-first index and never falls back to that compatibility path.
 
 `verification_receipt_repository.read_verification_receipt_snapshot` uses the
 Task-first `(task_id,source_kind)` index for its Reference inventory on schema

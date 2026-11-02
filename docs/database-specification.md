@@ -814,6 +814,10 @@ all-kind Reference validation must seek all References for each selected source
 before checking their Task owners. Restricting the seek to the expected Task
 would hide corrupt cross-owned References and is forbidden. Existing type,
 duplicate, source, binding and digest rejection remains unchanged.
+A Reference whose project/Task has no matching Task row is also inconsistent:
+its absence must not suppress the Reference before validation. This applies to
+both the manifest read and the all-kind selected-source read, including an
+extra orphan alongside an otherwise valid Reference.
 
 The companion non-unique `idx_evidence_references_task_kind` index covers
 `evidence_references(task_id,source_kind)`. Verification Receipt Reference
@@ -825,7 +829,8 @@ source consistency checks remain unchanged.
 For a fixed selected source/relation closure, unrelated Task history must not
 increase reverse-lookup or Verification Receipt inventory work. The existing expected-count-plus-one bound limits
 materialization; it is not a substitute for indexed selection. Sources through
-36 retain their admitted owner-leading compatibility query. Ordinary commands
+36 use the existing owner-leading Reference index without assuming that every
+owner exists; they do not require the newer index. Ordinary commands
 never create indexes or silently fall back to a whole-project audit.
 
 The schema inventory is 52 tables, 64 explicit indexes and 107 triggers. Only

@@ -700,9 +700,20 @@ does not change normal Task writer admission or Setup/recovery protections.
 `sqlite_admission.py` composes repository structural readers inside a lexical
 scope. `_inspect_database`, `_admit_current_database`, current structure/Task
 read admission and standalone schema admission own their scopes; nested calls
-join, and exit discards all facts. The retained connection may outlive that
-scope, but its facts do not. Later Task/domain composition remains independently
-validated until its own consumer is explicitly converted.
+join, and exit discards their structural facts. For public `task show` and
+`task context`, the resolver also lends its observed migration version to
+readers of that exact query-only transaction. It observes the connection
+before the first version query and releases the observation on command exit.
+The inner structural scope and the retained version share one native observer.
+Each owner releases only the observer it acquired. If the connection object is
+reinitialized, its replacement handle establishes its own observer and facts.
+Nested savepoints and bounded read-only CTEs can preserve the version inside the
+resolver's explicit query-only BEGIN. A traced write attempt, including a
+CTE-prefixed write rejected by SQLite, revokes it. Unclassified or oversized
+CTEs require a fresh read. Transaction end, DDL and connection replacement
+also require a fresh read.
+Readers after external Git selection establish a fresh basis. Task, Evidence,
+Receipt and review validation still run on their original paths.
 
 `same_read_fact` accepts only immutable values produced by the decorated
 repository functions: schema version, fully validated migration-marker set,
@@ -717,10 +728,16 @@ all other statements conservatively expire the epoch, including transaction
 controls through cursors, scripts and implicit commits. No SQL text is retained
 or logged. Existing caller trace callbacks are forwarded and restored, including
 replacement during admission. Reuse also checks native transaction presence,
-write count and row/text factories. Main/temp schema cookies and query-only/FK
+write count and row/text factories. Assigning or deleting either factory expires
+that epoch, including a temporary replacement restored during a multi-query
+read. Only the version acquired while the retained observation remains valid
+can be reused. The main/temp schema cookies and query-only/FK
 controls are read once for each observed epoch, then reused while those cheap
-observations remain unchanged. Native `setconfig`, copy and deserialize invalidate
-their affected connection before and after the attempt, including failure.
+observations remain unchanged. Replacing the native authorizer, SQL functions,
+collations, progress handler or execution limits expires the observations so
+the next query uses the new policy and implementations. These changes, native
+`setconfig`, copy and deserialize invalidate the affected connection before
+and after the attempt, including failure.
 Post-call invalidation also covers observation first established during native
 argument conversion or callbacks; a pre-call increment alone cannot cover facts
 created before the native change takes effect. A control change during probing cannot establish a

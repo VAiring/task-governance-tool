@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from task_governance_tool.sqlite_admission import admission_scope, same_read_fact
+from task_governance_tool.sqlite_admission import admission_scope, retained_version_fact, same_read_fact
 
 if TYPE_CHECKING:
     from task_governance_tool.evidence_projection import _RenderedProjection
@@ -1166,6 +1166,7 @@ def column_exists(connection: sqlite3.Connection, table_name: str, column_name: 
     return column_name in {str(row["name"]) for row in rows}
 
 
+@retained_version_fact
 @same_read_fact
 def current_schema_version(connection: sqlite3.Connection) -> int:
     if not table_exists(connection, "schema_migrations"):

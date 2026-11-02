@@ -317,6 +317,14 @@ def state_resolution_failure_result(
 
 
 def handle_command(context: CommandContext) -> CommandResult:
+    if context.target_override is None and context.command in {"task.show", "task.context"}:
+        from task_governance_tool.sqlite_admission import retained_task_read
+        with retained_task_read():
+            return _handle_command(context)
+    return _handle_command(context)
+
+
+def _handle_command(context: CommandContext) -> CommandResult:
     if context.command == "backup.protect":
         from task_governance_tool.protection import run_protection
         return run_protection(context, cli_script_path())

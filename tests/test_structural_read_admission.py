@@ -11,7 +11,10 @@ from unittest import mock
 from task_governance_tool import storage as s, state_resolver as resolver
 from task_governance_tool import schema_evidence_reference_index as schema
 from task_governance_tool.project_binding_repository import read_project_binding_state
-from task_governance_tool.sqlite_admission import admission_scope, structural_read, same_read_fact
+from task_governance_tool.sqlite_admission import (
+    AdmissionConnection, admission_scope, observe_retained_task_connection, read_epoch,
+    retained_task_read, same_read_fact, structural_read,
+)
 from tests.test_routine_backup import make_target
 
 
@@ -98,6 +101,167 @@ class StructuralReadAdmissionTests(unittest.TestCase):
                         connection.execute("RELEASE nested_caller")
                     compose()
                     self.assertEqual(owned.call_count, 3)
+
+    def test_retained_version_expires_on_commit_replacement_and_local_schema_change(self):
+        with closing(s.connect_readonly(self.target.db_path)) as connection:
+            trace = []
+            connection.set_trace_callback(trace.append)
+            def versions():
+                return sum("COUNT(*) AS marker_count FROM schema_migrations" in sql for sql in trace)
+            with retained_task_read():
+                observe_retained_task_connection(connection)
+                self.assertEqual(s.current_schema_version(connection), s.SCHEMA_VERSION)
+                connection.execute("SAVEPOINT nested")
+                connection.execute("WITH r AS (SELECT 1) SELECT * FROM r").fetchall()
+                connection.execute("ROLLBACK TO nested")
+                connection.execute("RELEASE nested")
+                self.assertEqual(s.current_schema_version(connection), s.SCHEMA_VERSION)
+                self.assertEqual(versions(), 1)
+                connection.commit()
+                connection.execute("BEGIN")
+                self.assertEqual(s.current_schema_version(connection), s.SCHEMA_VERSION)
+                self.assertEqual(versions(), 2)
+            self.assertEqual(s.current_schema_version(connection), s.SCHEMA_VERSION)
+            self.assertEqual(versions(), 3)
+            with retained_task_read(), closing(s.connect_readonly(self.target.db_path)) as other:
+                observe_retained_task_connection(connection)
+                self.assertEqual(s.current_schema_version(connection), s.SCHEMA_VERSION)
+                connection.execute("PRAGMA query_only=OFF")
+                connection.execute("CREATE TEMP TABLE schema_migrations(version)")
+                connection.execute("INSERT INTO temp.schema_migrations VALUES (2)")
+                self.assertEqual(s.current_schema_version(connection), 2)
+                self.assertEqual(s.current_schema_version(other), s.SCHEMA_VERSION)
+                connection.execute("UPDATE temp.schema_migrations SET version=-1")
+                with self.assertRaises(s.StorageError):
+                    s.current_schema_version(connection)
+
+    def test_retained_version_falls_back_on_writable_connection_and_native_control(self):
+        for opener in (s.connect_existing, s.connect_readonly):
+            with closing(opener(self.target.db_path)) as connection, retained_task_read():
+                if not connection.in_transaction:
+                    connection.execute("BEGIN")
+                trace = []
+                connection.set_trace_callback(trace.append)
+                observe_retained_task_connection(connection)
+                s.current_schema_version(connection)
+                s.current_schema_version(connection)
+                if opener is s.connect_readonly:
+                    connection.setconfig(sqlite3.SQLITE_DBCONFIG_ENABLE_FKEY, True)
+                    s.current_schema_version(connection)
+                self.assertEqual(sum("COUNT(*) AS marker_count" in sql for sql in trace), 2)
+
+    def test_retained_version_expires_on_cte_writes_even_when_query_only_rejects_them(self):
+        for statement in ("UPDATE schema_migrations SET name=name",
+                          "DELETE FROM schema_migrations",
+                          "INSERT INTO schema_migrations SELECT * FROM schema_migrations",
+                          "REPLACE INTO schema_migrations SELECT * FROM schema_migrations",
+                          "/*" + "x" * 4100 + "*/ uPdAtE schema_migrations SET name=name"):
+            with self.subTest(statement=statement), closing(s.connect_readonly(self.target.db_path)) as connection:
+                trace = []
+                connection.set_trace_callback(trace.append)
+                with retained_task_read():
+                    observe_retained_task_connection(connection)
+                    self.assertEqual(s.current_schema_version(connection), s.SCHEMA_VERSION)
+                    with self.assertRaises(sqlite3.OperationalError) as denied:
+                        connection.execute("WITH r AS (SELECT 1) " + statement)
+                    self.assertEqual(denied.exception.sqlite_errorcode, sqlite3.SQLITE_READONLY)
+                    self.assertEqual(s.current_schema_version(connection), s.SCHEMA_VERSION)
+                self.assertEqual(sum("COUNT(*) AS marker_count" in sql for sql in trace), 2)
+
+    def test_authorizer_replacement_cannot_reuse_either_version_fact(self):
+        def deny_markers(action, table, column, database, trigger):
+            if action == sqlite3.SQLITE_READ and table == "schema_migrations":
+                return sqlite3.SQLITE_DENY
+            return sqlite3.SQLITE_OK
+
+        with closing(s.connect_readonly(self.target.db_path)) as connection, structural_read(), retained_task_read():
+            observe_retained_task_connection(connection)
+            self.assertEqual(s.current_schema_version(connection), s.SCHEMA_VERSION)
+            connection.set_authorizer(deny_markers)
+            with self.assertRaises(sqlite3.DatabaseError) as denied:
+                s.current_schema_version(connection)
+            self.assertEqual(denied.exception.sqlite_errorcode, sqlite3.SQLITE_AUTH)
+            connection.set_authorizer(None)
+            self.assertEqual(s.current_schema_version(connection), s.SCHEMA_VERSION)
+
+    def test_transient_factory_change_during_version_acquisition_is_never_reused(self):
+        with closing(s.connect_readonly(self.target.db_path)) as connection, structural_read(), retained_task_read():
+            observe_retained_task_connection(connection)
+            def callback(sql):
+                if "SELECT 1 FROM sqlite_master" in sql:
+                    connection.row_factory = lambda cursor, row: {"marker_count": 1, "version": 1}
+                elif "COUNT(*) AS marker_count" in sql:
+                    # The executing cursor already inherited the transient factory.
+                    connection.row_factory = sqlite3.Row
+            connection.set_trace_callback(callback)
+            self.assertEqual(s.current_schema_version(connection), 1)
+            self.assertIs(connection.row_factory, sqlite3.Row)
+            connection.set_trace_callback(None)
+            self.assertEqual(s.current_schema_version(connection), s.SCHEMA_VERSION)
+
+            @same_read_fact
+            def read_text(reader):
+                return reader.execute("SELECT 'original'").fetchone()[0]
+            def transient_text(raw):
+                connection.text_factory = str
+                return "transient"
+            def replace_text(sql):
+                if sql == "SELECT 'original'":
+                    connection.text_factory = transient_text
+            connection.set_trace_callback(replace_text)
+            self.assertEqual(read_text(connection), "transient")
+            self.assertIs(connection.text_factory, str)
+            connection.set_trace_callback(None)
+            self.assertEqual(read_text(connection), "original")
+
+    def test_reinitialized_connection_replaces_the_observer_and_old_owners_cannot_release_it(self):
+        def prepare(reader, version):
+            reader.row_factory = sqlite3.Row
+            reader.execute("CREATE TABLE schema_migrations(version)")
+            reader.execute("INSERT INTO schema_migrations VALUES (?)", (version,))
+            reader.commit()
+            reader.execute("PRAGMA query_only=ON")
+            reader.execute("BEGIN")
+
+        with closing(sqlite3.connect(":memory:", factory=AdmissionConnection)) as connection:
+            prepare(connection, 1)
+            with structural_read():
+                with retained_task_read():
+                    observe_retained_task_connection(connection)
+                    self.assertEqual(s.current_schema_version(connection), 1)
+                    old_epoch = read_epoch(connection)
+                    connection.__init__(":memory:")
+                    prepare(connection, 2)
+                    self.assertIsNone(read_epoch(connection))
+                    self.assertEqual(s.current_schema_version(connection), 2)
+                    self.assertNotEqual(read_epoch(connection), old_epoch)
+                self.assertIsNotNone(read_epoch(connection))
+                connection.execute("PRAGMA query_only=OFF")
+                connection.execute("UPDATE schema_migrations SET version=3")
+                self.assertEqual(s.current_schema_version(connection), 3)
+            self.assertIsNone(read_epoch(connection))
+            connection.rollback()
+            connection.execute("PRAGMA query_only=ON")
+            connection.execute("BEGIN")
+            with retained_task_read(), structural_read():
+                observe_retained_task_connection(connection)
+                self.assertEqual(s.current_schema_version(connection), 2)
+                connection.__init__(":memory:")
+            self.assertFalse(connection.in_transaction)
+
+    def test_replacing_aggregate_used_by_version_query_requires_a_fresh_read(self):
+        class ReplacementMax:
+            def step(self, value):
+                pass
+
+            def finalize(self):
+                return 1
+
+        with closing(s.connect_readonly(self.target.db_path)) as connection, structural_read(), retained_task_read():
+            observe_retained_task_connection(connection)
+            self.assertEqual(s.current_schema_version(connection), s.SCHEMA_VERSION)
+            connection.create_aggregate("max", 1, ReplacementMax)
+            self.assertEqual(s.current_schema_version(connection), 1)
 
     def test_control_probes_are_once_per_observed_epoch_including_nested_reads(self):
         controls = {"PRAGMA schema_version", "PRAGMA temp.schema_version",

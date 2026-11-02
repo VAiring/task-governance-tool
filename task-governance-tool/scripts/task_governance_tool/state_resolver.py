@@ -17,7 +17,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
-from .sqlite_admission import admission_scope
+from .sqlite_admission import admission_scope, observe_retained_task_connection
 from .viewer_projection_repository import ProjectionState
 
 from task_governance_tool.strict_path import resolve_strict_path
@@ -1432,6 +1432,8 @@ def _inspect_database(
                     raise _ResolverFailure("project_state_unreadable")
                 connection = connect_readonly(path, timeout=0.05)
                 connection.set_progress_handler(lambda: int(monotonic() >= deadline), 1000)
+            if retain_connection:
+                observe_retained_task_connection(connection)
             # This schema read acquires the snapshot's SQLite read lock; deferred
             # BEGIN alone would not protect the exact physical bytes below from an
             # ordinary rollback-journal writer committing during the observation.

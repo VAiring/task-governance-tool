@@ -3,6 +3,7 @@
 import io
 import json
 import os
+import shutil
 import sqlite3
 import tempfile
 import unittest
@@ -216,6 +217,84 @@ class EffortOperationAdmissionTests(unittest.TestCase):
 
 
 class PublicOperationAdmissionTests(unittest.TestCase):
+    def test_retained_task_version_reduces_whole_command_cost_with_same_output(self):
+        from tests.integrity_scale_support import public_command, verified_task
+        from tests.review_test_helpers import seed_review_evidence_connection
+        from tests.test_integrity_consumer_closure import observe_sql
+        from tests.test_sqlite_diagnostics_entry import _diagnostics, _enable
+        from task_governance_tool import state_resolver
+
+        queries = {"SELECT MAX(version) AS version, COUNT(*) AS marker_count FROM schema_migrations": "version"}
+        for name in ("schema_version", "temp.schema_version", "query_only", "foreign_keys"):
+            queries[f"PRAGMA {name}"] = name
+
+        def measure(command, diagnostics):
+            existing = set(trace_directory.glob("trace-*.json"))
+            with observe_sql(output_reads=queries) as stats:
+                output = public_command(target, *command)
+            added = set(trace_directory.glob("trace-*.json")) - existing
+            if diagnostics:
+                self.assertEqual(len(added), 1)
+                trace = json.loads(added.pop().read_bytes())
+                self.assertEqual(trace["operation"], ".".join(command[:2]))
+                phases = {record["phase"] for record in trace["records"]
+                          if record["role"] == "core" and record["access"] == "readonly"}
+                self.assertTrue({"begin", "close"}.issubset(phases))
+            else:
+                self.assertFalse(added)
+            return output, stats
+
+        def compare(command, diagnostics):
+            with mock.patch.object(state_resolver, "observe_retained_task_connection"):
+                expected, before = measure(command, diagnostics)
+            actual, after = measure(command, diagnostics)
+            self.assertEqual(actual, expected)
+            self.assertEqual(before["connections"], after["connections"])
+            self.assertEqual(after["connections"], 1)
+            self.assertGreater(before["output_reads"]["version"]["calls"], 1)
+            self.assertEqual(after["output_reads"]["version"]["calls"], 1)
+            for name in queries.values():
+                if name != "version":
+                    self.assertLessEqual(after["output_reads"][name]["calls"], before["output_reads"][name]["calls"])
+            self.assertLess(after["sql"], before["sql"])
+            self.assertLess(after["vm"], before["vm"])
+
+        with tempfile.TemporaryDirectory() as directory:
+            install = make_physical_install(Path(directory))
+            trace_directory = _diagnostics(install)
+            setup = install.run("setup", "--json")
+            self.assertEqual(setup.returncode, 0, setup.stdout + setup.stderr)
+            target = state_resolver.resolve_project_state(skill_root=install.skill_root,
+                repo=install.project_root, operation_local=True).target
+            with mock.patch.object(cli, "cli_script_path", return_value=install.entrypoint), \
+                    mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "00000000-0000-4000-8000-000000000001"}):
+                task = registration_task(public_command(target, "task", "add", "--title", "Selected",
+                    "--status", "in_progress", "--review-tier", "2", "--verification", "Fixture verification"))["task_id"]
+                # All fixture handles are closed. Keep the selected Task and
+                # its ID unchanged when starting the independent history arm.
+                baseline = Path(directory) / "selected.sqlite"
+                shutil.copyfile(target.db_path, baseline)
+                for history in (False, True):
+                    if history:
+                        shutil.copyfile(baseline, target.db_path)
+                        with mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "00000000-0000-4000-8000-000000000002"}):
+                            verified_task(target, "Unrelated completed Task")
+                    for evidence in (False, True):
+                        if evidence:
+                            with closing(sqlite3.connect(target.db_path)) as writer:
+                                seed_review_evidence_connection(writer, task, repo_path=install.project_root)
+                                writer.commit()
+                            public_command(target, "verification", "receipt", "add", task, "--result", "pass",
+                                "--duration-ms", "25", "--scope-coverage", "full", "--expected-target-generation", "1")
+                        for diagnostics in (False, True):
+                            if diagnostics:
+                                marker = _enable(install) / "enabled"
+                            for command in (("task", "show", task), ("task", "context")):
+                                with self.subTest(history=history, evidence=evidence, diagnostics=diagnostics, command=command[:2]):
+                                    compare(command, diagnostics)
+                            if diagnostics:
+                                marker.unlink()
+
     def test_public_task_paths_do_not_run_global_semantic_validators(self):
         from task_governance_tool import task_ownership, schema_task_event_notes
         from task_governance_tool import review_answer_repository, review_continuation_repository

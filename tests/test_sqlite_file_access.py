@@ -1,6 +1,7 @@
 """Real SQLite/process contention; POSIX negative control is never emulated."""
 from contextlib import closing, ExitStack
 import ast
+from collections import Counter
 import gc
 import hashlib
 import json
@@ -50,6 +51,86 @@ except (sqlite3.Error, RepositoryError) as error:
               'repository_error': error.code if isinstance(error, RepositoryError) else None}
 print(json.dumps(result))
 '''
+
+
+NATIVE_CONNECTION_SITES = {
+    ("task_governance_tool/async_backup_repository.py", "copy_snapshot"),
+    ("task_governance_tool/backup.py", "restore_managed_backup"),
+    ("task_governance_tool/backup.py", "copy_database_snapshot"),
+    ("task_governance_tool/backup.py", "_copy"),
+    ("task_governance_tool/protection_repository.py", "copy_usage"),
+    ("task_governance_tool/sqlite_connection.py", "connect"),
+    ("task_governance_tool/sqlite_connection.py", "connect_existing"),
+    ("task_governance_tool/sqlite_connection.py", "connect_readonly"),
+    ("task_governance_tool/review_wait_runtime/review_wait_repository.py", "ReviewWaitRepository._connection"),
+}
+
+
+def native_connection_calls(sources):
+    calls = []
+    for path, source in sources.items():
+        tree = ast.parse(source)
+        aliases = {"connect_traced"}
+        private_aliases = {"_connect_traced"}
+        private_calls = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                aliases.update(item.asname or item.name for item in node.names
+                               if item.name == "connect_traced")
+                private_aliases.update(item.asname or item.name for item in node.names
+                                       if item.name == "_connect_traced")
+        parents = {child: parent for parent in ast.walk(tree)
+                   for child in ast.iter_child_nodes(parent)}
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and node.id in aliases | private_aliases
+                    or isinstance(node, ast.Attribute) and node.attr in ("connect_traced", "_connect_traced")):
+                parent = parents.get(node)
+                if not isinstance(parent, ast.Call) or parent.func is not node:
+                    raise AssertionError((path, "connection factory must be called directly"))
+        scope = []
+
+        class Visitor(ast.NodeVisitor):
+            def visit_FunctionDef(self, node):
+                scope.append(node.name)
+                self.generic_visit(node)
+                scope.pop()
+
+            visit_AsyncFunctionDef = visit_FunctionDef
+            visit_ClassDef = visit_FunctionDef
+
+            def visit_Call(self, node):
+                function = node.func
+                if (isinstance(function, ast.Name) and function.id in private_aliases
+                        or isinstance(function, ast.Attribute) and function.attr == "_connect_traced"):
+                    site = (path, ".".join(scope))
+                    if site != ("task_governance_tool/sqlite_transaction_trace.py", "connect_traced"):
+                        raise AssertionError((site, "private factory outside guarded wrapper"))
+                    wrapper = parents.get(node)
+                    guarded_call = parents.get(wrapper)
+                    guard = next((keyword.value for keyword in node.keywords
+                                  if keyword.arg == "guarded"), None)
+                    if not (isinstance(wrapper, ast.Lambda)
+                            and len(wrapper.args.args) == 1 and wrapper.args.args[0].arg == "guarded"
+                            and isinstance(guarded_call, ast.Call)
+                            and isinstance(guarded_call.func, ast.Name) and guarded_call.func.id == "connect_guarded"
+                            and len(guarded_call.args) == 2 and guarded_call.args[1] is wrapper
+                            and isinstance(guarded_call.args[0], ast.Name) and guarded_call.args[0].id == "file_guard_path"
+                            and isinstance(guard, ast.Name) and guard.id == "guarded"):
+                        raise AssertionError((site, "private factory needs the file guard callback"))
+                    private_calls.append(site)
+                if (isinstance(function, ast.Name) and function.id in aliases
+                        or isinstance(function, ast.Attribute) and function.attr == "connect_traced"):
+                    guard = next((keyword.value for keyword in node.keywords
+                                  if keyword.arg == "file_guard_path"), None)
+                    guarded = guard is not None and not (
+                        isinstance(guard, ast.Constant) and guard.value is None)
+                    calls.append(((path, ".".join(scope)), guarded))
+                self.generic_visit(node)
+
+        Visitor().visit(tree)
+        if path == "task_governance_tool/sqlite_transaction_trace.py" and len(private_calls) != 1:
+            raise AssertionError((path, "expected one guarded native delegate"))
+    return calls
 
 
 class SQLiteFileAccessTests(unittest.TestCase):
@@ -370,15 +451,47 @@ class FileOwnershipMechanismTests(unittest.TestCase):
         self.assertNotIn((self.path.stat().st_dev, self.path.stat().st_ino), files._files)
 
     def test_every_product_native_connection_supplies_physical_guard_path(self):
-        calls = []
-        for path in (SCRIPTS / 'task_governance_tool').rglob('*.py'):
-            if path.name == 'sqlite_transaction_trace.py':
-                continue
-            for node in ast.walk(ast.parse(path.read_text(encoding='utf-8'))):
-                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'connect_traced':
-                    self.assertIn('file_guard_path', {k.arg for k in node.keywords}, str(path))
-                    calls.append(path.name)
-        self.assertEqual(len(calls), 8)
+        self.assert_native_connection_inventory(self.product_sources())
+
+    def product_sources(self):
+        root = SCRIPTS
+        return {path.relative_to(root).as_posix(): path.read_text(encoding="utf-8")
+                for path in root.rglob("*.py")}
+
+    def assert_native_connection_inventory(self, sources, expected=NATIVE_CONNECTION_SITES):
+        calls = native_connection_calls(sources)
+        self.assertEqual(Counter(site for site, _ in calls),
+                         Counter({site: 1 for site in expected}))
+        for site, guarded in calls:
+            self.assertTrue(guarded, site)
+
+    def test_connection_inventory_rejects_addition_removal_swap_and_missing_guard(self):
+        source = "def copy_usage():\n    connect_traced(path, file_guard_path=path)\n"
+        sources = {"protection_repository.py": source}
+        expected = {("protection_repository.py", "copy_usage")}
+        self.assert_native_connection_inventory(sources, expected)
+        variants = {
+            "extra": source + "def extra():\n    connect_traced(path, file_guard_path=path)\n",
+            "removed": "def copy_usage():\n    pass\n",
+            "swapped": "def swapped_copy_usage():\n    connect_traced(path, file_guard_path=path)\n",
+            "missing_guard": "def copy_usage():\n    connect_traced(path)\n",
+            "null_guard": "def copy_usage():\n    connect_traced(path, file_guard_path=None)\n",
+            "assignment_alias": "def copy_usage():\n    opener = connect_traced\n    opener(path)\n",
+        }
+        for name, variant in variants.items():
+            with self.subTest(name=name):
+                with self.assertRaises(AssertionError):
+                    self.assert_native_connection_inventory({"protection_repository.py": variant}, expected)
+        sources = self.product_sources()
+        for path, extra in (
+            ("task_governance_tool/sqlite_transaction_trace.py", "connect_traced(path)"),
+            ("task_governance_tool/sqlite_transaction_trace.py", "_connect_traced(path)"),
+            ("backup_worker.py", "connect_traced(path)"),
+        ):
+            with self.subTest(path=path, extra=extra), self.assertRaises(AssertionError):
+                self.assert_native_connection_inventory({
+                    **sources, path: sources[path] + "\ndef extra():\n    " + extra + "\n",
+                })
 
 
 if __name__ == '__main__':

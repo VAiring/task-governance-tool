@@ -293,25 +293,25 @@
     },
     "schema_criterion_link_collector.py": {
       "attributes": {
-        "execute": 29,
-        "fetchall": 1,
-        "fetchone": 11
-      },
-      "kind": "observed_connection"
-    },
-    "schema_evidence_reference_index.py": {
-      "attributes": {
-        "execute": 29,
+        "execute": 27,
         "fetchall": 1,
         "fetchone": 10
       },
       "kind": "observed_connection"
     },
+    "schema_evidence_reference_index.py": {
+      "attributes": {
+        "execute": 27,
+        "fetchall": 1,
+        "fetchone": 9
+      },
+      "kind": "observed_connection"
+    },
     "schema_own_review_indexes.py": {
       "attributes": {
-        "execute": 30,
+        "execute": 28,
         "fetchall": 1,
-        "fetchone": 11
+        "fetchone": 10
       },
       "kind": "observed_connection"
     },
@@ -324,17 +324,17 @@
     },
     "schema_review_answers.py": {
       "attributes": {
-        "execute": 36,
+        "execute": 34,
         "fetchall": 1,
-        "fetchone": 13
+        "fetchone": 12
       },
       "kind": "observed_connection"
     },
     "schema_review_continuation.py": {
       "attributes": {
-        "execute": 31,
+        "execute": 29,
         "fetchall": 2,
-        "fetchone": 11
+        "fetchone": 10
       },
       "kind": "observed_connection"
     },
@@ -347,9 +347,9 @@
     },
     "schema_runner_lookup_indexes.py": {
       "attributes": {
-        "execute": 29,
+        "execute": 27,
         "fetchall": 1,
-        "fetchone": 10
+        "fetchone": 9
       },
       "kind": "observed_connection"
     },
@@ -362,9 +362,9 @@
     },
     "schema_session_slot_index.py": {
       "attributes": {
-        "execute": 30,
+        "execute": 28,
         "fetchall": 1,
-        "fetchone": 11
+        "fetchone": 10
       },
       "kind": "observed_connection"
     },
@@ -399,17 +399,17 @@
     },
     "schema_viewer_finding_index.py": {
       "attributes": {
-        "execute": 29,
+        "execute": 27,
         "fetchall": 1,
-        "fetchone": 10
+        "fetchone": 9
       },
       "kind": "observed_connection"
     },
     "schema_viewer_projection.py": {
       "attributes": {
-        "execute": 31,
+        "execute": 29,
         "fetchall": 2,
-        "fetchone": 10
+        "fetchone": 9
       },
       "kind": "observed_connection"
     },
@@ -443,11 +443,11 @@
     },
     "storage.py": {
       "attributes": {
-        "execute": 430,
+        "execute": 428,
         "executescript": 2,
-        "fetchall": 107,
+        "fetchall": 106,
         "fetchmany": 2,
-        "fetchone": 135
+        "fetchone": 133
       },
       "kind": "observed_connection"
     },

@@ -45,22 +45,7 @@ def validate_owned_contract(connection):
     names = _owned_names()
     if owned_fingerprint(connection) != OWNED_FINGERPRINT:
         raise s._unreadable_project_state()
-    for tables, suffix in ((predecessor_tables, "_v29"), (REBUILT_TABLES, "_v30")):
-        for table in tables:
-            if connection.execute(
-                "SELECT 1 FROM sqlite_master WHERE name=? COLLATE NOCASE",
-                (table + suffix,),
-            ).fetchone():
-                raise s._unreadable_project_state()
-            if any(
-                row["name"] not in names
-                for row in connection.execute(
-                    "SELECT name FROM sqlite_master WHERE tbl_name=? "
-                    "AND type IN ('index','trigger') AND sql IS NOT NULL",
-                    (table,),
-                )
-            ):
-                raise s._unreadable_project_state()
+    s._validate_rebuild_catalog(connection, names, ((predecessor_tables, "_v29"), (REBUILT_TABLES, "_v30")))
 
 
 def _replace_exact(sql, old, new, *, count=1):

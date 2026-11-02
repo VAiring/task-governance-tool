@@ -816,6 +816,16 @@ It uses the admitted predecessor, shared preservation comparison before and
 after the marker, one marker-last transaction, rollback and flag restoration.
 Earlier migration definitions and owned fingerprints remain immutable.
 
+Schemas 29 through 37 validate the owned DDL fingerprint first. In that
+same read, each version supplies its own rebuilt table names and suffixes
+to two catalog queries. The first finds any object occupying a retired
+name using SQLite's NOCASE collation. The second returns only explicit
+indexes and triggers attached to the guarded tables, including the Viewer
+tables from schema 34. SQLite's implicit indexes have null SQL and are
+excluded. The older schema-21/22 checks use their original object-type
+filters when looking up retired names. Every fresh admission repeats its
+applicable checks, including reads after Git observation or backup locking.
+
 `evidence_repository._read_owner_indexed_evidence_references` and
 `evidence_validation_repository._validate_selected_reference_source_chunk`
 share the same source-row selector. An empty selection returns before reading

@@ -100,11 +100,7 @@ def validate_owned_contract(connection):
     names = _owned_names()
     if owned_fingerprint(connection) != OWNED_FINGERPRINT:
         raise s._unreadable_project_state()
-    for table in REBUILT_TABLES:
-        if connection.execute("SELECT 1 FROM sqlite_master WHERE name=? COLLATE NOCASE", (table + "_v29",)).fetchone():
-            raise s._unreadable_project_state()
-        if any(row["name"] not in names for row in connection.execute("SELECT name FROM sqlite_master WHERE tbl_name=? AND type IN ('index','trigger') AND sql IS NOT NULL", (table,))):
-            raise s._unreadable_project_state()
+    s._validate_rebuild_catalog(connection, names, ((REBUILT_TABLES, "_v29"),))
 
 
 def _apply_delta_locked(connection):

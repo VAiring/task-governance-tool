@@ -35,13 +35,10 @@ def validate_owned_contract(connection):
     names = _owned_names()
     if owned_fingerprint(connection) != OWNED_FINGERPRINT:
         raise s._unreadable_project_state()
-    for tables, suffix in ((v30_tables, "_v29"), (v31_tables, "_v30"), ((BUNDLE_TABLE,), "_v31"), ((BUNDLE_TABLE,), "_v32")):
-        for table in tables:
-            if connection.execute("SELECT 1 FROM sqlite_master WHERE name=? COLLATE NOCASE",
-                    (table + suffix,)).fetchone() or any(row["name"] not in names for row in connection.execute(
-                        "SELECT name FROM sqlite_master WHERE tbl_name=? "
-                        "AND type IN ('index','trigger') AND sql IS NOT NULL", (table,))):
-                raise s._unreadable_project_state()
+    s._validate_rebuild_catalog(connection, names, (
+        (v30_tables, "_v29"), (v31_tables, "_v30"),
+        ((BUNDLE_TABLE,), "_v31"), ((BUNDLE_TABLE,), "_v32"),
+    ))
 
 
 def _apply_delta_locked(connection):

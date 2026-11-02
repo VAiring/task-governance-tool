@@ -34,16 +34,12 @@ def validate_owned_contract(connection):
     if owned_fingerprint(connection) != OWNED_FINGERPRINT:
         raise s._unreadable_project_state()
     names = _owned_names()
-    for tables, suffix in ((v30_tables, "_v29"), (v31_tables, "_v30"),
-            ((BUNDLE_TABLE,), "_v31"), ((BUNDLE_TABLE,), "_v32"),
-            ((BUNDLE_TABLE,), "_v33"), ((BUNDLE_TABLE,), "_v34"), ((BUNDLE_TABLE,), "_v35"), ((BUNDLE_TABLE,), "_v36")):
-        for table in tables:
-            if connection.execute("SELECT 1 FROM sqlite_master WHERE name=? COLLATE NOCASE", (table + suffix,)).fetchone():
-                raise s._unreadable_project_state()
-    for table in set(viewer_tables) | set(v30_tables) | set(v31_tables) | {BUNDLE_TABLE}:
-        if any(row[0] not in names for row in connection.execute(
-                "SELECT name FROM sqlite_master WHERE tbl_name=? AND type IN ('index','trigger') AND sql IS NOT NULL", (table,))):
-            raise s._unreadable_project_state()
+    s._validate_rebuild_catalog(connection, names, (
+        (v30_tables, "_v29"), (v31_tables, "_v30"),
+        ((BUNDLE_TABLE,), "_v31"), ((BUNDLE_TABLE,), "_v32"),
+        ((BUNDLE_TABLE,), "_v33"), ((BUNDLE_TABLE,), "_v34"),
+        ((BUNDLE_TABLE,), "_v35"), ((BUNDLE_TABLE,), "_v36"),
+    ), additional_tables=viewer_tables)
 
 
 def _apply_delta_locked(connection):

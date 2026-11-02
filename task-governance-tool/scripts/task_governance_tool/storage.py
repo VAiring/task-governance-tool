@@ -4238,16 +4238,47 @@ def _validate_schema22_owned_contract(connection: sqlite3.Connection) -> None:
 def _schema22_migration_temporary_name_collision(
     connection: sqlite3.Connection,
 ) -> bool:
-    return any(
-        connection.execute(
-            "SELECT 1 FROM sqlite_master "
-            "WHERE type IN ('table', 'index', 'view') "
-            "AND name = ? COLLATE NOCASE LIMIT 1",
-            (name,),
-        ).fetchone()
-        is not None
-        for name in _SCHEMA22_TEMP_TABLES
+    return _catalog_name_present(connection, _SCHEMA22_TEMP_TABLES, kinds=("table", "index", "view"))
+
+
+def _catalog_name_present(
+    connection: sqlite3.Connection, names: tuple[str, ...], *, kinds: tuple[str, ...] = (),
+) -> bool:
+    placeholders = ", ".join("?" for _ in names)
+    query = f"SELECT 1 FROM sqlite_master WHERE name COLLATE NOCASE IN ({placeholders})"
+    if kinds:
+        type_slots = ", ".join("?" for _ in kinds)
+        query += f" AND type IN ({type_slots})"
+    return connection.execute(query + " LIMIT 1", (*names, *kinds)).fetchone() is not None
+
+
+def _attached_schema_names(
+    connection: sqlite3.Connection, table_names: tuple[str, ...], *, ordered: bool = False,
+) -> sqlite3.Cursor:
+    placeholders = ", ".join("?" for _ in table_names)
+    query = (
+        "SELECT name FROM sqlite_master "
+        "WHERE type IN ('index', 'trigger') AND sql IS NOT NULL "
+        f"AND tbl_name IN ({placeholders})"
     )
+    return connection.execute(query + (" ORDER BY name" if ordered else ""), table_names)
+
+
+def _validate_rebuild_catalog(
+    connection: sqlite3.Connection, owned_names: set[str], rebuilds: Iterable[tuple[Iterable[str], str]],
+    *, additional_tables: Iterable[str] = (),
+) -> None:
+    """Check only the old names and explicit attachments guarded by this version."""
+    old_names = []
+    tables = set(additional_tables)
+    for rebuilt_tables, suffix in rebuilds:
+        for table in rebuilt_tables:
+            old_names.append(table + suffix)
+            tables.add(table)
+    if _catalog_name_present(connection, tuple(old_names)):
+        raise _unreadable_project_state()
+    if any(row["name"] not in owned_names for row in _attached_schema_names(connection, tuple(sorted(tables)))):
+        raise _unreadable_project_state()
 
 
 def _unowned_rebuilt_table_attachments(
@@ -4261,16 +4292,9 @@ def _unowned_rebuilt_table_attachments(
         for name, (_kind, table_name, _sql) in expected_objects
         if table_name in table_names
     }
-    placeholders = ", ".join("?" for _ in table_names)
-    rows = connection.execute(
-        "SELECT name FROM sqlite_master "
-        "WHERE type IN ('index', 'trigger') AND sql IS NOT NULL "
-        f"AND tbl_name IN ({placeholders}) ORDER BY name",
-        table_names,
-    ).fetchall()
     return tuple(
         str(row["name"])
-        for row in rows
+        for row in _attached_schema_names(connection, table_names, ordered=True)
         if str(row["name"]) not in expected_names
     )
 
@@ -4917,28 +4941,11 @@ _SCHEMA21_TEMP_TABLES = tuple(
 def _schema21_migration_temporary_name_collision(
     connection: sqlite3.Connection,
 ) -> bool:
-    return any(
-        connection.execute(
-            "SELECT 1 FROM sqlite_master "
-            "WHERE type IN ('table', 'index', 'view') "
-            "AND name = ? COLLATE NOCASE LIMIT 1",
-            (name,),
-        ).fetchone()
-        is not None
-        for name in _SCHEMA21_TEMP_TABLES
-    )
+    return _catalog_name_present(connection, _SCHEMA21_TEMP_TABLES, kinds=("table", "index", "view"))
 
 
 def _schema21_temporary_table_present(connection: sqlite3.Connection) -> bool:
-    return any(
-        connection.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' "
-            "AND name = ? COLLATE NOCASE LIMIT 1",
-            (name,),
-        ).fetchone()
-        is not None
-        for name in _SCHEMA21_TEMP_TABLES
-    )
+    return _catalog_name_present(connection, _SCHEMA21_TEMP_TABLES, kinds=("table",))
 
 
 def _schema21_preserved_object_snapshot(

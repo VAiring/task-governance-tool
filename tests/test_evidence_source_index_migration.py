@@ -19,6 +19,109 @@ from tests import test_criterion_link_collector_migration as public_fixture
 from tests.m14_test_support import make_physical_install, refresh_test_manifest
 
 
+class RebuildCatalogTests(unittest.TestCase):
+    def test_each_supported_fingerprint_keeps_its_rebuild_boundaries(self):
+        from task_governance_tool import (
+            schema_review_continuation, schema_review_answers, schema_criterion_link_collector,
+            schema_session_slot_index, schema_own_review_indexes, schema_viewer_projection,
+            schema_runner_lookup_indexes,
+        )
+        versions = (schema_review_continuation, schema_review_answers, schema_criterion_link_collector,
+                    schema_session_slot_index, schema_own_review_indexes, schema_viewer_projection,
+                    schema_runner_lookup_indexes, predecessor, schema)
+        with review_fixture(schema_version=29) as fixture, closing(storage.connect(fixture.db)) as connection:
+            connection.execute("CREATE TABLE user_catalog_fixture(value TEXT UNIQUE)")
+            connection.execute("CREATE INDEX user_visible_index ON user_catalog_fixture(value)")
+            connection.execute("CREATE TRIGGER user_visible_trigger AFTER INSERT ON user_catalog_fixture BEGIN SELECT 1; END")
+            connection.commit()
+            for version in versions:
+                with self.subTest(schema=version.VERSION), candidate_runtime(version.VERSION):
+                    if version.VERSION > 29:
+                        version.migrate(connection)
+                    trace = []
+                    def selected_metadata(cursor, values):
+                        self.assertFalse({"user_catalog_fixture", "user_visible_index", "user_visible_trigger"}.intersection(values))
+                        return sqlite3.Row(cursor, values)
+                    connection.row_factory = selected_metadata
+                    connection.set_trace_callback(trace.append)
+                    try:
+                        version.validate_owned_contract(connection)
+                    finally:
+                        connection.set_trace_callback(None)
+                        connection.row_factory = sqlite3.Row
+                    self.assertEqual(len(trace), 3, trace)
+                    self.assertTrue(all("sqlite_master" in sql for sql in trace))
+                    bundle = "completion_evidence_bundles"
+                    if version.VERSION == 29:
+                        rebuilt = [("review_receipts", 28), ("task_completion_cycles", 28), (bundle, 28)]
+                    else:
+                        rebuilt = [("review_receipts", 29), ("evidence_references", 29), (bundle, 29)]
+                        if version.VERSION >= 31:
+                            rebuilt += [("criterion_evidence_links", 30), (bundle, 30)]
+                        rebuilt.extend((bundle, n) for n in range(31, version.VERSION))
+                    protected = {table for table, _ in rebuilt}
+                    if version.VERSION >= 34:
+                        protected.update(("viewer_projection_state", "viewer_task_revisions"))
+                    old = f"COMPLETION_EVIDENCE_BUNDLES_V{version.VERSION - 1}"
+                    bad = [f"CREATE VIEW {old} AS SELECT 1",
+                           f"CREATE INDEX {old} ON user_catalog_fixture(value)",
+                           f"CREATE TRIGGER {old} AFTER INSERT ON user_catalog_fixture BEGIN SELECT 1; END",
+                           "DROP INDEX idx_evidence_references_source"]
+                    bad.extend(f"CREATE TABLE {table.upper()}_V{n}(v)" for table, n in rebuilt)
+                    for table in sorted(protected):
+                        bad.extend((f"CREATE INDEX extra_attachment ON {table}(1)",
+                                    f"CREATE TRIGGER extra_attachment AFTER INSERT ON {table} BEGIN SELECT 1; END"))
+                    for ddl in bad:
+                        with self.subTest(ddl=ddl):
+                            connection.execute("BEGIN")
+                            try:
+                                connection.execute(ddl)
+                                with self.assertRaises(storage.StorageError) as rejected:
+                                    version.validate_owned_contract(connection)
+                                self.assertEqual(rejected.exception.code, "project_state_unreadable")
+                            finally:
+                                connection.rollback()
+                    connection.execute("BEGIN")
+                    try:
+                        connection.execute("DROP INDEX idx_evidence_references_source")
+                        connection.execute("CREATE INDEX idx_evidence_references_source ON evidence_references(task_id)")
+                        with self.assertRaises(storage.StorageError):
+                            version.validate_owned_contract(connection)
+                    finally:
+                        connection.rollback()
+                    # Later catalogs do not inherit schema 29's v28 residue
+                    # or its attachment guard on the completion-cycle table.
+                    connection.execute("BEGIN")
+                    try:
+                        connection.execute("CREATE TABLE viewer_task_revisions_v33(v)")
+                        if version.VERSION > 29:
+                            connection.execute("CREATE TABLE review_receipts_v28(v)")
+                            connection.execute("CREATE INDEX extra_cycle_attachment ON task_completion_cycles(completed_at)")
+                        version.validate_owned_contract(connection)
+                    finally:
+                        connection.rollback()
+
+    def test_older_name_checks_preserve_the_object_type_filters(self):
+        with closing(sqlite3.connect(":memory:")) as connection:
+            connection.execute("CREATE TABLE user_catalog_fixture(x)")
+            for names, collision in ((storage._SCHEMA21_TEMP_TABLES, storage._schema21_migration_temporary_name_collision),
+                                     (storage._SCHEMA22_TEMP_TABLES, storage._schema22_migration_temporary_name_collision)):
+                old = names[-1].upper()
+                for kind, ddl in (("table", f"CREATE TABLE {old}(x)"),
+                                  ("index", f"CREATE INDEX {old} ON user_catalog_fixture(x)"),
+                                  ("view", f"CREATE VIEW {old} AS SELECT 1"),
+                                  ("trigger", f"CREATE TRIGGER {old} AFTER INSERT ON user_catalog_fixture BEGIN SELECT 1; END")):
+                    with self.subTest(old=old, kind=kind):
+                        connection.execute("BEGIN")
+                        try:
+                            connection.execute(ddl)
+                            self.assertEqual(collision(connection), kind != "trigger")
+                            if names is storage._SCHEMA21_TEMP_TABLES:
+                                self.assertEqual(storage._schema21_temporary_table_present(connection), kind == "table")
+                        finally:
+                            connection.rollback()
+
+
 class PublicEvidenceSourceLookupSetupTests(unittest.TestCase):
     cli = public_fixture.PublicCriterionLinkCollectorSetupTests.cli
     business = public_fixture.PublicCriterionLinkCollectorSetupTests.business

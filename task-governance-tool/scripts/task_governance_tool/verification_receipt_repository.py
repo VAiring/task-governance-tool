@@ -342,18 +342,27 @@ def read_verification_receipt_snapshot(
     receipt_cursor: sqlite3.Cursor | None = None
     reference_cursor: sqlite3.Cursor | None = None
     try:
+        # Descend through distinct non-NULL prefixes. The final NULL probe
+        # also finds malformed selected rows without scanning unrelated Tasks.
         receipt_cursor = connection.execute(
             """
-            WITH selected_task_ids(value) AS (
-                SELECT ?
+            WITH RECURSIVE receipt_projects(project_id) AS (
+                SELECT (SELECT project_id FROM verification_receipts
+                         ORDER BY project_id DESC LIMIT 1)
                 UNION ALL
-                SELECT CAST(? AS BLOB)
+                SELECT (SELECT next.project_id FROM verification_receipts AS next
+                         WHERE next.project_id < prior.project_id
+                         ORDER BY next.project_id DESC LIMIT 1)
+                  FROM receipt_projects AS prior WHERE prior.project_id IS NOT NULL
             )
-            SELECT *
-              FROM verification_receipts
-             WHERE task_id IN (SELECT value FROM selected_task_ids)
+            SELECT receipt.*
+              FROM receipt_projects AS project
+             CROSS JOIN verification_receipts AS receipt
+                        INDEXED BY idx_verification_receipts_task_generation
+             WHERE receipt.project_id IS project.project_id
+               AND receipt.task_id IN (:task_id, CAST(:task_id AS BLOB))
             """,
-            (task_id, task_id),
+            {"task_id": task_id},
         )
         if source_schema_version >= 18:
             # Do not restrict by project: a Reference under the wrong project

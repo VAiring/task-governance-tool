@@ -3320,6 +3320,44 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                         )
                     self.assertEqual(db.read_bytes(), before)
 
+    def test_verification_inventory_with_stored_null_project_key(self):
+        with tempfile.TemporaryDirectory() as temp:
+            target, healthy_task, receipt_id = initialize_v17_verification_fixture(Path(temp))
+            with closing(connect(target.db_path)) as connection:
+                def snapshot(task_id):
+                    return read_verification_receipt_snapshot(
+                        connection, project_id=target.project.project_id, task_id=task_id,
+                        contract_revision=0, verification_expectation_digest=verification_expectation_digest(DEFAULT_VERIFICATION),
+                        target_kind="diff_fingerprint", target_value=FINGERPRINT_A,
+                        target_base_revision="", target_generation=1)
+
+                expected = snapshot(healthy_task)
+                self.assertEqual([row["verification_receipt_id"] for row in expected.exact_current], [receipt_id])
+                # Inject malformed persisted rows in this disposable DB. Restore
+                # the canonical declaration and trigger before calling the reader.
+                table = "verification_receipts"
+                required, nullable = "project_id TEXT NOT NULL,", "project_id TEXT,"
+                rewrite_table_schema_sql(connection, table_name=table, old=required, new=nullable)
+                trigger = "trg_verification_receipts_locked_basis_insert"
+                ddl = connection.execute("SELECT sql FROM sqlite_schema WHERE name=?", (trigger,)).fetchone()[0]
+                connection.execute(f"DROP TRIGGER {trigger}")
+                template = dict(connection.execute("SELECT * FROM verification_receipts").fetchone())
+                text_task, blob_task = "tg_task_1010101010101010", "tg_task_2020202020202020"
+                for i, key in enumerate((text_task, blob_task.encode()), start=1):
+                    row = dict(template, verification_receipt_id=f"tg_verification_receipt_{i:016x}",
+                               project_id=None, task_id=key)
+                    connection.execute(f"INSERT INTO verification_receipts VALUES ({','.join('?' for _ in row)})",
+                                       tuple(row.values()))
+                connection.execute(ddl)
+                rewrite_table_schema_sql(connection, table_name=table, old=nullable, new=required)
+                with self.subTest(owner="unrelated"):
+                    self.assertEqual(snapshot(healthy_task), expected)
+                for task in (text_task, blob_task):
+                    with self.subTest(owner=task):
+                        with self.assertRaises(StorageError) as failure:
+                            snapshot(task)
+                        self.assertEqual(failure.exception.code, "invalid_verification_evidence")
+
     def test_verification_inventory_rejects_legacy_receipt_ownership_corruption(self):
         with tempfile.TemporaryDirectory() as temp:
             for source_schema_version in (17, 18):

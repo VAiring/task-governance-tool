@@ -269,7 +269,7 @@
     "scripts/task_governance_tool/usage_wait_repository.py": "sha256:7552e1e48b969f8057525fe6934c8334c20f528b1d67100fb99451ce29e4d527",
     "scripts/task_governance_tool/usage_work_order_repository.py": "sha256:18a54143f34feb9a8cb91668e564c16ef49e94d5f819a5a5e6f27438fa03f8cc",
     "scripts/task_governance_tool/verification_declaration.py": "sha256:b6632c299b6b0e09bfd117ccec8b7b457ee2818c384429ac0d7b6a58ff5327be",
-    "scripts/task_governance_tool/verification_receipt_repository.py": "sha256:f8221db5e59a73db5f660353cf7d542d744124dc9c4fffb53fc29807b4851980",
+    "scripts/task_governance_tool/verification_receipt_repository.py": "sha256:560ce7bf800b01e8eb8d94194767b54f7ebe729141a8d2c9492b8557ab14fa1f",
     "scripts/task_governance_tool/verification_receipts.py": "sha256:25a004dfbadaac746ac5c66a1ee851408e4abb3086203c20df049ffde95fc69a",
     "scripts/task_governance_tool/verification_results.py": "sha256:5441d99658cc92f37a01527f503474d7fd0fe37c1ccacc813026372a82d77e54",
     "scripts/task_governance_tool/verification_runner.py": "sha256:685a1314c70c599e6b277301a08e14bc99b4f5bbb04ce74d555eb1c0c1b4a858",

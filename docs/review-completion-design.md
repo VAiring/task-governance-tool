@@ -3486,6 +3486,15 @@ target, retaining the subject, gate, current counts, and concise current result.
 use the same validation and public allow-lists; no separate Receipt command,
 pagination, storage mutation, or gate branch is added.
 
+From schema 17 onward, the manual Receipt snapshot uses the existing
+`(project_id, task_id, target_generation)` index. It seeks the greatest project
+key, then the next smaller key until it reaches NULL. Each step probes both
+the text Task ID and its BLOB alias. The final step uses the same NULL-safe
+project comparison so selected rows with a malformed NULL owner reach validation
+even when there are no non-NULL keys. This keeps foreign owners visible and
+skips unrelated Task histories within each project. All selected
+generations still undergo the same row, basis and applicable Reference checks.
+
 Ordinary Task state resolution uses structural operation-local admission;
 other consumers retain their separately declared admission scope. After that
 boundary, the `task show` handler validates the selected Task's review storage

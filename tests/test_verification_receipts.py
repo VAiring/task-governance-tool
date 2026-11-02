@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import tempfile
 import unittest
@@ -10,6 +11,7 @@ from unittest import mock
 
 from tests.verification_receipt_test_support import (
     DEFAULT_VERIFICATION,
+    FINGERPRINT_A,
     FINGERPRINT_B,
     add_receipt,
     add_task,
@@ -27,7 +29,8 @@ from task_governance_tool import cli as cli_module
 from task_governance_tool import review_packet as packet_module
 from task_governance_tool import review_verification as verification_context
 from task_governance_tool import verification_receipts as receipt_service
-from task_governance_tool.storage import resolve_database_target, verification_expectation_digest
+from task_governance_tool.storage import StorageError, connect, resolve_database_target, verification_expectation_digest
+from task_governance_tool.verification_receipt_repository import read_verification_receipt_snapshot
 from task_governance_tool.verification_receipts import (
     VerificationReceiptError,
     normalize_verification_receipt_input,
@@ -120,6 +123,85 @@ class VerificationReceiptValidationTests(unittest.TestCase):
 
 
 class VerificationReceiptIntegrationTests(unittest.TestCase):
+
+    def test_selected_receipt_lookup_skips_unrelated_generations_and_checks_foreign_keys(self):
+        with tempfile.TemporaryDirectory() as temp:
+            repo, db = initialize(Path(temp))
+            task = add_task(db, repo)
+            task_id = task["task_id"]
+            generation = seed_current_review_evidence(db, repo, task_id)
+            added = add_receipt(db, repo, task_id, generation)
+            self.assertEqual(added.returncode, 0, added.stdout)
+            receipt = payload(added)["data"]["receipt"]
+            receipt_id = receipt["verification_receipt_id"]
+            basis = dict(project_id=receipt["project_id"], contract_revision=receipt["contract_revision"],
+                         verification_expectation_digest=verification_expectation_digest(DEFAULT_VERIFICATION),
+                         target_kind="diff_fingerprint", target_value=FINGERPRINT_A,
+                         target_base_revision="", target_generation=generation)
+
+            def snapshot_and_selector_cost(connection, selected):
+                with mock.patch.object(connection, "execute", wraps=connection.execute) as executed:
+                    snapshot = read_verification_receipt_snapshot(connection, task_id=selected, **basis)
+                # The snapshot opens its Receipt inventory before validating the
+                # rows' Evidence References. Replay that actual statement with its
+                # original bindings and exhaust it under the SQLite step counter.
+                selector = next(call for call in executed.call_args_list
+                                if "from verification_receipts" in " ".join(call.args[0].lower().split()))
+                steps = 0
+
+                def step():
+                    nonlocal steps
+                    steps += 1
+                    return 0
+
+                connection.set_progress_handler(step, 1)
+                try:
+                    with closing(connection.execute(*selector.args)) as cursor:
+                        receipt_ids = [row["verification_receipt_id"] for row in cursor]
+                finally:
+                    connection.set_progress_handler(None, 0)
+                self.assertCountEqual(receipt_ids, [row["verification_receipt_id"] for row in snapshot.recent])
+                self.assertGreater(steps, 0)
+                return snapshot, steps
+
+            snapshots = []
+            costs = []
+            with mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "9fd51b75-e959-46f7-a19e-51d094d27a44"}):
+                other = add_task(db, repo, title="Unrelated Receipt history")["task_id"]
+                for count in range(1, 14):
+                    revision = set_target(db, repo, other)
+                    added = add_receipt(db, repo, other, revision)
+                    self.assertEqual(added.returncode, 0, added.stdout)
+                    if count in (1, 13):
+                        with closing(connect(db)) as connection:
+                            self.assertEqual(connection.execute("SELECT COUNT(*) FROM verification_receipts").fetchone()[0], count + 1)
+                            current, hits = snapshot_and_selector_cost(connection, task_id)
+                            empty, misses = snapshot_and_selector_cost(connection, "tg_task_0000000000000000")
+                        self.assertEqual(empty.total, 0)
+                        self.assertEqual(current.total, 1)
+                        self.assertEqual([row["verification_receipt_id"] for row in current.exact_current], [receipt_id])
+                        snapshots.append((current, empty))
+                        costs.append((hits, misses))
+            self.assertEqual(snapshots[0], snapshots[1])
+            self.assertEqual(costs[0], costs[1])
+
+            # Keep the valid current Receipt. Plant an unrelated historical
+            # Receipt under another stored prefix, then alias the selected Task.
+            with closing(connect(db)) as connection:
+                connection.execute("PRAGMA foreign_keys=OFF")
+                connection.execute("BEGIN")
+                connection.execute("DROP TRIGGER trg_verification_receipts_no_update")
+                connection.execute("UPDATE verification_receipts SET project_id=? WHERE task_id=? AND target_generation=1",
+                                   (b"foreign-project", other))
+                current = read_verification_receipt_snapshot(connection, task_id=task_id, **basis)
+                self.assertEqual(current, snapshots[0][0])
+                changed = connection.execute("UPDATE verification_receipts SET task_id=CAST(? AS BLOB) WHERE project_id=?",
+                                             (task_id, b"foreign-project"))
+                self.assertEqual(changed.rowcount, 1)
+                with self.assertRaises(StorageError) as failure:
+                    read_verification_receipt_snapshot(connection, task_id=task_id, **basis)
+                self.assertEqual(failure.exception.code, "invalid_verification_evidence")
+                connection.rollback()
 
     def test_result_coverage_matrix_drives_only_the_exact_current_gate(self):
         with tempfile.TemporaryDirectory() as temp:

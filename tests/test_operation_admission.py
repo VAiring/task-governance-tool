@@ -1,6 +1,7 @@
 """Ordinary Task admission consumes selected data rather than global histories."""
 
 import io
+import hashlib
 import json
 import os
 import shutil
@@ -19,11 +20,174 @@ from task_governance_tool import cli, storage
 
 
 class OperationAdmissionTests(unittest.TestCase):
+    def test_consumed_control_values_reject_without_writes(self):
+        from tests.test_completion_commit_schema import initialized_target
+        from task_governance_tool import backup_metadata_repository as metadata
+        from task_governance_tool.project_binding_repository import read_project_binding_state
+
+        with tempfile.TemporaryDirectory() as directory:
+            target = initialized_target(directory)
+            cases = [
+                ("project_meta", "legacy_cleanup_pending", value)
+                for value in (0.5, 1.5, -1, 2, b"0")
+            ] + [
+                ("project_maintenance", "enabled_at", value)
+                for value in (None, "", "invalid", b"2026-11-03T00:00:00Z", 0.5,
+                              "２０２６-11-03T00:00:00Z", "٢٠٢٦-11-03T00:00:00Z")
+            ] + [
+                ("project_maintenance", field, value)
+                for field, values in (
+                    ("backup_interval_minutes", (0, 1441, 0.5, b"30", None)),
+                    ("backup_generations", (0, 21, 0.5, b"3", None)),
+                    ("applied_backup_generations", (0, 21, 0.5, b"3")),
+                )
+                for value in values
+            ]
+            for table, field, value in cases:
+                with self.subTest(field=field, value=value):
+                    with closing(storage.connect(target.db_path)) as connection:
+                        connection.execute("PRAGMA ignore_check_constraints=ON")
+                        triggers = list(connection.execute(
+                            "SELECT name, sql FROM sqlite_master WHERE type='trigger' AND tbl_name=?",
+                            (table,)))
+                        for trigger in triggers:
+                            connection.execute('DROP TRIGGER "' + trigger["name"] + '"')
+                        connection.execute(
+                            "UPDATE project_maintenance SET enabled_at=?, backup_interval_minutes=30, backup_generations=3",
+                            ("2026-11-03T00:00:00Z",))
+                        if field == "applied_backup_generations":
+                            connection.execute(
+                                "UPDATE project_maintenance SET backup_last_success_at=?, latest_backup_generation_id=?",
+                                ("2026-11-03T00:00:00Z", "tg_backup_" + "1" * 32))
+                        if field == "legacy_cleanup_pending" and value == 1.5:
+                            inventory = json.dumps({"v": 1, "entries": [
+                                {"kind": "file", "name": "taskgov.sqlite", "size": 1, "sha256": "a" * 64}
+                            ]}, sort_keys=True, separators=(",", ":"))
+                            connection.execute(
+                                "UPDATE project_meta SET legacy_cleanup_inventory=?, legacy_cleanup_fingerprint=?",
+                                (inventory, hashlib.sha256(inventory.encode("ascii")).hexdigest()))
+                        connection.execute(f"UPDATE {table} SET {field}=?", (value,))
+                        for trigger in triggers:
+                            connection.execute(trigger["sql"])
+                        connection.commit()
+                    before = target.db_path.read_bytes()
+                    for local in (True, False):
+                        with self.assertRaises(storage.StorageError) as rejected:
+                            with closing(storage.connect_initialized_readonly(target, operation_local=local)):
+                                pass
+                        self.assertEqual(rejected.exception.code, "project_state_unreadable")
+                        self.assertEqual(target.db_path.read_bytes(), before)
+                    with closing(storage.connect(target.db_path)) as connection:
+                        connection.execute("PRAGMA ignore_check_constraints=ON")
+                        connection.execute("UPDATE project_meta SET legacy_cleanup_pending=0, legacy_cleanup_inventory=NULL, legacy_cleanup_fingerprint=NULL")
+                        connection.execute(
+                            "UPDATE project_maintenance SET backup_interval_minutes=30, backup_generations=3, applied_backup_generations=NULL, backup_last_success_at=NULL, latest_backup_generation_id=NULL")
+                        connection.commit()
+            for prefix in ("backup", "viewer"):
+                for code, at in (("succeeded", None), (None, "2026-11-03T00:00:00Z"),
+                                 ("unknown", "2026-11-03T00:00:00Z")):
+                    with closing(storage.connect(target.db_path)) as connection:
+                        connection.execute("PRAGMA ignore_check_constraints=ON")
+                        connection.execute(
+                            f"UPDATE project_maintenance SET {prefix}_last_outcome_code=?, {prefix}_last_outcome_at=?",
+                            (code, at))
+                        connection.commit()
+                    before = target.db_path.read_bytes()
+                    for local in (True, False):
+                        with self.subTest(prefix=prefix, local=local), self.assertRaises(storage.StorageError) as rejected:
+                            with closing(storage.connect_initialized_readonly(target, operation_local=local)):
+                                pass
+                        self.assertEqual(rejected.exception.code, "project_state_unreadable")
+                        self.assertEqual(target.db_path.read_bytes(), before)
+                    with closing(storage.connect(target.db_path)) as connection:
+                        connection.execute(
+                            f"UPDATE project_maintenance SET {prefix}_last_outcome_code=NULL, {prefix}_last_outcome_at=NULL")
+                        connection.commit()
+            for mask in range(1, 8):
+                with closing(storage.connect(target.db_path)) as connection:
+                    connection.execute("PRAGMA ignore_check_constraints=ON")
+                    connection.execute(
+                        "UPDATE project_maintenance SET backup_last_success_at=?, latest_backup_generation_id=?, applied_backup_generations=?",
+                        ("2026-11-03T00:00:00Z" if mask & 1 else None,
+                         ("malformed" if mask == 7 else "tg_backup_" + "1" * 32) if mask & 2 else None,
+                         3 if mask & 4 else None))
+                    connection.commit()
+                before = target.db_path.read_bytes()
+                for local in (True, False):
+                    with self.subTest(mask=mask, local=local), self.assertRaises(storage.StorageError):
+                        with closing(storage.connect_initialized_readonly(target, operation_local=local)):
+                            pass
+                    self.assertEqual(target.db_path.read_bytes(), before)
+            with closing(storage.connect(target.db_path)) as connection:
+                connection.execute("PRAGMA ignore_check_constraints=ON")
+                connection.execute(
+                    "UPDATE project_maintenance SET backup_last_success_at=NULL, latest_backup_generation_id=NULL, applied_backup_generations=NULL")
+                connection.commit()
+                connection.execute("UPDATE project_maintenance SET backup_interval_minutes=CAST(X'FF' AS TEXT)")
+                connection.commit()
+            before = target.db_path.read_bytes()
+            for local in (True, False):
+                with self.assertRaises(storage.StorageError) as rejected:
+                    with closing(storage.connect_initialized_readonly(target, operation_local=local)):
+                        pass
+                self.assertEqual(rejected.exception.code, "project_state_unreadable")
+                self.assertEqual(target.db_path.read_bytes(), before)
+            for interval, generations in ((1, 1), (1440, 20)):
+                with closing(storage.connect(target.db_path)) as connection:
+                    connection.execute(
+                        "UPDATE project_maintenance SET backup_interval_minutes=?, backup_generations=?",
+                        (interval, generations))
+                    connection.commit()
+                for local in (True, False):
+                    with closing(storage.connect_initialized_readonly(target, operation_local=local)) as connection:
+                        state = metadata.read_project_maintenance(connection, target.project.project_id)
+                        self.assertEqual((state.backup_interval_minutes, state.backup_generations), (interval, generations))
+                        self.assertFalse(read_project_binding_state(connection).legacy_cleanup_pending)
+        with tempfile.TemporaryDirectory() as directory:
+            target = initialized_target(directory)
+            for local in (True, False):
+                with closing(storage.connect_initialized_readonly(target, operation_local=local)) as connection:
+                    self.assertFalse(metadata.read_project_maintenance(connection, target.project.project_id).enabled)
+            for retention in (1, 20):
+                with closing(storage.connect(target.db_path)) as connection:
+                    connection.execute(
+                        "UPDATE project_maintenance SET backup_last_success_at=?, latest_backup_generation_id=?, applied_backup_generations=?",
+                        ("2026-11-03T00:00:00Z", "tg_backup_" + "1" * 32, retention))
+                    connection.commit()
+                    state = metadata.read_project_maintenance(connection, target.project.project_id)
+                    self.assertFalse(state.enabled)
+                    self.assertEqual(state.applied_backup_generations, retention)
+
     def setUp(self):
+        # Keep runtime fixture setup independent from each control-value probe.
         self.fixture = scope_fixture.CompletionReviewScopeTests()
         self.fixture.setUp()
         self.addCleanup(self.fixture.doCleanups)
         self.task_id = self.fixture.task["task_id"]
+
+    def test_cleanup_inventory_uses_canonical_backup_names(self):
+        from task_governance_tool.project_binding_repository import validate_cleanup_inventory
+        for stamp in ("20261103T000000Z", "20260230T000000Z", "２０２６1103T000000Z"):
+            inventory = json.dumps({"v": 1, "entries": [
+                {"kind": "file", "name": "backups/taskgov-backup-v1_" + stamp + "_" + "a" * 32 + "_r3.sqlite",
+                 "size": 1, "sha256": "a" * 64}
+            ]}, sort_keys=True, separators=(",", ":"))
+            fingerprint = hashlib.sha256(inventory.encode("ascii")).hexdigest()
+            if stamp == "20261103T000000Z":
+                validate_cleanup_inventory(inventory, fingerprint)
+            else:
+                with self.assertRaises(storage.StorageError):
+                    validate_cleanup_inventory(inventory, fingerprint)
+
+    def test_maintenance_writers_reject_nonascii_times(self):
+        from task_governance_tool import backup_metadata_repository as metadata
+        for stamp in ("２０２６-11-03T00:00:00Z", "٢٠٢٦-11-03T00:00:00Z"):
+            with self.assertRaises(storage.StorageError):
+                metadata.validate_migration_backup_metadata(
+                    metadata.MigrationBackupMetadata("tg_backup_" + "a" * 32, stamp, 3))
+            with self.assertRaises(storage.StorageError):
+                metadata.configure_project_maintenance(self.fixture.target,
+                    requested_interval_minutes=30, requested_generations=3, enabled_at=stamp)
 
     def run_task(self, *args):
         return run_taskgov(*args, "--repo", str(self.fixture.repo),

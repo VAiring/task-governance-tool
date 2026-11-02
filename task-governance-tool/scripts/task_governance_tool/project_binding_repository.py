@@ -160,9 +160,11 @@ def validate_binding_generation(value: object) -> int:
 
 
 def _recognized_cleanup_entry(value: str) -> bool:
+    from task_governance_tool.backup import _parse_filename
+
     return (
         value in CLEANUP_FIXED_ENTRIES
-        or MANAGED_BACKUP_FILENAME_PATTERN.fullmatch(value) is not None
+        or (value.startswith("backups/") and _parse_filename(value.removeprefix("backups/")) is not None)
         or CLEANUP_EVIDENCE_BUNDLE_PATTERN.fullmatch(value) is not None
         or any(pattern.fullmatch(value) is not None for pattern in CLEANUP_TEMP_ENTRY_PATTERNS)
     )
@@ -322,7 +324,9 @@ def _read_project_binding_snapshot(
             field="project binding time",
         )
 
-        cleanup_pending = int(row["legacy_cleanup_pending"])
+        cleanup_pending = row["legacy_cleanup_pending"]
+        if type(cleanup_pending) is not int or cleanup_pending not in (0, 1):
+            raise _unreadable_project_state()
         cleanup_inventory = (
             str(row["legacy_cleanup_inventory"])
             if row["legacy_cleanup_inventory"] is not None

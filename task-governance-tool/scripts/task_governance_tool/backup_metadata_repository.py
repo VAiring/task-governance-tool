@@ -67,6 +67,14 @@ class ProjectMaintenanceState:
         return self.enabled_at is not None
 
 
+def validate_maintenance_timestamp(value: str, *, field: str) -> str:
+    from task_governance_tool.storage import validate_utc_timestamp
+
+    if type(value) is not str or not value.isascii():
+        raise StorageError("internal_error", "maintenance timestamp is invalid")
+    return validate_utc_timestamp(value, field=field)
+
+
 def validate_migration_backup_metadata(
     metadata: MigrationBackupMetadata,
 ) -> MigrationBackupMetadata:
@@ -78,7 +86,7 @@ def validate_migration_backup_metadata(
         raise StorageError("internal_error", "setup backup metadata is invalid")
     if not MANAGED_BACKUP_GENERATION_PATTERN.fullmatch(metadata.generation_id):
         raise StorageError("internal_error", "setup backup generation identity is invalid")
-    validate_utc_timestamp(metadata.published_at, field="setup backup publication time")
+    validate_maintenance_timestamp(metadata.published_at, field="setup backup publication time")
     if (
         isinstance(metadata.publication_retention, bool)
         or not isinstance(metadata.publication_retention, int)
@@ -118,48 +126,81 @@ def read_project_maintenance(
     project_id: str,
 ) -> ProjectMaintenanceState | None:
     from task_governance_tool.storage import (
+        _unreadable_project_state,
         validate_sqlite_integer_storage_class,
+        validate_utc_timestamp,
+        stored_task_sqlite_error,
     )
 
-    row = connection.execute(
-        """
-        SELECT project_id, enabled_at, backup_interval_minutes,
-               backup_generations, applied_backup_generations,
-               backup_last_success_at, backup_last_outcome_code,
-               backup_last_outcome_at, latest_backup_generation_id,
-               viewer_last_success_at, viewer_last_outcome_code,
-               viewer_last_outcome_at
-          FROM project_maintenance
-         WHERE project_id = ?
-        """,
-        (project_id,),
-    ).fetchone()
+    try:
+        row = connection.execute(
+            """
+            SELECT project_id, enabled_at, backup_interval_minutes,
+                   backup_generations, applied_backup_generations,
+                   backup_last_success_at, backup_last_outcome_code,
+                   backup_last_outcome_at, latest_backup_generation_id,
+                   viewer_last_success_at, viewer_last_outcome_code,
+                   viewer_last_outcome_at
+              FROM project_maintenance
+             WHERE project_id = ?
+            """,
+            (project_id,),
+        ).fetchone()
+    except sqlite3.Error as exc:
+        raise stored_task_sqlite_error(exc) from exc
     if row is None:
         return None
+    policy = {}
+    for field, minimum, maximum in (
+        ("backup_interval_minutes", MIN_BACKUP_INTERVAL_MINUTES, MAX_BACKUP_INTERVAL_MINUTES),
+        ("backup_generations", MIN_BACKUP_GENERATIONS, MAX_BACKUP_GENERATIONS),
+        ("applied_backup_generations", MIN_BACKUP_GENERATIONS, MAX_BACKUP_GENERATIONS),
+    ):
+        value = row[field]
+        if value is not None:
+            value = validate_sqlite_integer_storage_class(value)
+            if not minimum <= value <= maximum:
+                raise _unreadable_project_state()
+        policy[field] = value
+    if row["enabled_at"] is None:
+        if policy["backup_interval_minutes"] is not None or policy["backup_generations"] is not None:
+            raise _unreadable_project_state()
+    elif policy["backup_interval_minutes"] is None or policy["backup_generations"] is None:
+        raise _unreadable_project_state()
+    for fields in (
+        ("backup_last_success_at", "latest_backup_generation_id", "applied_backup_generations"),
+        ("backup_last_outcome_code", "backup_last_outcome_at"),
+        ("viewer_last_outcome_code", "viewer_last_outcome_at"),
+    ):
+        present = [row[field] is not None for field in fields]
+        if any(present) and not all(present):
+            raise _unreadable_project_state()
+    try:
+        for field in (
+            "enabled_at", "backup_last_success_at", "backup_last_outcome_at",
+            "viewer_last_success_at", "viewer_last_outcome_at",
+        ):
+            if row[field] is not None:
+                validate_maintenance_timestamp(row[field], field=field)
+        for field in ("backup_last_outcome_code", "viewer_last_outcome_code"):
+            value = row[field]
+            if value is not None and value not in ("succeeded", "failed", "deferred"):
+                raise _unreadable_project_state()
+        generation = row["latest_backup_generation_id"]
+        if generation is not None and (
+            type(generation) is not str or not MANAGED_BACKUP_GENERATION_PATTERN.fullmatch(generation)
+        ):
+            raise _unreadable_project_state()
+    except StorageError as exc:
+        raise _unreadable_project_state() from exc
     return ProjectMaintenanceState(
         project_id=str(row["project_id"]),
         enabled_at=(
             str(row["enabled_at"]) if row["enabled_at"] is not None else None
         ),
-        backup_interval_minutes=(
-            validate_sqlite_integer_storage_class(
-                row["backup_interval_minutes"]
-            )
-            if row["backup_interval_minutes"] is not None
-            else None
-        ),
-        backup_generations=(
-            validate_sqlite_integer_storage_class(row["backup_generations"])
-            if row["backup_generations"] is not None
-            else None
-        ),
-        applied_backup_generations=(
-            validate_sqlite_integer_storage_class(
-                row["applied_backup_generations"]
-            )
-            if row["applied_backup_generations"] is not None
-            else None
-        ),
+        backup_interval_minutes=policy["backup_interval_minutes"],
+        backup_generations=policy["backup_generations"],
+        applied_backup_generations=policy["applied_backup_generations"],
         backup_last_success_at=(
             str(row["backup_last_success_at"])
             if row["backup_last_success_at"] is not None
@@ -244,7 +285,7 @@ def configure_project_maintenance(
         validate_utc_timestamp,
     )
 
-    activation_time = validate_utc_timestamp(
+    activation_time = validate_maintenance_timestamp(
         enabled_at or utc_now(),
         field="maintenance enablement time",
     )
@@ -609,7 +650,7 @@ def _update_backup_pointer_from_row(
     if outcome_code is not None:
         if outcome_code not in {"deferred", "failed"} or outcome_at is None:
             raise StorageError("internal_error", "backup outcome is invalid")
-        validate_utc_timestamp(outcome_at, field="backup outcome time")
+        validate_maintenance_timestamp(outcome_at, field="backup outcome time")
     if row is None:
         metadata = None
     else:
@@ -828,7 +869,7 @@ def record_backup_attempt_outcome(
             or not isinstance(observed, ManagedBackupRepositoryState)
             or observed.maintenance.project_id != target.project.project_id):
         raise StorageError("internal_error", "backup outcome is invalid")
-    timestamp = validate_utc_timestamp(
+    timestamp = validate_maintenance_timestamp(
         occurred_at,
         field="backup outcome time",
     )

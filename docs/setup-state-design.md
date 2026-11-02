@@ -451,6 +451,9 @@ Schema v14 also stores:
 - the exact cleanup state triple: either pending `0` with null inventory/hash,
   or pending `1` with canonical inventory and its lowercase SHA-256.
 
+Readers validate the cleanup flag as an actual SQLite integer 0 or 1 before
+Boolean conversion. Fractional values cannot authorize cleanup or conceal it.
+
 `project_path_binding_history` is append-only and keyed by project plus
 generation. Generation 1 has no previous hash; each later entry's previous
 hash equals the prior current hash and has reason `confirmed_relocation` plus a
@@ -1084,6 +1087,15 @@ defaults a new policy to 30 minutes and three generations. Public bounds are
 policy; equal explicit values replay. A policy-only change does no copy/prune,
 and a reduced retention becomes applied only with the next successful
 publication.
+
+The shared maintenance reader validates stored policy integers and their bounds
+before exposing them to ordinary or full admission. A disabled policy has NULL
+interval and retention, and an enabled policy requires both. Applied retention
+may be NULL but otherwise remains an integer within 1-20. Invalid consumed
+controls return the existing unreadable-state error without a Task-history scan.
+Maintenance timestamps use ASCII canonical UTC text before calendar validation.
+The backup success triple and each outcome pair must be complete or all NULL;
+result codes and backup-generation identities retain their closed formats.
 
 The retained synchronous backup primitive used by Setup and pre-migration
 protection:

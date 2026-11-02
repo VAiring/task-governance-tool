@@ -283,6 +283,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_evidence_projection_capture",
         "test_evidence_source_index_migration",
         "test_evidence_source_lookup_scaling",
+        "test_integrity_consumer_closure",
         "test_legacy_cleanup_pending",
         "test_live_read_consistency",
         "test_m17_cli_consumer_hardening",

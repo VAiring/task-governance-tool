@@ -84,8 +84,8 @@
     },
     "evidence_validation_repository.py": {
       "attributes": {
-        "execute": 45,
-        "fetchall": 26,
+        "execute": 44,
+        "fetchall": 25,
         "fetchmany": 1,
         "fetchone": 6
       },

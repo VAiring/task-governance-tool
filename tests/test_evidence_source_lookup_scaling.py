@@ -9,6 +9,7 @@ import unittest
 from unittest import mock
 
 from tests.test_evidence_projection_capture import make_fixture
+from tests.integrity_scale_support import fixed_completion_histories, public_command
 from tests.test_post_commit_maintenance import invoke
 from tests.test_review_session_migration import candidate_runtime
 from tests.verification_receipt_test_support import (
@@ -210,22 +211,15 @@ class EvidenceSourceLookupScalingTests(unittest.TestCase):
 
     def test_selected_completion_work_is_bounded_and_both_queries_equal_old_lookup(self):
         measured = []
-        for history in (2, 14):
-            with tempfile.TemporaryDirectory(prefix='taskgov-source-lookup-') as directory:
-                target = make_fixture(Path(directory), count=history)
-                task = add_task(target.db_path, target.project.canonical_repo,
-                                title='Fixed selected source closure', review_tier=2)
-                generation = seed_current_review_evidence(target.db_path,
-                    target.project.canonical_repo, task['task_id'])
-                verified = add_receipt(target.db_path, target.project.canonical_repo,
-                                       task['task_id'], generation)
-                self.assertEqual(verified.returncode, 0, verified.stdout)
+        with fixed_completion_histories() as (task_id, histories):
+            for history, target in histories:
                 before = target.db_path.read_bytes()
                 with measured_connections() as costs:
-                    code, out, err = invoke(target, 'task', 'complete', task['task_id'],
+                    gate = public_command(target, 'task', 'complete', task_id,
                         '--check', '--read-only', '--verification-complete',
-                        '--review-complete', '--commit-not-required', '--json')
-                self.assertEqual(code, 0, out + err)
+                        '--review-complete', '--commit-not-required')
+                self.assertIs(gate['data']['ready'], True)
+                self.assertEqual(gate['data']['blocking_codes'], [])
                 self.assertEqual(target.db_path.read_bytes(), before)
                 self.assertTrue(costs['reverse'])
                 kinds = set()
@@ -269,7 +263,7 @@ class EvidenceSourceLookupScalingTests(unittest.TestCase):
         small, large = measured
         self.assertEqual(large['connections'], small['connections'])
         self.assertEqual(large['sql'], small['sql'])
-        self.assertLessEqual(large['vm'], small['vm'] + 200)
+        self.assertEqual(large['vm'], small['vm'])
 
 
 if __name__ == '__main__':

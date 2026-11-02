@@ -333,13 +333,20 @@ Captured points exclude later writes; they do not claim a common core/Usage inst
 Restoring live state requires separate authorization and is not supported here.
 
 Data on preview/success is exactly `status` (`preview`/`succeeded`), `accepted`,
-`completed`, `capture_id`, `location`, `components` (`core`, `usage`), `recovery`,
+`completed`, `capture_id`, `location`, `components` (`core`, `usage`), `recovery`, `usage_aggregation`,
 `coverage=independent_snapshots`, `live_restore=not_performed`.
 Preview has `completed=false`, null identity/location, planned components and
-`recovery=not_attempted`; success has `completed=true`, protected core, protected
-or absent Usage and `recovery=passed`. Acceptance alone never proves completion.
+`recovery=not_attempted`, `usage_aggregation=not_attempted`; success has
+`completed=true`, protected core, protected or absent Usage and `recovery=passed`.
+Successful `usage_aggregation=pending` (present Usage) or `absent` is independent
+of recovery success: protection preserves and admits originals without waiting
+for historical aggregation. Old aggregates are unavailable until normal bounded
+Usage processing establishes the restored basis. New `taskgov-protection-v2`
+manifests use validation rules 2; retained v1/rules-1 captures keep their original
+synchronous-rehearsal meaning and are not rewritten. Acceptance alone never proves completion.
 Failure (exit 2) has exactly `status=failed`, `accepted`, `completed=false`,
-`recovery=not_confirmed`, `private_stage=may_remain`, `live_restore=not_performed`.
+`recovery=not_confirmed`, `usage_aggregation=not_confirmed`,
+`private_stage=may_remain`, `live_restore=not_performed`.
 One sanitized error reports preflight/admission/busy failure or `protection_failed`.
 An unpublished `.pending-*` directory is not a capture. Retained captures are
 not automatically pruned; deletion is a separately authorized operation.

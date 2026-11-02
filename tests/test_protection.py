@@ -1,6 +1,6 @@
 """Explicit protection exercises the real managed recovery repository."""
 
-from contextlib import closing, contextmanager
+from contextlib import closing
 from dataclasses import replace
 import json
 import os
@@ -41,7 +41,12 @@ class ProtectionTests(unittest.TestCase):
                 self.assertTrue(result["completed"])
                 capture = root / result["capture_id"]
                 manifest = json.loads((capture / "manifest.json").read_text())
+                self.assertEqual((manifest["format"], manifest["validation_rules"]), ("taskgov-protection-v2", 2))
                 self.assertEqual(manifest["components"]["usage"]["presence"], "present" if usage else "absent")
+                proof = json.loads((capture / "verification.json").read_text())
+                self.assertEqual(proof["usage"], "restored" if usage else "absent")
+                for record in (result, manifest, proof):
+                    self.assertEqual(record["usage_aggregation"], "pending" if usage else "absent")
                 self.assertEqual(target.db_path.read_bytes(), before)
                 if usage:
                     self.assertEqual(target.resolved_usage_database.read_bytes(), usage_before)
@@ -272,6 +277,35 @@ class ProtectionTests(unittest.TestCase):
                 self.protect(target, root)
         self.assertEqual(original_files, {p.name: p.read_bytes() for p in (root / first["capture_id"]).iterdir()})
 
+    def test_retained_v1_capture_keeps_its_original_proof_and_recoverable_components(self):
+        # A retained legacy proof is not upgraded in place or treated as current
+        # aggregation after a new restore. Its managed component format is shared.
+        target, root = self.fixture(usage=True)
+        with mock.patch.object(protection, "FORMAT", "taskgov-protection-v1"):
+            legacy = self.protect(target, root)
+        capture = root / legacy["capture_id"]
+        proof = json.loads((capture / "verification.json").read_bytes())
+        proof.pop("usage_aggregation")
+        proof["usage"] = "reconciled"
+        (capture / "verification.json").write_bytes(protection._bytes(proof))
+        manifest = json.loads((capture / "manifest.json").read_bytes())
+        manifest.pop("usage_aggregation")
+        manifest["validation_rules"] = 1
+        import hashlib
+        manifest["verification"]["sha256"] = hashlib.sha256((capture / "verification.json").read_bytes()).hexdigest()
+        (capture / "manifest.json").write_bytes(protection._bytes(manifest))
+        before = {path.name: path.read_bytes() for path in capture.iterdir()}
+        newer = self.protect(target, root)
+        self.assertNotEqual(newer["capture_id"], legacy["capture_id"])
+        self.assertEqual(before, {path.name: path.read_bytes() for path in capture.iterdir()})
+        inbox = target.db_path.parent / "legacy-recovery"
+        (inbox / "backups").mkdir(parents=True)
+        filename = manifest["components"]["core"]["filename"]
+        (inbox / "backups" / filename).write_bytes(before[filename])
+        restored = protection_repository.rehearse(target, inbox, capture / "taskgov-usage.sqlite")
+        self.assertEqual((restored["core"], restored["usage_aggregation"]), ("passed", "pending"))
+        self.assertEqual(before, {path.name: path.read_bytes() for path in capture.iterdir()})
+
     def test_multiple_linked_source_is_rejected(self):
         target, root = self.fixture()
         try:
@@ -305,34 +339,33 @@ class ProtectionTests(unittest.TestCase):
             self.assertTrue(self.protect(target, root)["completed"])
         self.assertEqual(observed, [None])
 
-    def test_usage_reconciliation_reuses_one_validated_core_read(self):
+    def test_usage_restore_admits_one_core_read_without_reconciliation(self):
         from task_governance_tool.usage_reconciliation_repository import UsageReconciliationRepository
+        from task_governance_tool import usage_reconciliation_publication as publication
         target, root = self.fixture(usage=True)
-        original = UsageReconciliationRepository.refresh
+        original = publication.captured_basis
         reads = []
         core_paths = []
 
-        def tracked_refresh(repository, reader):
+        def tracked_basis(repository, core, numerical):
             core_paths.append(repository.path.with_name("taskgov.sqlite"))
-            @contextmanager
-            def tracked_reader():
-                with reader() as connection:
-                    reads.append(connection)
-                    self.assertTrue(connection.in_transaction)
-                    self.assertEqual(connection.execute("PRAGMA query_only").fetchone()[0], 1)
-                    yield connection
-            return original(repository, tracked_reader)
+            reads.append(core)
+            self.assertTrue(core.in_transaction)
+            self.assertEqual(core.execute("PRAGMA query_only").fetchone()[0], 1)
+            self.assertEqual(numerical.execute("PRAGMA query_only").fetchone()[0], 1)
+            return original(repository, core, numerical)
 
-        with mock.patch.object(UsageReconciliationRepository, "refresh", new=tracked_refresh), \
+        with mock.patch.object(publication, "captured_basis", new=tracked_basis), \
+                mock.patch.object(UsageReconciliationRepository, "refresh", side_effect=AssertionError("full drain")), \
+                mock.patch.object(publication, "reconcile", side_effect=AssertionError("full drain")), \
                 mock.patch.object(storage, "connect_initialized_readonly", wraps=storage.connect_initialized_readonly) as admitted:
             self.assertTrue(self.protect(target, root)["completed"])
-        self.assertGreater(len(reads), 2)
+        self.assertEqual(len(reads), 1)
         self.assertEqual(len(core_paths), 1)
         # Recovery also validates its normalization temporary file. Count only
         # the restored Core admission used by Usage, preserving those checks.
         self.assertEqual(sum(call.args[0].db_path == core_paths[0]
                              for call in admitted.call_args_list), 1)
-        self.assertTrue(all(connection is reads[0] for connection in reads))
         with self.assertRaises(sqlite3.ProgrammingError):
             reads[0].execute("SELECT 1")
 
@@ -359,25 +392,36 @@ class ProtectionTests(unittest.TestCase):
         self.assertFalse(list(root.rglob("manifest.json")))
 
     def test_usage_failure_closes_core_read_and_preserves_sources(self):
-        from task_governance_tool.usage_reconciliation_repository import UsageReconciliationRepository
+        from task_governance_tool import usage_reconciliation_publication as publication
         target, root = self.fixture(usage=True)
         before = (target.db_path.read_bytes(), target.resolved_usage_database.read_bytes())
         reads = []
 
-        def failed_refresh(repository, reader):
-            with reader() as connection:
-                reads.append(connection)
-                with self.assertRaises(sqlite3.OperationalError):
-                    connection.execute("DELETE FROM tasks")
-                raise RuntimeError("injected reconciliation failure")
+        def failed_basis(repository, connection, numerical):
+            reads.append(connection)
+            with self.assertRaises(sqlite3.OperationalError):
+                connection.execute("DELETE FROM tasks")
+            raise RuntimeError("injected admission failure")
 
-        with mock.patch.object(UsageReconciliationRepository, "refresh", new=failed_refresh):
+        with mock.patch.object(publication, "captured_basis", new=failed_basis):
             with self.assertRaises(RuntimeError):
                 self.protect(target, root)
         self.assertEqual(before, (target.db_path.read_bytes(), target.resolved_usage_database.read_bytes()))
         self.assertFalse(list(root.rglob("manifest.json")))
         with self.assertRaises(sqlite3.ProgrammingError):
             reads[0].execute("SELECT 1")
+
+    def test_unexpected_current_or_invalid_usage_fence_prevents_publication(self):
+        from task_governance_tool import usage_reconciliation_publication as publication
+        from task_governance_tool.usage_values import UsageError
+        for result in ("unexpected-current", UsageError("usage_schema_invalid")):
+            with self.subTest(result=str(result)):
+                target, root = self.fixture(usage=True)
+                with mock.patch.object(publication, "captured_basis", side_effect=
+                        result if isinstance(result, Exception) else None, return_value=result):
+                    with self.assertRaises((storage.StorageError, UsageError)):
+                        self.protect(target, root)
+                self.assertFalse(list(root.glob("tg_protection_*")))
 
 
 class ProtectionCliTests(unittest.TestCase):

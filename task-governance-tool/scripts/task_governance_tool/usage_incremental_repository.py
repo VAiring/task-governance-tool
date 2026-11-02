@@ -82,6 +82,36 @@ def _document(row):
         raise UsageError("usage_schema_invalid") from None
 
 
+def _discovery(row):
+    """Decode the retained inventory cursor without opening another read."""
+    if row is None:
+        return 0, {"root": 0, "stack": [], "cycle": 0, "attempt_floor": 0}
+    try:
+        value = json.loads(row["document"])
+        if (type(row["revision"]) is not int or not 0 < row["revision"] < 2**63
+                or set(value) != {"root", "stack", "cycle", "attempt_floor"}
+                or type(value["root"]) is not int or value["root"] not in {0, 1}
+                or type(value["cycle"]) is not int or not 0 <= value["cycle"] < 2**63
+                or type(value["attempt_floor"]) is not int or not 0 <= value["attempt_floor"] < 2**63
+                or not isinstance(value["stack"], list) or len(value["stack"]) > 4):
+            raise ValueError
+        for depth, (parts, ordinal) in enumerate(value["stack"]):
+            if (not isinstance(parts, list) or len(parts) != depth
+                    or type(ordinal) is not int or ordinal < 0
+                    or any(not isinstance(part, str) or len(part) != (4 if i == 0 else 2)
+                           or not part.isascii() or not part.isdecimal() for i, part in enumerate(parts))):
+                raise ValueError
+        return row["revision"], value
+    except (ValueError, TypeError, KeyError):
+        raise UsageError("usage_schema_invalid") from None
+
+
+def _model_values(row):
+    if row is not None and any(value is not None and label(value) != value for value in row):
+        raise UsageError("usage_schema_invalid")
+    return tuple(row) if row else None
+
+
 class UsageIncrementalRepository(UsageWaitRepository):
     schema_statements = (_MIGRATION, *UsageWaitRepository.schema_statements[1:], *_INCREMENTAL_DDL)
     migrations = (*UsageWaitRepository.migrations, (5, "incremental_collection"))
@@ -184,23 +214,7 @@ class UsageIncrementalRepository(UsageWaitRepository):
     def discovery_position(self):
         with self.connection() as connection:
             row = connection.execute("SELECT * FROM usage_discovery").fetchone()
-        if row is None:
-            return 0, {"root": 0, "stack": [], "cycle": 0, "attempt_floor": 0}
-        try:
-            value = json.loads(row["document"])
-            if (set(value) != {"root", "stack", "cycle", "attempt_floor"} or type(value["root"]) is not int
-                    or value["root"] not in {0, 1} or type(value["cycle"]) is not int or value["cycle"] < 0
-                    or type(value["attempt_floor"]) is not int or value["attempt_floor"] < 0
-                    or not isinstance(value["stack"], list) or len(value["stack"]) > 4):
-                raise ValueError
-            for depth, (parts, ordinal) in enumerate(value["stack"]):
-                if (len(parts) != depth or type(ordinal) is not int or ordinal < 0
-                        or any(not isinstance(part, str) or len(part) != (4 if i == 0 else 2)
-                               or not part.isascii() or not part.isdecimal() for i, part in enumerate(parts))):
-                    raise ValueError
-            return row["revision"], value
-        except (ValueError, TypeError, KeyError):
-            raise UsageError("usage_schema_invalid") from None
+        return _discovery(row)
 
     def unattempted_sources(self, sources, attempt_floor):
         """Page completion accumulates across events, including failed attempts."""
@@ -345,9 +359,7 @@ class UsageIncrementalRepository(UsageWaitRepository):
     def _model(self, connection, source, lane, turn):
         row = connection.execute("SELECT model,effort FROM usage_scan_models WHERE source_id=? AND lane=? AND turn_id=?",
                                  (source, lane, turn)).fetchone()
-        if row is not None and any(value is not None and label(value) != value for value in row):
-            raise UsageError("usage_schema_invalid")
-        return tuple(row) if row else None
+        return _model_values(row)
 
     def _response_context(self, connection, source, lane, reset):
         """Later response policies extend the same CAS transaction, not schema 5."""

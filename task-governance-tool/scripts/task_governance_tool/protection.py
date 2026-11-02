@@ -21,7 +21,7 @@ from .state_paths import (create_physical_directory_exclusive, inspect_physical_
 from .storage import utc_now
 
 
-FORMAT = "taskgov-protection-v1"
+FORMAT = "taskgov-protection-v2"
 MAX_MANIFEST_BYTES = 16384
 
 
@@ -78,6 +78,7 @@ def protect(target, root, *, package_basis, read_only=False, publication_guard=l
     data = {"status": "preview", "accepted": True, "completed": False,
         "capture_id": None, "location": None, "components": {"core": "planned",
         "usage": "planned" if usage_present else "absent"}, "recovery": "not_attempted",
+        "usage_aggregation": "not_attempted",
         "coverage": "independent_snapshots", "live_restore": "not_performed"}
     if read_only:
         return data
@@ -145,7 +146,8 @@ def protect(target, root, *, package_basis, read_only=False, publication_guard=l
                                             root=root, max_bytes=MAX_MANIFEST_BYTES)
     manifest = {"format": FORMAT, "capture_id": capture_id, "project_id": target.project.project_id,
         "binding_hash": target.binding_path_hash, "binding_generation": target.binding_generation,
-        "package_basis": package_basis, "validation_rules": 1,
+        "package_basis": package_basis, "validation_rules": 2,
+        "usage_aggregation": proof["usage_aggregation"],
         "coverage": "independent_snapshots", "published_at": utc_now(),
         "generation": asdict(metadata), "components": components,
         "verification": {"filename": "verification.json", "sha256": verified.sha256},
@@ -160,7 +162,7 @@ def protect(target, root, *, package_basis, read_only=False, publication_guard=l
     return {**data, "status": "succeeded", "completed": True, "capture_id": capture_id,
         "location": ".taskgov/protection/" + capture_id,
         "components": {"core": "protected", "usage": "protected" if usage_present else "absent"},
-        "recovery": "passed"}
+        "recovery": "passed", "usage_aggregation": proof["usage_aggregation"]}
 
 
 def run_protection(context, script_path):
@@ -213,6 +215,7 @@ def run_protection(context, script_path):
             "state_path_invalid", "invalid_project_root", "project_root_uninspectable", "unsupported_python"} else "protection_failed"
         return CommandResult(False, "backup.protect",
             {"status": "failed", "accepted": accepted, "completed": False,
-             "recovery": "not_confirmed", "private_stage": "may_remain", "live_restore": "not_performed"},
+             "recovery": "not_confirmed", "usage_aggregation": "not_confirmed",
+             "private_stage": "may_remain", "live_restore": "not_performed"},
             project_id, errors=[{"code": code, "message": "database protection could not be completed"}],
             text="Database protection failed; no complete protection is confirmed.", exit_code=2)

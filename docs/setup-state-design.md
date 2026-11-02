@@ -779,12 +779,39 @@ table/column except managed generation rows, five backup pointer/outcome fields,
 the Viewer projection row and its source-generation field; those excluded
 values are instead checked against their exact required normalized values.
 Row multiset digests preserve duplicates without retaining raw data. Restored
-Usage uses the existing reconciliation repository against restored core. Its
-repeated steps borrow one fully validated, query-only core transaction for the
-whole reconciliation. This lexical reuse applies only after the private core's
-normalization and business-record comparison; the core is no longer mutated.
-The owner closes the read on success or failure before cleanup. No connection
-or validation proof is reused by another rehearsal or live-state operation.
+Usage is admitted read-only using its current repository and one fully admitted,
+query-only restored core transaction. `validate_restored_usage` uses the normal
+`captured_basis` freshness fence and requires `usage_pending`: independent copied
+files and the restored core epoch cannot inherit a current capture. Other
+admission or structural errors still fail protection. Before accepting that
+pending result, `usage_recovery_repository` streams original numerical and
+observation values and fixed diagnostic codes through their existing codecs,
+checks source cursors, saved model/coverage context and scan/response continuation
+pairs (retaining migration's explicit reset exception), inventory position and
+attempt watermarks, and locator entries/queue controls. Inventory and locator
+decoders are shared with their normal readers within the same query-only read;
+they perform no discovery or log access. Pending locations remain untrusted hints
+and do not require an already-present restored Core Task or Receipt. Immutable
+document shapes and the retained publication cursor are checked without advancing
+the audit. Reconciliation identity/change/evidence-revision inputs are validated
+independently. Coverage preserves the collector's empty-turn, legacy-only sentinel;
+modern coverage still requires a canonical turn ID. Retained changes require
+text keys with the existing producer's structural shape for every change kind,
+including empty unused keys. Deleted or absent restored anchors remain valid
+queue identities; recovery does not establish their attribution. These checks
+cannot short-circuit on
+the restored identity mismatch. They do not resolve Task attribution, recompute
+totals, validate all historical member aggregates, or advance the rotating audit.
+Necessary original-input validation remains linear in the copied inputs and is
+measured separately from eliminated reconciliation work. It never calls `refresh`,
+classification, publication or a work-queue drain. The copied Usage hash is
+checked again after admission; original counters, history, immutable evidence
+and continuations remain unchanged. The owner closes both reads on success or
+failure before cleanup. No connection or validation proof is reused by another
+rehearsal or live-state operation. Subsequent normal Usage events resume the
+existing deadline-bound reconciliation; display/publication remain fenced until
+its new basis is established. No schema, new scheduling mechanism or live repair
+is introduced.
 Only explicitly named private inbox entries are deleted; unexpected residue
 prevents publication. Sealed component hashes are rechecked before writing
 `verification.json`, then `manifest.json`, followed by the native no-replace
@@ -793,7 +820,7 @@ directory rename. Partial stages remain outside successful capture names.
 Explicit protection reuses the opted-in common CLI diagnostic scope under
 the `backup.protect` operation label. Its existing successful project/state
 resolution permits output; preview and rejected admission never do. Bounded
-spans identify copying, private restore, Usage reconciliation, cleanup and
+spans identify copying, private restore, restored Usage admission, cleanup and
 publication. The public handling boundary records the protected exception
 once before returning its unchanged sanitized failure. Existing SQLite failure
 events retain available numeric error codes, including after detail-buffer

@@ -51,7 +51,7 @@ class ProtectionLoggingTests(unittest.TestCase):
         self.assertTrue({'copy_core', 'copy_usage'} <= methods)
         # Successful detail may overflow the common finite buffer. Omission
         # must remain visible, rather than promising a complete stage trace.
-        expected = {'rehearse', 'restore_managed_backup', 'refresh', '_same_source',
+        expected = {'rehearse', 'restore_managed_backup', 'validate_restored_usage', '_same_source',
                     'publication_guard', 'rename_no_replace'}
         if not expected <= methods:
             self.assertTrue(any(row.get('dropped', {}).get('buffer_limit', 0) > 0
@@ -64,12 +64,11 @@ class ProtectionLoggingTests(unittest.TestCase):
             with self.subTest(mode=mode):
                 install, target, directory = self.fixture(mode, usage=True)
                 before = [path.read_bytes() for path in (target.db_path, target.resolved_usage_database)]
-                def fail(repository, _reader):
-                    with repository.connection(write=True) as connection:
-                        for _ in range(300):
-                            connection.execute('SELECT 1').fetchone()
-                        connection.execute('SELECT * FROM "' + SECRET + '"')
-                with mock.patch.object(usage_reconciliation_publication, 'reconcile', new=fail):
+                def fail(repository, _core, connection):
+                    for _ in range(300):
+                        connection.execute('SELECT 1').fetchone()
+                    connection.execute('SELECT * FROM "' + SECRET + '"')
+                with mock.patch.object(usage_reconciliation_publication, 'captured_basis', new=fail):
                     result = self.run_protection(install)
                 self.assertFalse(result.ok)
                 self.assertFalse(result.data['completed'])
@@ -79,7 +78,7 @@ class ProtectionLoggingTests(unittest.TestCase):
                 self.assertEqual(len(failures), 1)
                 self.assertTrue(any(frame['module'] == 'usage_repository' for frame in failures[0]['stack']))
                 self.assertTrue(any(row.get('sqlite_errorcode') == 1 and row.get('outcome') == 'failed' for row in rows))
-                self.assertTrue(any(row.get('method') == 'refresh' and row.get('outcome') == 'failed' for row in rows))
+                self.assertTrue(any(row.get('method') == 'validate_restored_usage' and row.get('outcome') == 'failed' for row in rows))
                 self.assertNotIn(SECRET, json.dumps(rows))
                 self.assertNotIn(SECRET, json.dumps(result.data))
                 self.assertEqual(before, [path.read_bytes() for path in (target.db_path, target.resolved_usage_database)])

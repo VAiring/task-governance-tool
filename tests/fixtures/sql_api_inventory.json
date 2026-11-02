@@ -518,7 +518,7 @@
     },
     "usage_locator_repository.py": {
       "attributes": {
-        "execute": 22,
+        "execute": 21,
         "fetchall": 1,
         "fetchone": 6
       },
@@ -686,6 +686,13 @@
         "execute": 33,
         "executemany": 2,
         "fetchone": 14
+      },
+      "kind": "observed_connection"
+    },
+    "usage_recovery_repository.py": {
+      "attributes": {
+        "execute": 19,
+        "fetchone": 4
       },
       "kind": "observed_connection"
     },

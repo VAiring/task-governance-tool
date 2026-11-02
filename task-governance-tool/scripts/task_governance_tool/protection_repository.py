@@ -4,7 +4,7 @@ Live readers exist only during copying. Full validation and recovery work use
 private databases. The ordinary managed-backup ledger is never updated here.
 """
 
-from contextlib import closing, contextmanager
+from contextlib import closing
 from dataclasses import replace
 import hashlib
 import json
@@ -154,22 +154,39 @@ def rehearse(target, inbox, usage_path=None):
     if usage_path is not None:
         from .state_paths import copy_physical_file_exclusive, hash_physical_file
         sealed = hash_physical_file(usage_path, root=usage_path.parent)
-        copy_physical_file_exclusive(sealed, restored.resolved_usage_database,
+        copied = copy_physical_file_exclusive(sealed, restored.resolved_usage_database,
             source_root=inbox.parent, destination_root=inbox.parent, max_bytes=sealed.identity.size)
-        repository = repository_for(restored)
-        from .storage import connect_initialized_readonly
-        # This restored Core is private and no longer mutated. Validate once,
-        # then lend its same query-only transaction to every reconciliation step.
-        # The owner closes it before rehearsal cleanup, including on failure.
-        with span(connect_initialized_readonly):
-            connection = connect_initialized_readonly(restored)
-        with closing(connection):
-            @contextmanager
-            def core_reader():
-                yield connection
-            # Real reconciliation uses exact anchors. Missing restored events or
-            # executions remain unknown, never assigned to a different execution.
-            with span(type(repository).refresh):
-                repository.refresh(core_reader)
+        with span(validate_restored_usage):
+            validate_restored_usage(restored)
+        # No reconciliation write is needed to invalidate a copied capture:
+        # current display/publication already require both physical identities.
+        # Preserve every original, immutable snapshot and committed continuation.
+        if hash_physical_file(restored.resolved_usage_database, root=inbox.parent) != copied:
+            raise failure()
     return {"core": "passed", "business_records": "equal", "normalization": "managed_repository_and_viewer",
-            "usage": "reconciled" if usage_path is not None else "absent", "host_effects": "excluded"}
+            "usage": "restored" if usage_path is not None else "absent",
+            "usage_aggregation": "pending" if usage_path is not None else "absent", "host_effects": "excluded"}
+
+
+def validate_restored_usage(restored):
+    """Admit the independent copy and prove its old aggregates are fenced out.
+
+    This is a read-only, structural check, not a reconciliation work unit.
+    Only the normal pending fence is expected; corruption/admission failures
+    still prevent protection. Later bounded lifecycle events rebuild the basis.
+    """
+    from .storage import connect_initialized_readonly
+    from .usage_reconciliation_publication import captured_basis
+    from .usage_recovery_repository import validate_recovery_inputs
+    from .usage_values import UsageError
+    repository = repository_for(restored)
+    with closing(connect_initialized_readonly(restored)) as core, repository.connection() as numerical:
+        validate_recovery_inputs(repository, numerical)
+        try:
+            captured_basis(repository, core, numerical)
+        except UsageError as error:
+            if error.code != "usage_pending":
+                raise
+        else:
+            # A newly copied/normalized database cannot inherit a current basis.
+            raise failure()

@@ -214,8 +214,13 @@ Protection must establish a recovery procedure, not merely two copied files.
 IV-P's isolated acceptance restores the protected core through repository-owned
 normalization and applicable migration/admission, validating Task/Evidence
 relations and managed-backup metadata. It separately restores/admits Usage and
-reconciles its references against restored core; absent anchors remain
-unknown/unbound rather than being assigned to a different execution.
+proves the restored basis fences out prior aggregates, without waiting for full
+history reconciliation. This applies to later compatibility rehearsals too.
+The [current recovery contract](setup-state-specification.md#explicit-database-protection)
+separates restored originals from pending derived aggregation and preserves the
+meaning of older synchronous proofs. Bounded normal Usage events reestablish
+references against restored core; absent anchors remain unknown/unbound rather
+than being assigned to a different execution.
 Copied or normalized outputs cannot inherit the original content certificate.
 Live overwrite/restore is a separate explicit user operation, never automatic.
 

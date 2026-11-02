@@ -130,7 +130,8 @@ class UsageLocatorRepository(UsagePublicationRepository):
             located = {row[0] for row in connection.execute("SELECT DISTINCT thread_id FROM usage_sources")}
         return bool(set(sessions) - located)
 
-    def _next_order(self, connection):
+    def _sequence_value(self, connection):
+        """Read the same retained queue control for allocation and recovery."""
         row = connection.execute("SELECT value FROM usage_locator_sequence WHERE singleton=1").fetchone()
         if row is None:
             # Lazy initialization belongs to the first candidate transaction.
@@ -138,13 +139,17 @@ class UsageLocatorRepository(UsagePublicationRepository):
             if (connection.execute("SELECT 1 FROM usage_locators LIMIT 1").fetchone()
                     or connection.execute("SELECT 1 FROM usage_pending_locators LIMIT 1").fetchone()):
                 raise UsageError("usage_schema_invalid")
-            connection.execute("INSERT INTO usage_locator_sequence VALUES (1,0)")
             value = 0
         else:
             value = row[0]
         if type(value) is not int or not 0 <= value < _MAX_INTEGER:
             raise UsageError("usage_schema_invalid")
-        connection.execute("UPDATE usage_locator_sequence SET value=? WHERE singleton=1", (value + 1,))
+        return value
+
+    def _next_order(self, connection):
+        value = self._sequence_value(connection)
+        connection.execute("INSERT INTO usage_locator_sequence VALUES (1,?) ON CONFLICT(singleton) "
+                           "DO UPDATE SET value=excluded.value", (value + 1,))
         return value + 1
 
     def _get_locator(self, connection, source_id, *, pending=False):

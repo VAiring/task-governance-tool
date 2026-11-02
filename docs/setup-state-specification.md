@@ -846,16 +846,37 @@ live ledger. A private inbox uses the real managed recovery selector and
 normalizer. It imports the candidate, removes unmatched older generation rows
 and resets derived Viewer state only in the restored copy. All other core
 business rows must compare equal. Present Usage is separately restored and
-reconciled against that core; missing anchors remain unknown/unbound.
+admitted without changing its bytes. Physical/schema/binding validation and
+original observations, history and immutable evidence remain required; derived
+Usage aggregation is not a recovery-success gate. Original scalar/observation
+types and retained collection/reconciliation restart inputs must remain valid;
+a stale derived basis cannot mask their corruption as ordinary pending work.
+This is not certification of every historical aggregate or a replacement for
+the existing rotating evidence audit. The normal fresh core/Usage
+identity fence must reject the copied capture as current. Until bounded normal
+Usage events reestablish that basis, totals remain unknown/unavailable, never
+zero or an old total labelled current. Missing anchors remain unknown/unbound;
+reconciliation cannot reassign them to a different Task or execution. Recovery,
+its compatibility recheck and first read do not synchronously drain history or
+start a worker. Existing bounded, resumable lifecycle events retain that work.
 The original protected components do not inherit proof from normalized outputs.
 
 Only after validation, rehearsal and cleanup does publication write the manifest
 last and rename the private directory without replacement. Failure may retain
 an unpublished `.pending-*` directory; it is never accepted protection.
-The closed `taskgov-protection-v1` manifest retains capture identity, project/
+The closed `taskgov-protection-v2` manifest (validation rules 2) retains capture identity, project/
 binding, package-manifest digest, validation-rules version, generation metadata,
 component presence/schema/capture interval/physical identity/size/SHA-256 and
-validation result, plus the verification-record filename/digest. It contains
+validation result, plus the verification-record filename/digest and
+`usage_aggregation` (`pending` for present Usage, otherwise `absent`). The v2
+verification record reports `usage=restored`/`absent` and the same aggregation
+state independently of successful core recovery. This is a fact about the
+isolated rehearsal, not a promise that the live aggregate is current.
+Existing v1/rules-1 captures retain their original `usage=reconciled` proof of
+synchronous rehearsal at that captured point; they are neither rewritten nor
+relabeled as v2 and cannot prove current aggregates after another restore.
+Both formats retain independently restorable components; subsequent admission
+and compatibility checks use the current recovery contract. The metadata contains
 no raw rows, SQL, logs or secrets. Operational stores, host effects and later
 writes are explicitly excluded. Recovery proof never starts workers, replays
 commit/send/registration, or proves current Task completion. Live restore is

@@ -26,6 +26,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
 
 from task_governance_tool.cli import handle_command  # noqa: E402
 from task_governance_tool.storage import (  # noqa: E402
+    SCHEMA_VERSION,
     StorageError,
     apply_handoff_outbox_migration,
     apply_migrations,
@@ -1080,41 +1081,7 @@ class HandoffMigrationTests(unittest.TestCase):
                 applied, _ = apply_migrations(connection)
                 self.assertEqual(
                     applied,
-                    [
-                        1,
-                        2,
-                        3,
-                        4,
-                        5,
-                        6,
-                        7,
-                        8,
-                        9,
-                        10,
-                        11,
-                        12,
-                        13,
-                        14,
-                        15,
-                        16,
-                        17,
-                        18,
-                        19,
-                        20,
-                        21,
-                        22,
-                        23,
-                        24,
-                        25,
-                        26,
-                        27,
-                        28,
-                        29,
-                        30,
-                        31,
-                        32,
-                        33,
-                    ],
+                    list(range(1, SCHEMA_VERSION + 1)),
                 )
                 remove_v10_maintenance_for_test(connection)
                 connection.execute("DELETE FROM schema_migrations WHERE version = 9")

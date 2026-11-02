@@ -89,11 +89,9 @@ class AsyncBackupMcpProcessTests(unittest.TestCase):
                 deadline = time.monotonic() + 5
                 presence = None
                 while time.monotonic() < deadline:
-                    try:
-                        with opportunity._guard(root):
-                            presence = opportunity._read(root, "service.json")
-                    except Exception:
-                        pass
+                    # Presence is published atomically. Poll without taking the
+                    # zero-wait lock the observer needs for its one activation.
+                    presence = opportunity._read(root, "service.json")
                     if presence is not None:
                         break
                     time.sleep(.02)

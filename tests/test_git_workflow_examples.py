@@ -54,7 +54,7 @@ class GitWorkflowExampleTests(PreparationFixture):
         code = code.replace("<intended-project-paths>", paths)
         code = code.replace("<task-id>", task or self.task_id)
         code = code.replace("<project-approved message>", "reviewed fixture")
-        code = code.replace("reviews/g1", directory)
+        code = code.replace("<review-directory>", directory)
         if os.name == "nt":
             code = code.replace("python ", "& '" + sys.executable.replace("'", "''") + "' ")
         else:

@@ -44,6 +44,7 @@ from task_governance_tool.project_binding_repository import (
 )
 from task_governance_tool.storage import (
     DatabaseTarget,
+    SCHEMA_VERSION,
     connect,
     current_schema_version,
     initialize_database,
@@ -501,7 +502,7 @@ class M17SetupRegressionTests(unittest.TestCase):
             self.assertFalse(install.legacy_db_path.exists())
             self.assertEqual(source_backups[0].read_bytes(), source_bytes)
             with closing(connect(install.db_path)) as connection:
-                self.assertEqual(current_schema_version(connection), 33)
+                self.assertEqual(current_schema_version(connection), SCHEMA_VERSION)
                 maintenance = connection.execute(
                     """
                     SELECT enabled_at, backup_interval_minutes,

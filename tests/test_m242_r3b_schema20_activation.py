@@ -44,6 +44,7 @@ from tests.m14_test_support import (  # noqa: E402
     refresh_test_manifest,
     tree_snapshot,
 )
+from tests.m214b_test_support import make_recordless_legacy_artifact  # noqa: E402
 from tests.m223_test_support import (  # noqa: E402
     V20_TABLES,
     logical_database_digest,
@@ -61,8 +62,11 @@ FIXED_TIME = "2026-08-23T00:00:00Z"
 
 _SCHEMA20_RUNTIME_PATCH_TARGETS = (
     "task_governance_tool.backup.SCHEMA_VERSION",
+    "task_governance_tool.backup_validation.SCHEMA_VERSION",
     "task_governance_tool.doctor.SCHEMA_VERSION",
     "task_governance_tool.evidence_projection.SCHEMA_VERSION",
+    "task_governance_tool.evidence_publication_baseline.SCHEMA_VERSION",
+    "task_governance_tool.evidence_incremental_repository.SCHEMA_VERSION",
     "task_governance_tool.reviews.SCHEMA_VERSION",
     "task_governance_tool.setup.SCHEMA_VERSION",
     "task_governance_tool.setup_state_separation.SCHEMA_VERSION",
@@ -1134,7 +1138,10 @@ class R3BSchema20ActivationTests(unittest.TestCase):
                 baseline,
             )
 
-            self.assertEqual(discover_managed_backup_metadata(target), ())
+            # A certified generation whose content changed fails discovery as a set.
+            with self.assertRaises(storage.StorageError) as discovery:
+                discover_managed_backup_metadata(target)
+            self.assertEqual(discovery.exception.code, "project_state_unreadable")
             self.assertEqual(
                 install.state_snapshot(),
                 baseline,
@@ -1147,6 +1154,16 @@ class R3BSchema20ActivationTests(unittest.TestCase):
                 install.state_snapshot(),
                 baseline,
             )
+
+            # Uncertified historical backups must reach the semantic Runner audit.
+            for path in backup_paths:
+                make_recordless_legacy_artifact(path)
+            legacy_baseline = install.state_snapshot()
+            self.assertEqual(discover_managed_backup_metadata(target), ())
+            with self.assertRaises(storage.StorageError) as legacy_recovery:
+                select_managed_backup_for_recovery(target)
+            self.assertEqual(legacy_recovery.exception.code, "setup_restore_failed")
+            self.assertEqual(install.state_snapshot(), legacy_baseline)
 
     def test_current_v20_task_runner_basis_is_not_admitted(self) -> None:
         with tempfile.TemporaryDirectory(

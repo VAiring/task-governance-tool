@@ -96,6 +96,8 @@ def _schema21_runtime():
     with ExitStack() as stack:
         for target in _SCHEMA20_RUNTIME_PATCH_TARGETS:
             stack.enter_context(mock.patch(target, 21))
+        from tests.fixtures.pre_incremental_viewer_maintenance import publish_setup_viewer
+        stack.enter_context(mock.patch("task_governance_tool.setup.publish_setup_viewer", publish_setup_viewer))
         # Python captures this default at import time. Pin the historical
         # contract as well as the constants, without bypassing validation.
         stack.enter_context(mock.patch.object(

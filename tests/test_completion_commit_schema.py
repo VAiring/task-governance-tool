@@ -17,6 +17,7 @@ from task_governance_tool.tasks import (  # noqa: E402
     find_task_ids_by_completion_commit_hash,
 )
 from task_governance_tool.task_values import TaskValidationError  # noqa: E402
+from task_governance_tool.viewer_projection_repository import initialize_locked
 
 
 SCRIPT_PATH = SCRIPTS_ROOT / "taskgov.py"
@@ -112,6 +113,7 @@ class CompletionCommitSchemaTests(unittest.TestCase):
                         """,
                         (other_project_id,),
                     )
+                    initialize_locked(connection, other_project_id)
                     visible = add_task(connection, target.project, title="Visible task").task
                     hidden = add_task(
                         connection,

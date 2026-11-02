@@ -15,6 +15,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
 from tests.m214b_test_support import (  # noqa: E402
+    make_recordless_legacy_artifact,
     publish_generations,
     replace_verification,
 )
@@ -80,6 +81,15 @@ def _setup_current(root: Path):
         return _setup_runtime_current(root)
 
 
+def publish_legacy_generations(target, *timestamps):
+    # Historical artifacts predate the external validation record. Mutations
+    # must reach the schema-specific audit rather than failing a modern hash.
+    artifacts = publish_generations(target, *timestamps)
+    for artifact in artifacts:
+        make_recordless_legacy_artifact(artifact.path)
+    return artifacts
+
+
 class M243BSchema21RecoveryTests(unittest.TestCase):
     def _corrupt_source18_or_19_evidence(
         self,
@@ -128,7 +138,7 @@ class M243BSchema21RecoveryTests(unittest.TestCase):
                 self.fail(f"unsupported source fixture version: {version}")
         with closing(connect_readonly(target.db_path)) as connection:
             self.assertEqual(current_schema_version(connection), version)
-        artifacts = publish_generations(
+        artifacts = publish_legacy_generations(
             target,
             "2097-08-25T00:00:00Z",
             "2098-08-25T00:00:00Z",
@@ -177,7 +187,7 @@ class M243BSchema21RecoveryTests(unittest.TestCase):
                     verification_required=False,
                 )
                 _complete_task(self, target, task_id)
-            artifacts = publish_generations(
+            artifacts = publish_legacy_generations(
                 target,
                 "2097-08-27T00:00:00Z",
                 "2098-08-27T00:00:00Z",
@@ -200,7 +210,7 @@ class M243BSchema21RecoveryTests(unittest.TestCase):
                 commit_character="d",
                 token="abcdef0123456789",
             )
-            artifacts = publish_generations(
+            artifacts = publish_legacy_generations(
                 target,
                 "2097-08-26T00:00:00Z",
                 "2098-08-26T00:00:00Z",
@@ -246,7 +256,7 @@ class M243BSchema21RecoveryTests(unittest.TestCase):
         arguments.append("--json")
         added = install.run(*arguments)
         self.assertEqual(added.returncode, 0, added.stderr)
-        artifacts = publish_generations(
+        artifacts = publish_legacy_generations(
             target,
             "2097-08-28T00:00:00Z",
             "2098-08-28T00:00:00Z",
@@ -272,7 +282,7 @@ class M243BSchema21RecoveryTests(unittest.TestCase):
             verification_required=False,
         )
         _complete_task(self, target, task_id)
-        artifacts = publish_generations(
+        artifacts = publish_legacy_generations(
             target,
             "2097-08-28T00:00:00Z",
             "2098-08-28T00:00:00Z",

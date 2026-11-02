@@ -21,6 +21,7 @@ from task_governance_tool.storage import (  # noqa: E402
     DATABASE_BUSY_MESSAGE,
     StorageError,
     count_tasks,
+    connect,
     connect_initialized_readonly,
     connect_readonly,
     initialize_database,
@@ -28,8 +29,7 @@ from task_governance_tool.storage import (  # noqa: E402
     validate_operational_journal_state,
 )
 from task_governance_tool import sqlite_connection  # noqa: E402
-from task_governance_tool.session_identity import CallerIdentity
-from task_governance_tool.task_ownership import initialize_task
+from task_governance_tool.tasks import add_task
 
 
 SCRIPT_PATH = SCRIPTS_ROOT / "taskgov.py"
@@ -56,45 +56,11 @@ def initialized_target(tmp: str):
     return target
 
 
-def insert_spill_tasks(
-    connection: sqlite3.Connection,
-    *,
-    project_id: str,
-    count: int,
-) -> None:
-    timestamp = "2026-07-26T00:00:00Z"
-    rows = [
-        (
-            f"tg_task_spill_{index:04d}",
-            project_id,
-            f"Spill task {index}",
-            "x" * 8192,
-            timestamp,
-            timestamp,
-        )
-        for index in range(count)
-    ]
-    connection.executemany(
-        """
-        INSERT INTO tasks(
-          task_id,
-          project_id,
-          title,
-          description,
-          kind,
-          priority,
-          status,
-          review_tier,
-          created_at,
-          updated_at
-        )
-        VALUES (?, ?, ?, ?, 'optional', 'normal', 'ready', 1, ?, ?)
-        """,
-        rows,
-    )
-    for row in rows:
-        initialize_task(connection, project_id=project_id, task_id=row[0],
-                        status="ready", caller=CallerIdentity(None), now=timestamp)
+def insert_spill_tasks(connection, target, count):
+    # Seed the authority and projection rows checked during full read admission.
+    for index in range(count):
+        add_task(connection, target.project, title=f"Spill task {index}",
+                 description="x" * 4000)
 
 
 class LiveReadConsistencyTests(unittest.TestCase):
@@ -300,12 +266,8 @@ class LiveReadConsistencyTests(unittest.TestCase):
         task_count = 400
         with tempfile.TemporaryDirectory() as tmp:
             target = initialized_target(tmp)
-            with closing(sqlite3.connect(target.db_path)) as seed:
-                insert_spill_tasks(
-                    seed,
-                    project_id=target.project.project_id,
-                    count=task_count,
-                )
+            with closing(connect(target.db_path)) as seed:
+                insert_spill_tasks(seed, target, task_count)
                 seed.commit()
 
             writer = sqlite3.connect(target.db_path, timeout=0.1)

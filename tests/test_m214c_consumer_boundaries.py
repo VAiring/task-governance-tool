@@ -337,10 +337,9 @@ class StoredTaskConsumerBoundaryTests(unittest.TestCase):
                     target.project.project_id,
                 )
             self.assertIsNotNone(state)
-            self.assertEqual(
-                state.rendered_generation,
-                state.source_generation,
-            )
+            # Forced repair clears its accepted generation before rebuilding.
+            self.assertIsNone(state.rendered_generation)
+            self.assertTrue(state.due)
 
     def test_viewer_validates_foreign_owned_rows_in_the_whole_batch(self):
         with tempfile.TemporaryDirectory() as temp:

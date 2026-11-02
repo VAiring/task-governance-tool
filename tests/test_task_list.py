@@ -93,11 +93,11 @@ class TaskListTests(unittest.TestCase):
                     connection.commit()
                     project = SimpleNamespace(project_id=template["project_id"])
                     sizes = []
-                    validate = tasks.validate_current_stored_task_rows
+                    validate = validation.validate_current_stored_task_rows
                     def checked(core, rows, **kwargs):
                         sizes.append(len(rows))
                         return validate(core, rows, **kwargs)
-                    with mock.patch.object(tasks, "validate_current_stored_task_rows", side_effect=checked), \
+                    with mock.patch.object(validation, "validate_current_stored_task_rows", side_effect=checked), \
                             mock.patch.object(tasks, "row_to_task", wraps=tasks.row_to_task) as project_row, \
                             mock.patch.object(tasks, "current_schema_version", wraps=tasks.current_schema_version) as schema_read, \
                             mock.patch.object(validation, "current_schema_version", wraps=validation.current_schema_version) as schema_reread:

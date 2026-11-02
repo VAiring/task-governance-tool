@@ -291,7 +291,7 @@ class M17ConsumerHardeningTests(unittest.TestCase):
                 {
                     "code": "unreadable",
                     "schema_version": None,
-                    "required_schema_version": 33,
+                    "required_schema_version": storage_service.SCHEMA_VERSION,
                 },
             )
             self.assertEqual(
@@ -720,7 +720,7 @@ class M17ConsumerHardeningTests(unittest.TestCase):
                 binding_generation=original.binding_generation,
             )
             real_replace = viewer_writer.os.replace
-            rebind_errors: list[str] = []
+            rebind_errors = []
 
             def replace_while_rebinding(source, destination):
                 try:
@@ -732,7 +732,7 @@ class M17ConsumerHardeningTests(unittest.TestCase):
                         bound_at=FIRST_REBIND_TIME,
                     )
                 except StorageError as exc:
-                    rebind_errors.append(exc.code)
+                    rebind_errors.append((Path(destination), exc.code))
                 return real_replace(source, destination)
 
             with mock.patch.object(
@@ -746,7 +746,10 @@ class M17ConsumerHardeningTests(unittest.TestCase):
                 )
 
             self.assertEqual((result.code, result.renders), ("succeeded", 1))
-            self.assertEqual(rebind_errors, ["database_busy"])
+            self.assertEqual(rebind_errors, [
+                (original.resolved_viewer_projection_path, "database_busy"),
+                (original.resolved_viewer_path, "database_busy"),
+            ])
             current = resolve_project_state(
                 skill_root=install.skill_root,
                 repo=install.project_root,

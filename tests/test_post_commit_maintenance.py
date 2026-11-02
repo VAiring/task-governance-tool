@@ -129,9 +129,12 @@ class MaintenanceAdmissionTests(unittest.TestCase):
                 self.assert_global_rejects(target)
                 before = target.db_path.read_bytes()
                 with ExitStack() as stack:
+                    if not enabled:
+                        stack.enter_context(mock.patch.object(evidence, "zero_wait_artifact_lock",
+                            side_effect=AssertionError("Disabled Evidence must not take the artifact lock")))
                     for owner, name in (
                         (storage, "validate_current_schema21_admitted_rows"),
-                        (evidence, "zero_wait_artifact_lock"),
+                        (evidence, "capture_current_evidence_projection"),
                         (viewer_maintenance_service, "zero_wait_artifact_lock"),
                         (backup, "managed_backup_lock"),
                     ):
@@ -180,46 +183,42 @@ class MaintenanceAdmissionTests(unittest.TestCase):
 
     def test_evidence_rechecks_current_or_disabled_state_under_lock(self):
         from dataclasses import replace
+        from task_governance_tool import evidence_incremental_repository as incremental
         from task_governance_tool import evidence_publication as evidence
-        from task_governance_tool import viewer
+        from tests.test_evidence_projection_capture import _complete_fixture_task
 
-        for service, state_table, generation_field in (
-            (evidence, "evidence_projection_state", "published_generation"),
-        ):
-            for disabled in (False, True):
-                with self.subTest(service=service.__name__, disabled=disabled):
-                    target = self.make_fixture()
-                    real_lock = service.zero_wait_artifact_lock
-                    @contextmanager
-                    def change_before_capture(path):
-                        with real_lock(path):
-                            with closing(sqlite3.connect(target.db_path)) as connection:
-                                if not disabled:
-                                    if service is evidence:
-                                        connection.execute("UPDATE evidence_projection_state SET published_generation=source_generation, index_digest=?", ("sha256:" + "0" * 64,))
-                                    else:
-                                        connection.execute(f"UPDATE {state_table} SET {generation_field}=source_generation")
-                                connection.commit()
-                            self.corrupt_note(target)
-                            if disabled:
-                                # Opt-in is durable; inject the existing defensive
-                                # opt-out observation without violating its DDL.
-                                read = service.read_project_maintenance
-                                with mock.patch.object(service, "read_project_maintenance",
-                                    side_effect=lambda *args: replace(read(*args), enabled_at=None)):
-                                    yield
-                            else:
-                                yield
-                    audit_owner = viewer if service is viewer_maintenance_service else service
-                    audit_name = "validate_snapshot_database_for_viewer" if service is viewer_maintenance_service else "validate_current_database"
-                    with mock.patch.object(service, "zero_wait_artifact_lock", side_effect=change_before_capture), \
-                         mock.patch.object(audit_owner, audit_name,
-                             side_effect=AssertionError("Ineligible locked capture must not audit")) as audit:
-                        result = (evidence.run_routine_evidence_projection(target)
-                            if service is evidence else service.run_routine_viewer_refresh(target))
-                    self.assertEqual(result.code, "not_opted_in" if disabled else "current")
-                    audit.assert_not_called()
-                    self.assert_global_rejects(target)
+        for disabled in (False, True):
+            with self.subTest(disabled=disabled):
+                target = self.make_fixture()
+                self.assertEqual(evidence.publish_setup_evidence_projection(target).code, "succeeded")
+                _complete_fixture_task(target.project.canonical_repo, target.db_path, 1, large=False)
+                with closing(connect_initialized_readonly(target)) as connection:
+                    state = evidence.read_evidence_projection_state(connection, project_id=target.project.project_id)
+                    self.assertTrue(state.due)
+                real_lock = evidence.zero_wait_artifact_lock
+                read = evidence.read_project_maintenance
+
+                @contextmanager
+                def change_before_capture(path):
+                    if not disabled:
+                        # The competitor acknowledges the index before this attempt gets the lock.
+                        with mock.patch.object(evidence, "zero_wait_artifact_lock", real_lock):
+                            self.assertEqual(evidence.publish_setup_evidence_projection(target).code, "succeeded")
+                    self.corrupt_note(target)
+                    with real_lock(path), ExitStack() as locked:
+                        if disabled:
+                            locked.enter_context(mock.patch.object(evidence, "read_project_maintenance",
+                                side_effect=lambda *args: replace(read(*args), enabled_at=None)))
+                        for owner, name in ((evidence, "capture_current_evidence_projection"),
+                                            (incremental, "capture_incremental_evidence_projection")):
+                            locked.enter_context(mock.patch.object(owner, name,
+                                side_effect=AssertionError("Ineligible locked capture must not audit")))
+                        yield
+
+                with mock.patch.object(evidence, "zero_wait_artifact_lock", side_effect=change_before_capture):
+                    result = evidence.run_routine_evidence_projection(target)
+                self.assertEqual(result.code, "not_opted_in" if disabled else "current")
+                self.assert_global_rejects(target)
 
     def test_viewer_rechecks_current_or_disabled_state_under_lock(self):
         from dataclasses import replace

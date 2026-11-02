@@ -538,8 +538,9 @@ class WriteContentionTests(unittest.TestCase):
             before = database_rows(db)
             wrappers = []
 
-            def locked_commit_connection(target):
-                wrapper = CommitFailingConnection(connect_initialized(target))
+            def locked_commit_connection(target, *, operation_local):
+                self.assertTrue(operation_local)
+                wrapper = CommitFailingConnection(connect_initialized(target, operation_local=operation_local))
                 wrappers.append(wrapper)
                 return wrapper
 

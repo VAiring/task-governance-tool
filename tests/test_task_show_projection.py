@@ -29,7 +29,7 @@ VERIFICATION_RECEIPT_FIELDS = {
 SHOW_KEYS = {
     "task", "events", "suggested_next_action", "review_evidence", "handoff_summary",
     "contract", "latest_checkpoint", "completion_history", "verification_evidence",
-    "effort_advisory_enabled", "usage",
+    "effort_advisory_enabled",
 }
 
 
@@ -271,7 +271,7 @@ class TaskShowProjectionTests(unittest.TestCase):
                 audit = self.show(task["task_id"], audit=True)["data"]
                 context = self.success("task", "context")["data"]["selected"]
                 self.assertEqual(set(normal), SHOW_KEYS)
-                self.assertEqual(set(audit), SHOW_KEYS)
+                self.assertEqual(set(audit), SHOW_KEYS | {"usage"})
                 self.assertEqual(context, normal)
                 for field in ("task", "contract", "latest_checkpoint", "handoff_summary", "effort_advisory_enabled", "suggested_next_action"):
                     self.assertEqual(normal[field], audit[field])
@@ -512,8 +512,10 @@ class TaskShowProjectionTests(unittest.TestCase):
         _setup(install)
         evidence = install.fixed_root / "evidence"
         saved = {path.relative_to(evidence).as_posix(): path.read_bytes() for path in evidence.rglob("*.json")}
-        self.assertIn("index.json", saved)
-        self.assertEqual(len(saved), 2)
+        index = json.loads(saved["index.json"])
+        (entry,) = index["payload"]["entries"]
+        self.assertEqual(entry["task_id"], task_id)
+        self.assertEqual(set(saved), {"index.json", entry["bundle_file"], "publication-baseline.json"})
         before = file_snapshot(install.project_root)
 
         normal = physical("task", "show", task_id)["data"]

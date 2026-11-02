@@ -14,6 +14,7 @@ if str(SCRIPTS) not in sys.path:
 from task_governance_tool import storage, tasks
 from task_governance_tool.session_identity import CallerIdentity
 from task_governance_tool.sqlite_connection import configure_connection
+from task_governance_tool.viewer_projection_repository import initialize_locked
 from tests.review_test_helpers import seed_review_evidence_connection
 
 
@@ -33,6 +34,7 @@ class LegacyReopenScopeTests(unittest.TestCase):
         storage.ensure_evidence_projection_state_row(self.db, project_id=self.project.project_id)
         storage.ensure_project_maintenance_row(self.db, self.project.project_id)
         storage.ensure_viewer_maintenance_row(self.db, self.project.project_id)
+        initialize_locked(self.db, self.project.project_id)
         self.db.commit()
 
     def add(self, *, active=False):

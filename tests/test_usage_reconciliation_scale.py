@@ -14,6 +14,33 @@ from task_governance_tool import usage_reconciliation_membership as membership
 
 
 class ScaleTests(unittest.TestCase):
+    def test_same_response_keys_use_fewer_core_admissions_and_sql(self):
+        from tests.test_integrity_consumer_closure import observe_sql
+        from task_governance_tool import storage, usage_reconciliation_runtime as runtime
+        fixture = changed_support.ChangedRuntimeTests()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        keys, expected = fixture.queued_responses(2 * runtime._RESPONSE_PAGE_SIZE + 1)
+        measurements = []
+        for width in (1, runtime._RESPONSE_PAGE_SIZE):
+            if measurements:
+                with fixture.repository.connection(write=True) as db:
+                    db.executemany("INSERT INTO usage_reconcile_response_work VALUES (?,?)", keys)
+            with mock.patch.object(runtime, "_RESPONSE_PAGE_SIZE", width), \
+                    mock.patch.object(runtime, "monotonic", return_value=0), \
+                    mock.patch.object(storage, "_validate_current_schema_contract", wraps=storage._validate_current_schema_contract) as admit, \
+                    mock.patch.object(membership, "reconcile_response", wraps=membership.reconcile_response) as classify, \
+                    observe_sql() as cost:
+                index, _ = fixture.repository.prepare_publication(fixture.reader)
+            self.assertEqual(index, expected)
+            self.assertEqual([call.args[1:] for call in classify.call_args_list], keys)
+            measurements.append((admit.call_count, cost["connections"], cost["sql"]))
+        before, after = measurements
+        self.assertLess(after[0], before[0], measurements)
+        self.assertLess(after[1], before[1], measurements)
+        self.assertLess(after[2], before[2], measurements)
+        self.assertEqual(fixture.assert_same(), expected)
+
     def measure(self, size):
         fixture = changed_support.ChangedRuntimeTests()
         fixture.setUp()

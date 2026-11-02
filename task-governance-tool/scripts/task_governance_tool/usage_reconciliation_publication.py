@@ -13,10 +13,18 @@ from .usage_values import UsageError
 def reconcile(repository, core_reader):
     from .usage_reconciliation_runtime import advance_initial, advance_effects
     from .usage_reconciliation_snapshots import advance
+    first_response = True
     for function, complete in ((advance_initial, "effects_pending"), (advance_effects, "classification_pending"), (advance, "captured")):
         while True:
             repository.check_budget()
-            result = function(repository, core_reader)
+            if function is advance_effects:
+                # Commit one feasible key before a later, potentially expensive
+                # sibling can interrupt an entire page on every Hook restart.
+                result = function(repository, core_reader, single_response=first_response)
+                if result["phase"] == "response":
+                    first_response = False
+            else:
+                result = function(repository, core_reader)
             if result["phase"] == complete:
                 break
     return result["basis"]

@@ -44,6 +44,134 @@ class ChangedRuntimeTests(unittest.TestCase):
         UsageCollectionTests.append(self.fixture, *rows)
         self.fixture.ingest()
 
+    def queued_responses(self, count):
+        keys = [("openai", f"page-{i:02}") for i in range(count)]
+        self.append(*(usage(response, turn=turn(1)) for _, response in keys))
+        index = self.assert_same()
+        with self.repository.connection(write=True) as connection:
+            connection.executemany("INSERT INTO usage_reconcile_response_work VALUES (?,?)", keys)
+        return keys, index
+
+    def test_response_pages_commit_a_single_key_before_optional_siblings_and_resume_fifo(self):
+        from task_governance_tool import usage_reconciliation_membership as membership
+        from task_governance_tool import usage_reconciliation_runtime as runtime
+        from task_governance_tool.usage_values import UsageError
+        keys, expected = self.queued_responses(2 * runtime._RESPONSE_PAGE_SIZE + 1)
+        # Rebuild the queued derived rows from their retained numerical inputs.
+        with self.repository.connection(write=True) as connection:
+            connection.executemany("DELETE FROM usage_reconcile_response_result WHERE provider=? AND response_id=?", keys)
+        visited, pages = [], []
+        apply = membership.reconcile_response
+        advance = runtime.advance_effects
+        def interrupted(connection, *key):
+            visited.append(key)
+            result = apply(connection, *key)
+            if len(visited) == 3:
+                raise InterruptedError("isolated page interruption")
+            return result
+        def record_page(*args, **kwargs):
+            before = len(visited)
+            result = advance(*args, **kwargs)
+            if result["phase"] == "response":
+                pages.append(visited[before:])
+            return result
+        with mock.patch.object(runtime, "monotonic", return_value=0), \
+                mock.patch.object(runtime, "advance_effects", record_page), \
+                mock.patch.object(membership, "reconcile_response", interrupted):
+            with self.assertRaisesRegex(UsageError, "usage_unavailable"):
+                self.repository.prepare_publication(self.reader)
+        self.assertEqual(visited, keys[:3])
+        self.assertEqual(pages, [keys[:1]])
+        self.repository = type(self.repository)(self.repository.path, *self.repository.basis)
+        with self.repository.connection() as connection:
+            self.assertEqual([tuple(row) for row in connection.execute(
+                "SELECT provider,response_id FROM usage_reconcile_response_work ORDER BY rowid")], keys[1:])
+            derived_rows = {tuple(row) for row in connection.execute(
+                "SELECT provider,response_id FROM usage_reconcile_response_result")}
+            self.assertEqual(derived_rows.intersection(keys), {keys[0]})
+        visited.clear()
+        pages.clear()
+        def record_key(connection, *key):
+            visited.append(key)
+            return apply(connection, *key)
+        with mock.patch.object(runtime, "monotonic", return_value=0), \
+                mock.patch.object(runtime, "advance_effects", record_page), \
+                mock.patch.object(membership, "reconcile_response", record_key):
+            self.assertEqual(self.assert_same(), expected)
+        self.assertEqual(visited, keys[1:])
+        self.assertEqual([len(page) for page in pages], [1, runtime._RESPONSE_PAGE_SIZE,
+                                                       runtime._RESPONSE_PAGE_SIZE - 1])
+
+    def test_short_response_page_commits_and_fresh_guard_rejects_changed_core(self):
+        from task_governance_tool import usage_incremental_repository as incremental
+        from task_governance_tool import usage_reconciliation_runtime as runtime
+        from task_governance_tool.usage_values import UsageError
+        keys, _ = self.queued_responses(4)
+        self.repository.deadline = 100 + runtime._RESPONSE_PAGE_SECONDS / 2
+        try:
+            with mock.patch.object(incremental, "monotonic", return_value=100), \
+                    mock.patch.object(runtime, "monotonic", return_value=100):
+                self.assertEqual(runtime.advance_effects(self.repository, self.reader),
+                                 {"phase": "response", "key": keys[0]})
+            with self.assertRaisesRegex(UsageError, "usage_pending"), \
+                    mock.patch.object(incremental, "monotonic", return_value=101):
+                runtime.advance_effects(self.repository, self.reader)
+        finally:
+            self.repository.deadline = float("inf")
+        # An abundant event also yields if the first key consumed its time slice.
+        with mock.patch.object(runtime, "monotonic", side_effect=(100, 101)):
+            self.assertEqual(runtime.advance_effects(self.repository, self.reader)["key"], keys[1])
+        with closing(storage.connect_initialized(self.fixture.target)) as core:
+            tasks.edit_task(core, self.fixture.target.project, self.fixture.task_id,
+                database_target=self.fixture.target, caller=CallerIdentity(THREAD), title="Updated between pages")
+            core.commit()
+        with self.assertRaisesRegex(UsageError, "usage_pending"):
+            runtime.advance_effects(self.repository, self.reader)
+        with self.repository.connection() as connection:
+            self.assertEqual([tuple(row) for row in connection.execute(
+                "SELECT provider,response_id FROM usage_reconcile_response_work ORDER BY rowid")], keys[2:])
+        self.assert_same()
+
+    def test_competing_task_update_can_commit_between_response_pages(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Event
+        from task_governance_tool import usage_reconciliation_membership as membership
+        from task_governance_tool import usage_reconciliation_runtime as runtime
+        from task_governance_tool.usage_values import UsageError
+
+        keys, _ = self.queued_responses(runtime._RESPONSE_PAGE_SIZE + 1)
+        page_started, committing = Event(), Event()
+        def edit_task():
+            self.assertTrue(page_started.wait(5))
+            with closing(storage.connect_initialized(self.fixture.target)) as core:
+                def trace(sql):
+                    if sql.strip().upper() == "COMMIT":
+                        committing.set()
+                core.set_trace_callback(trace)
+                tasks.edit_task(core, self.fixture.target.project, self.fixture.task_id,
+                    database_target=self.fixture.target, caller=CallerIdentity(THREAD), title="Concurrent Task update")
+                core.commit()
+
+        apply = membership.reconcile_response
+        def during_page(connection, *key):
+            if not page_started.is_set():
+                page_started.set()
+                self.assertTrue(committing.wait(5))
+                self.assertFalse(editor.done())
+            return apply(connection, *key)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            editor = pool.submit(edit_task)
+            with mock.patch.object(membership, "reconcile_response", during_page), \
+                    mock.patch.object(runtime, "monotonic", return_value=0):
+                self.assertEqual(runtime.advance_effects(self.repository, self.reader)["phase"], "response")
+            editor.result(timeout=5)
+        with self.assertRaisesRegex(UsageError, "usage_pending"):
+            runtime.advance_effects(self.repository, self.reader)
+        with self.repository.connection() as connection:
+            self.assertEqual([tuple(row) for row in connection.execute(
+                "SELECT provider,response_id FROM usage_reconcile_response_work ORDER BY rowid")], keys[-1:])
+        self.assert_same()
+
     def transition(self, status, response, **options):
         fixture = self.fixture
         with closing(storage.connect_initialized(fixture.target)) as core:

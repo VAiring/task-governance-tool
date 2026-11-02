@@ -6,6 +6,8 @@ readiness. The production factory selects this implementation only together
 with its completed effect/publication integration.
 """
 
+from time import monotonic
+
 from .usage_attribution import Transition
 from .usage_reconciliation_core import cursor, revision, sync_page, _decode
 from .usage_reconciliation_changes import consume_page, expand_source_page
@@ -17,6 +19,10 @@ from .usage_reconciliation_turns import replay_one
 from .usage_reconciliation_membership import apply_base_one
 from .usage_reconciliation_basis import admit_identity, capture_inputs, require_inputs, global_page
 from .usage_values import UsageError
+
+
+_RESPONSE_PAGE_SIZE = 8
+_RESPONSE_PAGE_SECONDS = 0.050
 
 
 def _exists(connection, table):
@@ -109,13 +115,14 @@ def advance_initial(repository, core_reader):
         return {"phase": "effects_pending"}
 
 
-def advance_effects(repository, core_reader):
+def advance_effects(repository, core_reader, *, single_response=False):
     """Selected effect stages; publication still has its separate fresh guard."""
     from . import usage_reconciliation_uncertainty as uncertainty
     from . import usage_reconciliation_overlays as overlays
     from .usage_reconciliation_ranges import expand_range_page
     from . import usage_reconciliation_membership as membership
     from . import usage_reconciliation_pending as pending
+    started = monotonic()
     with repository.connection(write=True) as connection, core_reader() as core:
         repository.check_budget()
         require_inputs(repository, core, connection)
@@ -138,10 +145,18 @@ def advance_effects(repository, core_reader):
         if turn is not None:
             uncertainty.apply_turn(connection, *turn)
             return {"phase": "turn_overlays", **overlays.apply_turn(connection, *turn)}
-        response = connection.execute("SELECT provider,response_id FROM usage_reconcile_response_work ORDER BY rowid LIMIT 1").fetchone()
-        if response is not None:
-            membership.reconcile_response(connection, *response)
-            return {"phase": "response", "key": tuple(response)}
+        responses = connection.execute("SELECT provider,response_id FROM usage_reconcile_response_work "
+            "ORDER BY rowid LIMIT ?", (1 if single_response else _RESPONSE_PAGE_SIZE,)).fetchall()
+        if responses:
+            repository.check_budget()
+            # The first key may use the remaining hard budget. Start optional
+            # siblings only within the lock-time allowance and with commit margin.
+            stop = min(started + _RESPONSE_PAGE_SECONDS, repository.deadline - _RESPONSE_PAGE_SECONDS)
+            for response in responses:
+                membership.reconcile_response(connection, *response)
+                if monotonic() >= stop:
+                    break
+            return {"phase": "response", "key": tuple(responses[0])}
         source = connection.execute("SELECT thread_id FROM usage_reconcile_diagnostic_work ORDER BY rowid LIMIT 1").fetchone()
         if source is not None:
             membership.reconcile_thread_diagnostics(connection, source[0])

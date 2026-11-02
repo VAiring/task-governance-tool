@@ -656,7 +656,8 @@
     "usage_reconciliation_runtime.py": {
       "attributes": {
         "execute": 23,
-        "fetchone": 13
+        "fetchall": 1,
+        "fetchone": 12
       },
       "kind": "observed_connection"
     },

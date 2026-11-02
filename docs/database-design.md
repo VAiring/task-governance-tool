@@ -1275,6 +1275,15 @@ phases. Core/changes/source pages, selected Task operations and intervals, turn
 input/allocation, contribution replacement, uncertainty/pending/range overlays,
 response totals, diagnostics and selected snapshots commit as separate units.
 Read transactions open after the numerical writer; no core write occurs.
+For response work the first key in each reconciliation run commits on its own.
+Subsequent pages select up to eight keys in queue order under one numerical
+writer and one fresh Core input check. Each key uses the ordinary response
+classifier. The page stops starting additional keys after 50 ms from entry or
+within 50 ms of the existing deadline. One indivisible key can take longer.
+Its result, totals and queue removal commit with the rest of that page.
+An interrupted transaction leaves its keys pending and earlier pages durable.
+The next page repeats admission and higher-priority selection; diagnostic and
+snapshot work and the final publication guard retain their separate reads.
 The pure whole-turn allocator is shared with the full attribution oracle.
 Only active execution state crosses a turn boundary. Persisted positions and
 reverse event/call/key indexes propagate repeated original keys and late

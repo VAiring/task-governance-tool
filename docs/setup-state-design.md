@@ -229,6 +229,10 @@ fresh admitted core and numerical state; stale or incomplete work remains
 unknown. [Reconciliation tracking](database-design.md#usage-reconciliation-tracking)
 owns reset, overlap expansion and interruptible progress. There is no
 cross-connection physical-admission cache.
+During refresh, the first pending response commits individually so a short
+event can make progress. Later response pages share that page's Core reader
+and yield between pages for concurrent Task writers. The existing event
+deadline also governs each response page and the fresh publication check.
 
 `usage_sources.py` locates only registered session IDs in the legacy
 `rollout-<prefix>-<session-uuid>.jsonl` and segmented

@@ -14,7 +14,7 @@ from tests import test_m243b_schema21_compatibility as manual_fixture
 from tests import test_m23s_schema22_validation as history_fixture
 from tests import test_m243c_runner_gate as runner_fixture
 from tests.m14_test_support import _copy_skill, tree_snapshot
-from tests.m214b_test_support import publish_generations, replace_verification
+from tests.m214b_test_support import make_recordless_legacy_artifact, publish_generations, replace_verification
 from tests.test_m17_recovery_hardening import _setup_current
 from tests.test_m19_legacy_upgrade_rehearsal import (
     seed_supported_local_configs,
@@ -23,7 +23,7 @@ from tests.test_m19_legacy_upgrade_rehearsal import (
 from tests.test_m242_runner_service import RunnerServiceFixture
 from tests.test_m23s_schema22_migration import _logical_snapshot
 from task_governance_tool import backup, doctor, state_resolver, tasks, viewer
-from task_governance_tool import schema_viewer_finding_index as ownership
+from task_governance_tool import schema_evidence_reference_index as ownership
 from task_governance_tool import verification_runner_service as runner_service
 
 
@@ -51,7 +51,7 @@ class Schema22ConsumerTests(unittest.TestCase):
             path = Path(temporary) / "empty.sqlite3"
             with closing(storage.connect(path)) as connection:
                 storage.apply_migrations(connection)
-                self.assertEqual(storage.current_schema_version(connection), 36)
+                self.assertEqual(storage.current_schema_version(connection), 37)
             before = tree_snapshot(Path(temporary))
             self.assertTrue(storage._is_exact_empty_completion_history_database(path))
             self.assertEqual(tree_snapshot(Path(temporary)), before)
@@ -75,7 +75,7 @@ class Schema22ConsumerTests(unittest.TestCase):
             candidate = backup.select_managed_backup_for_recovery(target)
             self.assertIsNotNone(candidate)
             self.assertEqual(candidate.path, artifacts[-1].path)
-            self.assertEqual(candidate.schema_version, 36)
+            self.assertEqual(candidate.schema_version, 37)
             resolution = state_resolver.resolve_setup_project_state(
                 skill_root=install.skill_root, repo=install.project_root
             )
@@ -86,29 +86,32 @@ class Schema22ConsumerTests(unittest.TestCase):
                 restored_version = backup.restore_managed_backup(
                     target, candidate, expected_recovery=resolution.fixed_recovery
                 )
-            self.assertEqual(restored_version, 36)
+            self.assertEqual(restored_version, 37)
             with closing(storage.connect_readonly(target.db_path)) as connection:
                 ownership.validate_storage(connection)
                 _basis, restored = history_fixture._bundle_artifacts(connection, target.project.project_id)
                 self.assertEqual(restored, original)
             self.assertEqual(supported_local_config_snapshot(install.skill_root), configs)
             self.assertEqual(list(target.db_path.parent.glob(".taskgov-restore-*.tmp")), [])
-            self.assertEqual(storage.SCHEMA_VERSION, 36)
+            self.assertEqual(storage.SCHEMA_VERSION, 37)
 
     def test_verification_only_recovery_rejection_remains_candidate_local(self):
         with tempfile.TemporaryDirectory() as temporary:
             install, target, _identity = _setup_current(Path(temporary))
             title = _ready_recovery_task(self, install)
             with closing(storage.connect(target.db_path)) as connection:
-                self.assertEqual(storage.current_schema_version(connection), 36)
+                self.assertEqual(storage.current_schema_version(connection), 37)
             artifacts = publish_generations(target, "2098-09-05T00:00:00Z", "2099-09-05T00:00:00Z")
+            # This exercises content-only rejection of a historical candidate.
+            # A changed certified artifact is instead a set-fatal hash mismatch.
+            make_recordless_legacy_artifact(artifacts[-1].path)
             replace_verification(artifacts[-1].path, title, "x" * 1001)
             target.db_path.unlink()
             before = tree_snapshot(install.skill_root)
             candidate = backup.select_managed_backup_for_recovery(target)
             self.assertIsNotNone(candidate)
             self.assertEqual(candidate.path, artifacts[-2].path)
-            self.assertEqual(candidate.schema_version, 36)
+            self.assertEqual(candidate.schema_version, 37)
             newest = next(item for item in candidate.inventory if item.path == artifacts[-1].path)
             self.assertFalse(newest.content_valid)
             self.assertIn(artifacts[-1].path, {item.path for item in backup._discover(target)})
@@ -165,7 +168,7 @@ class Schema22ConsumerTests(unittest.TestCase):
             with closing(storage.connect_snapshot_readonly(target.db_path)) as connection:
                 original_view = viewer.build_viewer_snapshot(connection, target, generated_at=OBSERVED_AT).snapshot
                 required_objects = storage.required_schema_objects_missing
-                # The helper's default argument captured current 36 at import.
+                # The helper's default argument captured current 37 at import.
                 # The historical oracle must also supply the old inventory version.
                 with mock.patch.object(storage, "SCHEMA_VERSION", 21), mock.patch.object(
                     storage, "required_schema_objects_missing",
@@ -190,7 +193,7 @@ class Schema22ConsumerTests(unittest.TestCase):
                     self.assertEqual(connection.execute("PRAGMA query_only").fetchone()[0], 1)
                 consume_batch.assert_called_once()
             expected_view = deepcopy(original_view)
-            expected_view["source_schema_version"] = 36
+            expected_view["source_schema_version"] = 37
             for task in expected_view["tasks"]:
                 task["review_evidence"]["continuation"] = None
                 task["review_evidence"]["counts"]["unable_current_generation"] = 0
@@ -198,12 +201,12 @@ class Schema22ConsumerTests(unittest.TestCase):
                     receipt["judgment_revision"] = 1
             self.assertEqual(observed_view, expected_view)
             self.assertEqual(observed_view["snapshot_version"], 4)
-            self.assertEqual(observed_doctor, replace(original_doctor, schema_version=36))
+            self.assertEqual(observed_doctor, replace(original_doctor, schema_version=37))
             serialized = json.dumps(observed_view, sort_keys=True)
             self.assertNotIn("runner_observation", serialized)
             self.assertNotIn("verification_basis", serialized)
             self.assertEqual(tree_snapshot(fixture.install.skill_root), before)
-            self.assertEqual(storage.SCHEMA_VERSION, 36)
+            self.assertEqual(storage.SCHEMA_VERSION, 37)
         finally:
             fixture.doClassCleanups()
 
@@ -219,7 +222,7 @@ class Schema22ConsumerTests(unittest.TestCase):
             self.assertEqual(tree_snapshot(install.skill_root), before)
             with closing(storage.connect(target.db_path)) as connection:
                 connection.execute(
-                    "INSERT INTO schema_migrations(version, name, applied_at) VALUES (37, 'future_fixture', ?)",
+                    "INSERT INTO schema_migrations(version, name, applied_at) VALUES (38, 'future_fixture', ?)",
                     (OBSERVED_AT,),
                 )
                 connection.commit()
@@ -230,7 +233,7 @@ class Schema22ConsumerTests(unittest.TestCase):
                                        script_path=install.entrypoint)
             self.assertFalse(result.ok)
             self.assertEqual(result.errors[0]["code"], "schema_too_new")
-            self.assertEqual(result.data["components"]["project_state"]["required_schema_version"], 36)
+            self.assertEqual(result.data["components"]["project_state"]["required_schema_version"], 37)
             self.assertEqual(tree_snapshot(install.skill_root), before)
 
     def test_restored_pending_runner_is_not_relaunched_and_keeps_configs(self):
@@ -243,7 +246,7 @@ class Schema22ConsumerTests(unittest.TestCase):
             configs = seed_supported_local_configs(package)
             _prepared, intent = runner_fixture._launch(fixture)
             with closing(storage.connect(fixture.db)) as connection:
-                self.assertEqual(storage.current_schema_version(connection), 36)
+                self.assertEqual(storage.current_schema_version(connection), 37)
             with mock.patch.object(runner_service, "run_process_request", side_effect=AssertionError("recovery relaunched Runner")) as process:
                 artifacts = publish_generations(fixture.target, "2099-09-07T00:00:00Z")
                 with closing(storage.connect_readonly(fixture.db)) as connection:
@@ -253,7 +256,7 @@ class Schema22ConsumerTests(unittest.TestCase):
                 fixture.db.unlink()
                 candidate = backup.select_managed_backup_for_recovery(fixture.target)
                 self.assertEqual(candidate.path, artifacts[-1].path)
-                self.assertEqual(backup.restore_managed_backup(fixture.target, candidate), 36)
+                self.assertEqual(backup.restore_managed_backup(fixture.target, candidate), 37)
                 with closing(storage.connect_readonly(fixture.db)) as connection:
                     restored = storage.read_verification_runner_generation_locked(connection,
                         project_id=fixture.target.project.project_id, task_id=fixture.task_id,

@@ -23,7 +23,7 @@ copies; missing Usage anchors cannot acquire another execution's attribution.
 ## Conditional Review Continuation Persistence
 
 Schema 29 introduces migration `review_continuations`; the current combined
-implementation supports schema 36 with the collected-answer extension,
+implementation supports schema 37 with the collected-answer extension,
 criterion-link repair, combined-slot and own-review lookups below.
 Actual upgrade remains explicit Setup; managed host activation requires the
 combined verification/review and host gates in the
@@ -355,8 +355,8 @@ Missing state is `db_not_initialized`; supported older state is
 `migration_required`; a newer schema is `schema_too_new`. Old binaries reject
 newer state and never downgrade/write it.
 
-Fresh setup creates schema v36. Structurally complete contiguous source schemas
-v1-v35 are setup-only migration inputs; v36 is idempotent current state.
+Fresh setup creates schema v37. Structurally complete contiguous source schemas
+v1-v36 are setup-only migration inputs; v37 is idempotent current state.
 Schema sequence is:
 
 | Version | Durable addition |
@@ -394,6 +394,7 @@ Schema sequence is:
 | v34 | transactional Viewer Task revisions, indexed change selection and derived projection/epoch metadata; source-34 Bundle/cycle discriminator |
 | v35 | non-unique Runner reverse-edge, generation-scoped Reference and criterion-link lookup indexes; source-35 Bundle/cycle discriminator |
 | v36 | non-unique Finding-by-Receipt and cycle-by-Task lookup indexes for selected Viewer validation; source-36 Bundle/cycle discriminator |
+| v37 | non-unique project/source identity lookup for Evidence Reference reverse ownership; source-37 Bundle/cycle discriminator |
 
 Each migration is transactional, idempotent, rollback-tested, validates
 contiguous history and required objects/rows, preserves project/business IDs
@@ -503,8 +504,8 @@ every cycle/Bundle Runner-observation pointer remains null; native Bundle-v2
 This check occurs before any database or sidecar write, migration backup,
 recovery copy/publication, Viewer publication, or managed-backup write. A complete v19 source alone may invoke migration
 20; a complete v20 source continues through migrations 21 and 22, and a complete
-v21 source invokes migration 22, followed by 23 through 36. Each later complete
-predecessor invokes its remaining ordered migrations through 36; exact v36
+v21 source invokes migration 22, followed by 23 through 37. Each later complete
+predecessor invokes its remaining ordered migrations through 37; exact v37
 receives validation-only reentry. Unrelated extra
 objects retain the existing policy, including deliberate removal of
 unsupported unowned indexes/triggers attached to the rebuilt Bundle table and
@@ -531,9 +532,11 @@ qualifying Runner protocol with explicit manual fallback.
 
 <a id="current-schema-v32-persistence-contract"></a>
 
-## Current Schema-v36 Persistence Contract
+<a id="current-schema-v36-persistence-contract"></a>
 
-Schema v36 is the public setup target. Its predecessor migration `24/task_session_ownership`
+## Current Schema-v37 Persistence Contract
+
+Schema v37 is the public setup target. Its predecessor migration `24/task_session_ownership`
 adds `task_executions`, `task_ownership`, `task_owner_transitions` and
 `task_execution_cycles` (39 tables, 45 explicit indexes, 67 triggers).
 Execution/transition/cycle links are append-only. The one current ownership row
@@ -552,7 +555,7 @@ Only the Bundle table and its coupled native-cycle guard are rebuilt to admit
 source 24/format 2. New native completion must link its execution to its exact cycle
 within the same transaction. Older Bundles/cycles remain unlinked and unchanged;
 format 2 is retained and the index reports the actual container. No per-caller display or
-usage fields are added to sealed Evidence or Viewer v4. Viewer accepts v5-v36.
+usage fields are added to sealed Evidence or Viewer v4. Viewer accepts v5-v37.
 Reentry validates exact DDL, markers, retained graph and integrity without repair.
 Setup retains its existing backup/rollback protocol; no normal command migrates.
 Unsupported attached residue/hybrid state fails closed before writes. Global
@@ -563,7 +566,7 @@ existing verification-field-local exception.
 
 ### Preservation Across Review Migrations
 
-The supported Setup transitions 28 to 29, 29 to 30, 30 to 31, 31 to 32, 32 to 33, 33 to 34, 34 to 35 and 35 to 36 preserve every
+The supported Setup transitions 28 to 29, 29 to 30, 30 to 31, 31 to 32, 32 to 33, 33 to 34, 34 to 35, 35 to 36 and 36 to 37 preserve every
 predecessor business and unrelated user table's column values and row identities,
 including tables not rebuilt. Each identity remains associated with its original
 values. Existing `sqlite_sequence` rows remain unchanged, preserving unrelated
@@ -652,7 +655,7 @@ current consumer's registration. Existing captures and their physical metadata,
 projection, rank and one-time Receipt links remain unchanged. This transport
 extension adds no physical schema migration or native capture-repair operation.
 
-Source-30, source-31, source-32, source-33, source-34, source-35 and source-36 completions seal Bundle 4 and project index 3 under the
+Source-30, source-31, source-32, source-33, source-34, source-35, source-36 and source-37 completions seal Bundle 4 and project index 3 under the
 [versioned Evidence contract](evidence-specification.md#collected-answer-evidence).
 They retain the mandatory exact execution/cycle link: global admission
 and recovery reject a missing link without repairing it. This does not require
@@ -801,6 +804,37 @@ index, marker or validation failure rolls back the whole migration. Reentry is
 read-only validation. Backup, recovery, relocation, Evidence and Viewer admit
 actual source 35; normal commands never migrate. No new gate or host operation
 is introduced.
+
+### Evidence Reference Source Lookup
+
+Explicit Setup applies `37/evidence_reference_source_index` after exact schema
+36. The non-unique `idx_evidence_references_source_identity` index covers
+`evidence_references(project_id,source_kind,source_id)`. Selected manifest and
+all-kind Reference validation must seek all References for each selected source
+before checking their Task owners. Restricting the seek to the expected Task
+would hide corrupt cross-owned References and is forbidden. Existing type,
+duplicate, source, binding and digest rejection remains unchanged.
+
+The companion non-unique `idx_evidence_references_task_kind` index covers
+`evidence_references(task_id,source_kind)`. Verification Receipt Reference
+inventory uses that key for the selected Task and kind, retaining both TEXT
+and BLOB aliases. It must not restrict by project: a Reference assigned to a
+different project must still be selected and rejected. Type, duplicate and
+source consistency checks remain unchanged.
+
+For a fixed selected source/relation closure, unrelated Task history must not
+increase reverse-lookup or Verification Receipt inventory work. The existing expected-count-plus-one bound limits
+materialization; it is not a substitute for indexed selection. Sources through
+36 retain their admitted owner-leading compatibility query. Ordinary commands
+never create indexes or silently fall back to a whole-project audit.
+
+The schema inventory is 52 tables, 64 explicit indexes and 107 triggers. Only
+the Bundle source discriminator and coupled cycle guard are rebuilt to admit
+source 37, retaining Bundle 4/index 3 and their digest domains. Predecessor DDL,
+rows/rowids, migration history and sealed bytes are preserved. Setup requires
+exact predecessor admission, marker-last transactional preservation checks,
+rollback and validation-only reentry; backup, recovery, relocation, Evidence
+and Viewer recognize the actual source version.
 
 ### Schema-v36 Viewer Finding Lookup
 
@@ -1644,7 +1678,7 @@ snapshot inputs. Unreconciled changes remain unavailable.
 A core-basis mismatch after restore or later transitions returns unavailable
 until replay; missing references are never rebound to the newest Task cycle.
 Restored numerical state with a different project/path binding stays unavailable.
-The main schema is independently versioned (currently 36); no numerical table joins a core transaction or gate.
+The main schema is independently versioned (currently 37); no numerical table joins a core transaction or gate.
 Optional lifecycle invocation follows the separate Setup/state contract and
 cannot alter these quality or completion boundaries.
 

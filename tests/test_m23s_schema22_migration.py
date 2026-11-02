@@ -362,10 +362,10 @@ class Schema22MigrationTests(unittest.TestCase):
             storage.validate_schema21_storage(connection)
 
     def test_public_initialization_and_migration_dispatch_continue_through29(self):
-        from task_governance_tool import schema_viewer_finding_index as ownership
-        with definitions._empty_public_database(schema_version=36) as (initialized, connection):
-            self.assertEqual(storage.SCHEMA_VERSION, 36)
-            self.assertEqual(initialized.schema_version, 36)
+        from task_governance_tool import schema_evidence_reference_index as ownership
+        with definitions._empty_public_database(schema_version=37) as (initialized, connection):
+            self.assertEqual(storage.SCHEMA_VERSION, 37)
+            self.assertEqual(initialized.schema_version, 37)
             before = _logical_snapshot(connection)
             self.assertEqual(storage.apply_migrations(connection), ([], []))
             self.assertEqual(_logical_snapshot(connection), before)
@@ -374,7 +374,7 @@ class Schema22MigrationTests(unittest.TestCase):
             _basis, artifacts = validation_fixture._bundle_artifacts(
                 connection, self.target.project.project_id
             )
-            self.assertEqual(storage.apply_migrations(connection), ([22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36], []))
+            self.assertEqual(storage.apply_migrations(connection), ([22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37], []))
             ownership.validate_storage(connection)
             self.assertEqual(_rows(connection, include_markers=False,
                 column_basis={name: value[0] for name, value in original.items()}), original)
@@ -393,7 +393,7 @@ class Schema22MigrationTests(unittest.TestCase):
             self.assertEqual(storage.apply_migrations(connection), ([], []))
             self.assertEqual(_logical_snapshot(connection), before)
         with definitions._empty_public_database(schema_version=20) as (_initialized, connection):
-            self.assertEqual(storage.apply_migrations(connection), ([21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36], []))
+            self.assertEqual(storage.apply_migrations(connection), ([21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37], []))
             ownership.validate_storage(connection)
 
 

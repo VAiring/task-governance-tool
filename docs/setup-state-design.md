@@ -493,15 +493,16 @@ mechanically newest structural head. Without a reusable record it calls the
 storage-owned exact validator with that candidate's source schema. The validator returns normally
 or raises a sanitized internal privacy/capacity rejection; every other storage
 failure remains structural and set-fatal. The current implementation accepts
-at most 500 characters through schema v17 and 1,000 at schema v18-v36. The source
+at most 500 characters through schema v17 and 1,000 at schema v18-v37. The source
 schema is selected before migration or recovery publication; no recovery-only
 limit or migration laundering exists.
 
-For schemas 29 through 36, both resolver discovery and managed-backup selection
+For schemas 29 through 37, both resolver discovery and managed-backup selection
 dispatch to their version's validator: `schema_review_continuation`,
 `schema_review_answers`, `schema_criterion_link_collector`,
 `schema_session_slot_index`, `schema_own_review_indexes`, `schema_viewer_projection`,
-`schema_runner_lookup_indexes` and `schema_viewer_finding_index`, respectively,
+`schema_runner_lookup_indexes`, `schema_viewer_finding_index` and
+`schema_evidence_reference_index`, respectively,
 with `validate_storage(recovery=True)`.
 Each validator finishes Bundle and continuation graph checks before returning a deferred
 Task-verification rejection; a local rejection cannot hide structural damage.
@@ -656,7 +657,7 @@ tgr1.<unpadded-base64url-canonical-json>.<sha256>
 Its exact payload binds version 1, project ID/scheme, current binding
 generation, distinct old/new 64-hex hashes, source layout, source schema, issue
 time, and expiry exactly 900 seconds later. A fixed-current source may be
-schema v1-v36; `legacy_projects_v1` is capped at the explicit v14 transition,
+schema v1-v37; `legacy_projects_v1` is capped at the explicit v14 transition,
 while ordinary legacy discovery remains v1-v13 plus that v14 shape. Canonical JSON uses
 sorted keys, compact separators, UTF-8, and `ensure_ascii=True`; the checksum
 is SHA-256 over ASCII `tgr1.<payload>` and is compared with
@@ -943,7 +944,7 @@ standalone public validators still return no proof, and recovery retains its
 existing exception and no-batch behavior. An empty admitted batch is consumed
 as empty, not treated as a request to fetch again. Schema20 and earlier paths
 have no such returned admitted batch and retain their existing reads. Current
-schema33/34/35/36 sharing is unchanged. Only the target project association is checked
+schema33/34/35/36/37 sharing is unchanged. Only the target project association is checked
 by the consuming Setup reader; the historical version's validation is not rerun.
 Standalone Setup, Doctor and schema-validation entries still perform their
 full applicable validation. Older-schema and recovery paths retain their

@@ -12,7 +12,7 @@ existing owners.
 
 ## Snapshot And Publication
 
-Current schema-36 maintenance uses the
+Current schema-37 maintenance uses the
 [incremental protocol](#incremental-cache-and-publication). This section
 documents the retained full-capture reader and common v4 rendering/path
 boundaries used by explicit inspection and compatible older sources.
@@ -65,7 +65,7 @@ crosses the capture's transaction into a guard, another capture or outcome write
 
 The repository selects complete rows for all project Tasks in list order and
 validates them as one source-schema-aware stored-Task/Contract batch before any
-Task, review, or history projection. Exact v18-v36 snapshot validation first
+Task, review, or history projection. Exact v18-v37 snapshot validation first
 validates the complete Task batch as part of the full Evidence Ledger, then the
 same-transaction list-order query consumes the
 [private batch proof](task-operation-design.md#shared-stored-task-rowbatch-validator) instead of
@@ -101,16 +101,16 @@ before projection, while the event allow-list remains summary-only. Full note
 bodies never enter Viewer snapshot JSON or generated HTML.
 
 Source schemas v5-v14 synthesize empty/incomplete completion history;
-v15-v36 use stored cycles, reading completion histories in batches of at most
-500 Task IDs. Sources v17-v36 validate version-1 cycle Receipt links; v19-v36
-also validate and discard Bundle linkage, and v20-v36 validate the source-
-appropriate closed verification basis and Runner graph. Sources v21-v36 validate
+v15-v37 use stored cycles, reading completion histories in batches of at most
+500 Task IDs. Sources v17-v37 validate version-1 cycle Receipt links; v19-v37
+also validate and discard Bundle linkage, and v20-v37 validate the source-
+appropriate closed verification basis and Runner graph. Sources v21-v37 validate
 the complete tagged union before discarding every Runner field. Every snapshot
 reports its actual source schema and selects all
 project Tasks; 500 Tasks is the accepted performance fixture rather than a
 selection cap. The rendered artifact is capped at 64 MiB.
 
-Sources 30 through 36 go through their exact source-schema storage admission, including
+Sources 30 through 37 go through their exact source-schema storage admission, including
 [collected-answer persistence](database-specification.md#collected-answer-persistence)
 and [versioned continuation graph validation](evidence-design.md#continuation-graph-validation).
 The batch proof remains transaction-local. Bundle 4/graph 2 and v2 provenance

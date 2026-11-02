@@ -399,8 +399,8 @@ class PublicViewerProjectionSetupTests(unittest.TestCase):
         self.enterContext(mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "00000000-0000-4000-8000-000000000001"}))
         source = self.install.skill_root / "scripts/task_governance_tool/storage.py"
         current = source.read_text(encoding="utf-8")
-        self.assertEqual(current.count("SCHEMA_VERSION = 36"), 1)
-        source.write_text(current.replace("SCHEMA_VERSION = 36", "SCHEMA_VERSION = 33", 1), encoding="utf-8")
+        self.assertEqual(current.count("SCHEMA_VERSION = 37"), 1)
+        source.write_text(current.replace("SCHEMA_VERSION = 37", "SCHEMA_VERSION = 33", 1), encoding="utf-8")
         refresh_test_manifest(self.install.skill_root)
         self.assertEqual(self.cli("setup")["schema_to"], 33)
         self.cli("task", "add", "--title", "Preserve source33 display", "--status", "ready")
@@ -411,7 +411,7 @@ class PublicViewerProjectionSetupTests(unittest.TestCase):
         refresh_test_manifest(self.install.skill_root)
         before = self.install.state_snapshot()
         preview = self.cli("setup", "--read-only")
-        self.assertEqual((preview["schema_from"], preview["schema_to"]), (33, 36))
+        self.assertEqual((preview["schema_from"], preview["schema_to"]), (33, 37))
         self.assertEqual(self.install.state_snapshot(), before)
         applied = self.cli("setup")
         self.assertEqual(applied["completed_writes"], ["migration_backup", "database_migrate", "evidence_projection_publish", "viewer_publish"])
@@ -432,5 +432,5 @@ class PublicViewerProjectionSetupTests(unittest.TestCase):
                 # Deliberate recovery of a disposable fixture, never live state.
                 self.install.db_path.unlink()
                 recovered = self.cli("setup")
-                self.assertEqual((recovered["schema_from"], recovered["schema_to"]), (36, 36))
+                self.assertEqual((recovered["schema_from"], recovered["schema_to"]), (37, 37))
                 self.assertEqual(recovered["completed_writes"], ["database_restore", "evidence_projection_publish", "viewer_publish"])

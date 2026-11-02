@@ -31,7 +31,7 @@ class PublicViewerFindingLookupSetupTests(unittest.TestCase):
             {"CODEX_THREAD_ID": "00000000-0000-4000-8000-000000000001"}))
         source = self.install.skill_root / "scripts/task_governance_tool/storage.py"
         # This fixture preserves the exact historical 35-to-36 public boundary.
-        current = source.read_text(encoding="utf-8")
+        current = source.read_text(encoding="utf-8").replace("SCHEMA_VERSION = 37", "SCHEMA_VERSION = 36", 1)
         self.assertEqual(current.count("SCHEMA_VERSION = 36"), 1)
         source.write_text(current.replace("SCHEMA_VERSION = 36", "SCHEMA_VERSION = 35", 1),
             encoding="utf-8", newline="\n")

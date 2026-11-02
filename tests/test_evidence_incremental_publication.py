@@ -218,7 +218,7 @@ class IncrementalEvidencePublicationTests(unittest.TestCase):
         original = path.read_bytes()
         before = target.resolved_evidence_index.read_bytes()
         for raw in (original.replace(b'"format_version":1', b'"format_version":true', 1),
-                    original.replace(b'"schema_version":36', b'"schema_version":35', 1),
+                    original.replace(b'"schema_version":37', b'"schema_version":35', 1),
                     b'{"format_version":1,"format_version":1}\n'):
             with self.subTest(raw_length=len(raw)):
                 path.write_bytes(raw)
@@ -349,7 +349,7 @@ class IncrementalEvidencePublicationTests(unittest.TestCase):
         # pure frozen-graph check. Use real native completions, not mocked gates.
         for table in (None, "collected_valid", "review_reassessment_resolutions", "review_receipt_judgments",
                       "review_receipt_sessions", "review_collected_captures"):
-            with self.subTest(table=table), review_fixture(schema_version=35) as fixture:
+            with self.subTest(table=table), review_fixture(schema_version=storage.SCHEMA_VERSION) as fixture:
                 target = fixture.target
                 configure_project_maintenance(target, requested_interval_minutes=None,
                     requested_generations=None, enabled_at="2026-10-29T00:00:00Z")

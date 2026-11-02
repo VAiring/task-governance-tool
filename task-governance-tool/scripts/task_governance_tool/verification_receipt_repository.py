@@ -356,8 +356,14 @@ def read_verification_receipt_snapshot(
             (task_id, task_id),
         )
         if source_schema_version >= 18:
+            # Do not restrict by project: a Reference under the wrong project
+            # or a BLOB alias must remain visible to the rejection below.
+            reference_index = (
+                "INDEXED BY idx_evidence_references_task_kind"
+                if source_schema_version >= 37 else ""
+            )
             reference_cursor = connection.execute(
-                """
+                f"""
                 WITH selected_task_ids(value) AS (
                     SELECT ?
                     UNION ALL
@@ -369,7 +375,7 @@ def read_verification_receipt_snapshot(
                     SELECT CAST(? AS BLOB)
                 )
                 SELECT source_id, project_id, task_id, source_kind
-                  FROM evidence_references
+                  FROM evidence_references {reference_index}
                  WHERE task_id IN (SELECT value FROM selected_task_ids)
                    AND source_kind IN (
                      SELECT value FROM selected_source_kinds

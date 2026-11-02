@@ -17,7 +17,7 @@ from tests.test_m17_recovery_hardening import _setup_current
 from task_governance_tool import backup, backup_validation as validation, state_resolver
 from task_governance_tool import backup_metadata_repository as repository
 from task_governance_tool import setup, storage
-from task_governance_tool import schema_viewer_finding_index as current_schema
+from task_governance_tool import schema_evidence_reference_index as current_schema
 
 
 class BackupValidationReuseTests(unittest.TestCase):

@@ -966,7 +966,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
         )
 
     def test_schema_version_and_verification_capacity_are_layered(self):
-        self.assertEqual(SCHEMA_VERSION, 36)
+        self.assertEqual(SCHEMA_VERSION, 37)
         self.assertEqual(stored_task_verification_limit(17), 500)
         self.assertEqual(stored_task_verification_limit(18), 1_000)
         self.assertEqual(stored_task_verification_limit(19), 1_000)
@@ -1198,9 +1198,9 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                         validate_evidence_ledger_storage(connection)
 
                         applied, warnings = apply_migrations(connection)
-                        self.assertEqual(applied, [19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36])
+                        self.assertEqual(applied, [19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37])
                         self.assertEqual(warnings, [])
-                        self.assertEqual(current_schema_version(connection), 36)
+                        self.assertEqual(current_schema_version(connection), 37)
                         self.assertEqual(
                             connection.execute(
                                 "SELECT constraints_text "
@@ -3336,7 +3336,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                             apply_completion_evidence_bundle_migration(connection)
                             self.assertEqual(
                                 apply_migrations(connection),
-                                ([20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36], []),
+                                ([20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37], []),
                             )
 
                     corrupt_owner = "corrupt-verification-project-owner"
@@ -3390,7 +3390,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                             apply_completion_evidence_bundle_migration(connection)
                             self.assertEqual(
                                 apply_migrations(connection),
-                                ([20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36], []),
+                                ([20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37], []),
                             )
 
                     with closing(connect(db)) as connection:
@@ -3726,6 +3726,8 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                 "oversized-source-id",
                 "blob-task-id",
                 "blob-source-kind",
+                "blob-task-and-kind",
+                "wrong-project",
             ):
                 with self.subTest(case=case):
                     root = Path(temp) / case
@@ -3752,11 +3754,17 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                         )
                         if case == "oversized-source-id":
                             reference["source_id"] = marker + "x" * 10_000
-                        elif case == "blob-task-id":
+                        elif case == "wrong-project":
+                            connection.execute("PRAGMA foreign_keys = OFF")
+                            reference["project_id"] = "wrong-reference-project"
+                        elif case in ("blob-task-id", "blob-task-and-kind"):
                             connection.execute("PRAGMA foreign_keys = OFF")
                             reference["task_id"] = sqlite3.Binary(
                                 task_id.encode("utf-8")
                             )
+                            if case == "blob-task-and-kind":
+                                connection.execute("PRAGMA ignore_check_constraints = ON")
+                                reference["source_kind"] = sqlite3.Binary(b"verification_receipt")
                         else:
                             connection.execute(
                                 "PRAGMA ignore_check_constraints = ON"
@@ -3783,7 +3791,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                             marker,
                             "tg_evidence_reference_00000000000000dd",
                         ),
-                        expected_error={
+                        expected_error=None if case == "wrong-project" else {
                             "code": "project_state_unreadable",
                             "message": "project state could not be read safely",
                         },
@@ -3989,7 +3997,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
                             apply_completion_evidence_bundle_migration(connection)
                             self.assertEqual(
                                 apply_migrations(connection),
-                                ([20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36], []),
+                                ([20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37], []),
                             )
 
                     with closing(connect(target.db_path)) as connection:

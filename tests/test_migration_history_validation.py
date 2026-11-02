@@ -36,7 +36,7 @@ def migration_steps():
         "schema_session_slot", "schema_session_slot_reacquisition", "schema_task_event_notes",
         "schema_review_continuation", "schema_review_answers", "schema_criterion_link_collector",
         "schema_session_slot_index", "schema_own_review_indexes", "schema_viewer_projection",
-        "schema_runner_lookup_indexes", "schema_viewer_finding_index")
+        "schema_runner_lookup_indexes", "schema_viewer_finding_index", "schema_evidence_reference_index")
     return steps + [importlib.import_module("task_governance_tool." + name).migrate for name in modules]
 
 
@@ -145,7 +145,7 @@ class MigrationHistoryValidationTests(unittest.TestCase):
                 ("UPDATE schema_migrations SET applied_at='bad' WHERE version=?", (version,)),
                 ("INSERT INTO schema_migrations VALUES(0,'extra','2026-10-24T00:00:00Z')", ()),
                 ("INSERT INTO schema_migrations VALUES(-1,'extra','2026-10-24T00:00:00Z')", ()),
-                ("INSERT INTO schema_migrations VALUES(37,'future','2026-10-24T00:00:00Z')", ()),
+                ("INSERT INTO schema_migrations VALUES(38,'future','2026-10-24T00:00:00Z')", ()),
             )
             for sql, parameters in mutations:
                 with self.subTest(version=version, mutation=sql):

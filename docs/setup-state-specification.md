@@ -428,7 +428,7 @@ write. Retry recomputes from the canonical state and the restore temporary is
 cleaned in either case; no later failure authorizes reselection or another
 canonical publication.
 
-The current classifier admits 500 for schema v17 and 1,000 for schema v18-v36,
+The current classifier admits 500 for schema v17 and 1,000 for schema v18-v37,
 rejecting the next character in each source schema. It does not generalize
 local rejection to another field
 or to structural, identity, lineage, metadata, or TOCTOU failure.
@@ -565,7 +565,7 @@ JSON has exactly sorted keys `binding_generation`, `expires_at`,
 `project_id`, `source_layout`, `source_schema_version`, and `v`. Version is 1;
 source layout is `fixed_current_v1` or `legacy_projects_v1`; hashes are 64
 lowercase hex; generation positive. Fixed-current sources support schemas
-v1-v36; legacy-project sources remain capped at v14. Newer source schemas are
+v1-v37; legacy-project sources remain capped at v14. Newer source schemas are
 rejected. Serialization uses
 sorted keys, `(",", ":")`, unpadded base64url. Expiry is exactly 900 seconds
 after issue, acceptance is `issued_at <= now < expires_at`, total token at most
@@ -599,7 +599,7 @@ Setup always includes `data.relocation` with exactly `required`,
 successful relocation preview. Fresh preview has null top-level ID and null
 identity/generation/token/expiry.
 
-Relocation failure has status null, required schema 36, empty warnings, one
+Relocation failure has status null, required schema 37, empty warnings, one
 error, null token/expiry, and no rejected value. A no-token mismatch preserves
 the read-only future `planned_writes`; invalid/expired/stale/used/not-required
 token rows have empty write arrays and mechanically observed bounded context.
@@ -725,7 +725,7 @@ Setup output data is exactly `status`, `planned_writes`, `completed_writes`,
 `schema_from`, `schema_to`, `maintenance_enabled`,
 `backup_interval_minutes`, `backup_generations`, `evidence_status`,
 `viewer_status`, `relocation`, `usage`, `usage_hooks`, and `optional_features`.
-`schema_to` is always 36. `schema_from` is safely observed source
+`schema_to` is always 37. `schema_from` is safely observed source
 schema, selected recovery schema, or null. Policy values are effective
 requested/stored values, not persistence claims. `maintenance_enabled`,
 Evidence status, and Viewer status describe durable post-command state.

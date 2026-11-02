@@ -209,6 +209,12 @@ source transaction. Its digest helper uses
 also excludes mutable resolution fields. Validators recompute dispatch,
 ownership, null matrices, and digest and reject every class upgrade.
 
+Selected Reference reverse lookup uses the current
+[source-first index](database-design.md#evidence-reference-source-index-migration)
+without restricting to expected Task owners. A cross-owned duplicate remains
+corruption even when the expected Reference is also present. The legacy query
+remains available only for source schemas without that index.
+
 Runner source construction preserves the resolution's existing policy identity
 and observation measurement values. Core Reference and Bundle validators reuse
 the pure value-model accounting predicate, with each consumer retaining its
@@ -430,7 +436,7 @@ until a fully constructed replacement is published.
 
 ## Continuation Graph Validation
 
-Schema-30, schema-31, schema-32, schema-33, schema-34, schema-35 and schema-36 sealing use Bundle 4 and index 3 under their versioned digest domains,
+Schema-30, schema-31, schema-32, schema-33, schema-34, schema-35, schema-36 and schema-37 sealing use Bundle 4 and index 3 under their versioned digest domains,
 without changing a previously sealed format. Format 4 always carries nullable
 `review_continuation_basis`; continuation completions freeze graph 2, whose
 only added root field is `collected_captures`. Ordinary completion keeps null.

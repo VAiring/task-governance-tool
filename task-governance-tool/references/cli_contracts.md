@@ -476,7 +476,7 @@ and retry using [outcome and retry rules](#setup-outcomes-and-recovery):
     "state_layout_activate"
   ],
   "schema_from": null,
-  "schema_to": 36,
+  "schema_to": 37,
   "maintenance_enabled": true,
   "backup_interval_minutes": 30,
   "backup_generations": 3,
@@ -624,7 +624,7 @@ Preview reports current durable state, not planned state:
 `completed_writes=[]`, and a fresh preview keeps
 `maintenance_enabled=false`. A healthy replay has empty write lists. Every
 error has `status=null`; preflight/policy failures use empty write lists and
-null observed values except `schema_to=36`. A later-stage failure reports only
+null observed values except `schema_to=37`. A later-stage failure reports only
 the durable ordered prefix. Inspect `data.completed_writes` before retrying;
 `setup_incomplete` permits a retry that recomputes from durable state rather
 than repeating an assumed failed stage; it does not guarantee automatic repair
@@ -678,8 +678,8 @@ A ready result has this structure:
     },
     "project_state": {
       "code": "ready",
-      "schema_version": 36,
-      "required_schema_version": 36
+      "schema_version": 37,
+      "required_schema_version": 37
     },
     "task_summary": {
       "code": "ready",
@@ -1957,7 +1957,7 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py review target set 
 generation. Git commits are resolved read-only and stored canonically. A diff
 fingerprint is `sha256:` plus 64 lowercase hexadecimal characters.
 
-At schema v21 through v36, this same target-set operation may use the explicitly opted-in
+At schema v21 through v37, this same target-set operation may use the explicitly opted-in
 trusted-local Runner route. It adds no argument or public Runner command. JSON
 success data is `task`, `changed_fields`, `event`, `verification_route`,
 `blocking_code`, and `review_preparation`; failure

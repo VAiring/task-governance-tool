@@ -353,7 +353,7 @@ def _validate_selected_schema21_completion_bundle_history(
 
 
     container_schema_version = current_schema_version(connection)
-    if container_schema_version not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
+    if container_schema_version not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
         PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
     } or not any(
         cycle.evidence_basis_version == 1 for cycle in cycles
@@ -1118,7 +1118,7 @@ def _validate_selected_reference_source_chunk(
             elif source_kind == "runner_observation":
                 admitted_eligibility_versions = (
                     {0, 1}
-                    if source_schema_version in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
+                    if source_schema_version in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
                         PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
                     }
                     else {0}
@@ -1191,19 +1191,30 @@ def _validate_selected_reference_source_chunk(
         ensure_ascii=True,
         separators=(",", ":"),
     )
+    # Seek every Reference with this source identity before checking its owner.
+    # Do not restrict the seek to the expected Task: a different owner is corruption.
+    source_join = (
+        """CROSS JOIN evidence_references AS reference
+                       INDEXED BY idx_evidence_references_source_identity
+                 CROSS JOIN tasks AS owner
+                       INDEXED BY idx_tasks_project_task_identity
+                 WHERE reference.project_id = ?"""
+        if current_schema_version(connection) >= 37 else
+        """CROSS JOIN tasks AS owner
+               INDEXED BY idx_tasks_project_task_identity
+         CROSS JOIN evidence_references AS reference
+               INDEXED BY idx_evidence_references_source
+         WHERE owner.project_id = ?"""
+    )
     reference_rows = connection.execute(
-        """
+        f"""
         WITH selected_sources(value) AS (
             SELECT value FROM json_each(?)
         )
         SELECT reference.evidence_reference_id, reference.project_id,
                reference.task_id, reference.source_kind, reference.source_id
           FROM selected_sources AS selected
-         CROSS JOIN tasks AS owner
-               INDEXED BY idx_tasks_project_task_identity
-         CROSS JOIN evidence_references AS reference
-               INDEXED BY idx_evidence_references_source
-         WHERE owner.project_id = ?
+                 {source_join}
            AND reference.project_id = owner.project_id
            AND reference.task_id = owner.task_id
            AND reference.source_kind = json_extract(selected.value, '$[0]')
@@ -1548,7 +1559,7 @@ def _validate_evidence_ledger_rows(
     if type(expected_project_id) is not str or not expected_project_id:
         raise evidence_ledger_inconsistent()
     physical_schema_version = current_schema_version(connection)
-    if physical_schema_version not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
+    if physical_schema_version not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
         18,
         19,
         PRIVATE_SCHEMA20_VERSION,
@@ -1861,7 +1872,7 @@ def _validate_one_completion_evidence_bundle_row(
     )
     if (
         runner_eligibility_one
-        and row["source_schema_version"] not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
+        and row["source_schema_version"] not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
             PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
         }
     ):
@@ -2163,7 +2174,7 @@ def _validate_completion_evidence_bundle_rows(
     if (
         _validated_runner_generations is None
         and bundle_rows
-        and container_schema_version in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
+        and container_schema_version in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
             PRIVATE_SCHEMA21_VERSION, PRIVATE_SCHEMA22_VERSION,
         }
     ):
@@ -2876,7 +2887,7 @@ def read_native_completion_bundle_basis_locked(
 
     review_continuation_basis = None
     if cycle.gate_basis.version == 2:
-        if source_schema_version not in (29,30,31,32,33,34,35,36):
+        if source_schema_version not in (29,30,31,32,33,34,35,36,37):
             raise evidence_ledger_inconsistent()
         from .review_continuation_evidence_repository import freeze_basis_locked
         review_continuation_basis = freeze_basis_locked(connection, task)
@@ -3416,7 +3427,7 @@ def _capture_evidence_projection_basis_rows(
     if type(project_id) is not str or not project_id:
         raise evidence_ledger_inconsistent()
     source_schema_version = current_schema_version(connection)
-    if source_schema_version not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
+    if source_schema_version not in {23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
         19,
         PRIVATE_SCHEMA20_VERSION,
         PRIVATE_SCHEMA21_VERSION,

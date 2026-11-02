@@ -1419,22 +1419,31 @@ def _read_owner_indexed_evidence_references(
         ensure_ascii=True,
         separators=(",", ":"),
     )
-    # A same-source Reference owned by another valid Task is corruption.
-    # Enumerating this project's Task owners keeps the owner-leading
-    # Reference index seekable; one row beyond the expected set is
-    # sufficient to prove inconsistency and bounds materialization.
+    # One row beyond the expected set proves inconsistency and bounds
+    # materialization. Pre-37 schemas retain their owner-leading lookup.
+    # Seek every Reference with this source identity before checking its owner.
+    # Do not restrict the seek to the expected Task: a different owner is corruption.
+    source_join = (
+        """CROSS JOIN evidence_references AS reference
+                       INDEXED BY idx_evidence_references_source_identity
+                 CROSS JOIN tasks AS owner
+                       INDEXED BY idx_tasks_project_task_identity
+                 WHERE reference.project_id = ?"""
+        if _storage.current_schema_version(connection) >= 37 else
+        """CROSS JOIN tasks AS owner
+                       INDEXED BY idx_tasks_project_task_identity
+                 CROSS JOIN evidence_references AS reference
+                       INDEXED BY idx_evidence_references_source
+                 WHERE owner.project_id = ?"""
+    )
     reference_rows = connection.execute(
-        """
+        f"""
                 WITH selected_sources(value) AS (
                     SELECT value FROM json_each(?)
                 )
                 SELECT reference.*
                   FROM selected_sources AS selected
-                 CROSS JOIN tasks AS owner
-                       INDEXED BY idx_tasks_project_task_identity
-                 CROSS JOIN evidence_references AS reference
-                       INDEXED BY idx_evidence_references_source
-                 WHERE owner.project_id = ?
+                 {source_join}
                    AND reference.project_id = owner.project_id
                    AND reference.task_id = owner.task_id
                    AND reference.source_kind =

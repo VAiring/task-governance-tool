@@ -23,7 +23,7 @@ PROFILES = []
 
 
 @contextmanager
-def populated_source(task_count=1, schema_version=36):
+def populated_source(task_count=1, schema_version=37):
     with review_fixture(schema_version=schema_version) as fixture:
         configure_project_maintenance(fixture.target, requested_interval_minutes=None,
             requested_generations=None, enabled_at=TIME)
@@ -131,7 +131,7 @@ class ViewerCaptureAdmissionTests(unittest.TestCase):
                 self.assertEqual(set(counts.values()), {0})
 
     def test_direct_snapshot_consumers_keep_complete_current_and_legacy_admission(self):
-        for schema in (33, 34, 35, 36):
+        for schema in (33, 34, 35, 36, 37):
             with self.subTest(schema=schema), populated_source(4, schema) as fixture:
                 full_note = "n" * 1200 + " undisplayed tail"
                 with closing(storage.connect_initialized(fixture.target)) as connection:

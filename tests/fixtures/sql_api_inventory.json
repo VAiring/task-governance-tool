@@ -299,6 +299,14 @@
       },
       "kind": "observed_connection"
     },
+    "schema_evidence_reference_index.py": {
+      "attributes": {
+        "execute": 29,
+        "fetchall": 1,
+        "fetchone": 10
+      },
+      "kind": "observed_connection"
+    },
     "schema_own_review_indexes.py": {
       "attributes": {
         "execute": 30,

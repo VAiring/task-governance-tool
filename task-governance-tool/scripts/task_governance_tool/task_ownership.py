@@ -419,7 +419,7 @@ def validate_storage_rows(connection: sqlite3.Connection, *, project_id=None, ta
         if connection.execute(
             "SELECT 1 FROM completion_evidence_bundles AS bundle "
             "LEFT JOIN task_execution_cycles AS link ON link.completion_cycle_id=bundle.completion_cycle_id "
-            "WHERE bundle.source_schema_version IN (24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36) AND link.completion_cycle_id IS NULL"
+            "WHERE bundle.source_schema_version IN (24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37) AND link.completion_cycle_id IS NULL"
             + ("" if selected is None else " AND bundle.task_id IN (SELECT value FROM json_each(?))") + " LIMIT 1",
             parameters,
         ).fetchone():

@@ -14,7 +14,7 @@ from tests import verification_receipt_test_support as reviews
 from tests.review_answer_fixture_support import attach_existing
 from task_governance_tool import storage, state_resolver, doctor, cli
 from task_governance_tool import stored_task_validation, task_ownership
-from task_governance_tool import schema_viewer_finding_index as schema
+from task_governance_tool import schema_evidence_reference_index as schema
 from task_governance_tool import schema_task_event_notes as notes
 
 
@@ -270,7 +270,7 @@ class SetupSnapshotValidationTests(unittest.TestCase):
     def test_supported_schema_read_branches_keep_independent_physical_checks(self):
         from tests.test_review_session_migration import candidate_runtime
         from tests.verification_receipt_test_support import initialize, target_for
-        for version in range(21, 36):
+        for version in range(21, 37):
             with self.subTest(version=version), tempfile.TemporaryDirectory() as directory:
                 with candidate_runtime(version):
                     repo, db = initialize(Path(directory))

@@ -622,7 +622,10 @@ def run_state_separation(
                     validate_fresh_retry_source()
                     current_source = None
                 else:
-                    current_source = resolve_package_project_state(skill_root=scope.skill_root, repo=scope.canonical_repo)
+                    current_source = resolve_package_project_state(
+                        skill_root=scope.skill_root, repo=scope.canonical_repo,
+                        separation_record=record, held_locks=held,
+                    )
                 _require_planned_recovery(planned_source, current_source)
                 if current_source is not None and current_source.error_code is not None:
                     return source_preflight_failure(current_source)
@@ -641,7 +644,10 @@ def run_state_separation(
                         lock = root / relative
                         if path_lexically_exists(lock.parent):
                             held[lock] = locks.enter_context(zero_wait_artifact_lock(lock))
-                    source = resolve_package_project_state(skill_root=scope.skill_root, repo=scope.canonical_repo)
+                    source = resolve_package_project_state(
+                        skill_root=scope.skill_root, repo=scope.canonical_repo,
+                        separation_record=record, held_locks=held,
+                    )
                     _require_planned_recovery(planned_source, source)
                     if source.error_code is not None:
                         return source_preflight_failure(source)
@@ -724,7 +730,10 @@ def run_state_separation(
                         final_inventory = inspect_inventory(
                             root, strict=False, held_locks=held, repair_evidence=True,
                         )
-                        final_source = resolve_package_project_state(skill_root=scope.skill_root, repo=scope.canonical_repo)
+                        final_source = resolve_package_project_state(
+                            skill_root=scope.skill_root, repo=scope.canonical_repo,
+                            separation_record=record, held_locks=held,
+                        )
                         _require_planned_recovery(planned_source, final_source)
                         _same_source(record, final_source, final_inventory.digest)
                     except (OSError, StatePathError, SeparationError, VerificationRunnerLifecycleError) as exc:

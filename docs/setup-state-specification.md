@@ -309,8 +309,14 @@ Retry checks both recorded phase and actual objects. A matching marker can
 prove fencing completed before phase persistence; a matching published
 candidate can prove publication completed before activation. A sealed fresh
 transition may resume through the empty old `current/` created during marker
-preparation, after validating absence of old source material in preview and
-under locks; ordinary empty-destination refusal remains unchanged. Changed source,
+preparation, after validating absence of old source material. A sealed private
+legacy transition may likewise resume through that physical empty directory
+only when its record, sole original source, retained snapshot and candidate
+match their recorded basis and seals. Preview and lock-held revalidation use
+the same original legacy source; the retained copy is not a fallback. An empty
+directory alone, an unsealed record, or any destination entry grants no such
+exception. These checks run in preview and under locks; ordinary source
+precedence and empty-destination refusal remain unchanged. Changed source,
 unowned/changed residue, mismatched marker or competing publication is preserved
 and rejected. A nonempty preparation interrupted before its digests were sealed
 is also preserved and reports `setup_incomplete`, rather than deleting or

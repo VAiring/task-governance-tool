@@ -5,20 +5,25 @@ from dataclasses import replace
 from pathlib import Path
 import shutil
 import hashlib
+import json
 import os
 import sqlite3
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
 
 from tests.m14_test_support import (
-    make_physical_install, file_snapshot, _copy_skill, PhysicalInstall, create_v12_target,
+    make_physical_install, file_snapshot, tree_snapshot, _copy_skill, PhysicalInstall, create_v12_target,
 )
 from task_governance_tool import setup, setup_state_separation as separation
 from task_governance_tool.artifact_lock import zero_wait_artifact_lock
 from task_governance_tool.state_paths import StatePathError
-from task_governance_tool.state_resolver import observe_current_root, resolve_setup_project_state
-from task_governance_tool.state_separation import read_record
+from task_governance_tool.state_resolver import (
+    observe_current_root, resolve_project_state, resolve_setup_project_state,
+)
+from task_governance_tool.state_separation import read_record, encode_separation_record
 from task_governance_tool.storage import (
     SCHEMA_VERSION,
     StorageError,
@@ -293,13 +298,14 @@ class SetupStateSeparationTests(unittest.TestCase):
                         self.assert_success(result)
 
     def test_sealed_retry_preserves_backup_validation_records(self):
-        # Legacy pre-fence empty-destination recovery is a separately recorded
-        # baseline defect. Exercise both supported resume paths with records.
-        for origin, phase in (("fixed", "sealed"), ("legacy", "fenced")):
-            with self.subTest(origin=origin, phase=phase), tempfile.TemporaryDirectory() as temporary:
+        for origin, phase, primary in (("fixed", "sealed", True), ("legacy", "sealed", True),
+                                       ("legacy", "sealed", False), ("legacy", "fenced", True)):
+            with self.subTest(origin=origin, phase=phase, primary=primary), tempfile.TemporaryDirectory() as temporary:
                 self.reset_install(temporary)
                 target = self.old_current() if origin == "fixed" else self.old_legacy()
                 publish_setup_backup(target, 3)
+                if not primary:
+                    target.db_path.unlink()
                 record = self.interrupt_separation(phase)
                 candidate = self.new_root / ".state-separation" / "candidate"
                 candidate_before = file_snapshot(candidate)
@@ -328,6 +334,182 @@ class SetupStateSeparationTests(unittest.TestCase):
             self.assertFalse(result.ok)
             self.assertEqual(file_snapshot(self.install.project_root), before)
         self.assertFalse((self.new_root / 'current').exists())
+
+    def test_marker_boundary_restarts_preserve_sources_and_exact_candidates(self):
+        for origin, phase in ((origin, phase) for origin in ("fresh", "fixed", "legacy")
+                              for phase in ("sealed", "retired")):
+            with self.subTest(origin=origin, phase=phase), tempfile.TemporaryDirectory() as tmp:
+                self.reset_install(tmp)
+                target = (self.old_current() if origin == "fixed" else
+                          self.old_legacy() if origin == "legacy" else None)
+                if target is not None:
+                    publish_setup_backup(target, 3)
+                record = self.interrupt_separation(phase)
+                prepared = self.new_root / ".state-separation"
+                retained = tree_snapshot(prepared / "source")
+                candidate = file_snapshot(prepared / "candidate")
+                original = file_snapshot(target.db_path.parent) if origin == "legacy" else None
+                modes = {path: path.stat().st_mode for path in prepared.rglob("*")}
+                before = tree_snapshot(self.install.project_root)
+                if origin == "legacy" and phase == "sealed":
+                    ordinary = resolve_project_state(
+                        skill_root=self.install.skill_root, repo=self.install.project_root,
+                    )
+                    self.assertEqual(ordinary.error_code, "project_state_unreadable")
+                # A new public-CLI process must rediscover the persisted state;
+                # no in-memory observation from the interrupted invocation exists.
+                process = subprocess.run(
+                    [sys.executable, "-B", str(self.install.entrypoint), "setup",
+                     "--repo", str(self.install.project_root), "--read-only", "--json"],
+                    cwd=self.install.project_root, capture_output=True, text=True,
+                    encoding="utf-8", timeout=120, check=False,
+                )
+                preview = json.loads(process.stdout)
+                self.assertEqual(process.returncode, 0, preview)
+                self.assertTrue(preview["ok"], preview)
+                self.assertEqual(preview["data"]["completed_writes"], [])
+                self.assertEqual(tree_snapshot(self.install.project_root), before)
+                for path, mode in modes.items():
+                    self.assertEqual(path.stat().st_mode, mode)
+                activated = []
+                publish = separation.publish_record
+
+                def observe_activation(state_root, successor, *, expected):
+                    if successor.phase == "activated":
+                        activated.append(file_snapshot(self.new_root / "current"))
+                    return publish(state_root, successor, expected=expected)
+
+                with mock.patch.object(separation, "_prepare_candidate",
+                                       side_effect=AssertionError("sealed candidate rebuilt")), \
+                        mock.patch.object(separation, "publish_record", side_effect=observe_activation):
+                    resolved = self.assert_success(self.run_setup())
+                self.assertEqual(resolved.project_id, record.project_id)
+                self.assertEqual(resolved.stored_project.binding_generation, 1)
+                # Outer Setup initializes the numerical DB after activation.
+                # Compare the exact core candidate at its publication boundary.
+                self.assertEqual(activated, [candidate])
+                self.assertEqual(tree_snapshot(prepared / "source"), retained)
+                if original is not None:
+                    self.assertEqual(file_snapshot(target.db_path.parent), original)
+                again = self.run_setup()
+                self.assertTrue(again.ok, again.error_code)
+                self.assertEqual(again.data["completed_writes"], [])
+
+    def test_legacy_empty_current_without_sealed_record_is_not_resume_authority(self):
+        self.old_legacy()
+        (self.old_root / "current").mkdir()
+        before = tree_snapshot(self.install.project_root)
+        for read_only in (True, False):
+            result = self.run_setup(read_only=read_only)
+            self.assertFalse(result.ok)
+            self.assertEqual(result.error_code, "project_state_unreadable")
+            self.assertEqual(tree_snapshot(self.install.project_root), before)
+
+    def test_legacy_marker_retry_rejects_mismatches_without_writes(self):
+        target = self.old_legacy()
+        record = self.interrupt_separation("sealed")
+        prepared = self.new_root / ".state-separation"
+        record_path = prepared / "record.json"
+        changed_files = [target.db_path, prepared / "source" / "taskgov.sqlite",
+                         prepared / "candidate" / "taskgov.sqlite"]
+        mutations = [(path, path.read_bytes() + b"changed sealed bytes") for path in changed_files]
+        mutations.extend((record_path, encode_separation_record(replace(record, **changes)))
+                         for changes in ({"candidate_digest": None}, {"retained_digest": None},
+                                         {"source_fingerprint": "0" * 64},
+                                         {"source_path_hash": "0" * 64},
+                                         {"source_schema_version": 11}))
+        mutations.extend((self.old_root / "current" / name, contents)
+                         for name, contents in (("unknown.txt", b"preserve"),
+                                                ("taskgov.sqlite", target.db_path.read_bytes())))
+        for path, contents in mutations:
+            with self.subTest(path=path.name, size=len(contents)):
+                original = path.read_bytes() if path.exists() else None
+                path.write_bytes(contents)
+                try:
+                    before = tree_snapshot(self.install.project_root)
+                    for read_only in (True, False):
+                        result = self.run_setup(read_only=read_only)
+                        self.assertFalse(result.ok)
+                        self.assertEqual(result.data["completed_writes"], [])
+                        self.assertEqual(tree_snapshot(self.install.project_root), before)
+                finally:
+                    if original is None:
+                        path.unlink()
+                    else:
+                        path.write_bytes(original)
+        for path in (self.old_root / "current" / "empty-but-unknown",
+                     self.old_root / "projects" / "competing-source"):
+            with self.subTest(directory=path.name):
+                path.mkdir()
+                try:
+                    before = tree_snapshot(self.install.project_root)
+                    for read_only in (True, False):
+                        result = self.run_setup(read_only=read_only)
+                        self.assertFalse(result.ok)
+                        self.assertEqual(tree_snapshot(self.install.project_root), before)
+                finally:
+                    path.rmdir()
+        # The inventory's Runner owner raises its own error class. Resolver
+        # entry must sanitize it rather than leak an exception before Setup.
+        runner = prepared / "candidate" / "verification-runner"
+        runner.mkdir()
+        (runner / "unexpected").mkdir()
+        before = tree_snapshot(self.install.project_root)
+        for read_only in (True, False):
+            result = self.run_setup(read_only=read_only)
+            self.assertFalse(result.ok)
+            self.assertEqual(result.error_code, "project_state_unreadable")
+            self.assertEqual(tree_snapshot(self.install.project_root), before)
+
+    def test_legacy_marker_retry_rejects_linklike_empty_current(self):
+        self.old_legacy()
+        self.interrupt_separation("sealed")
+        from task_governance_tool import state_resolver
+
+        current = self.old_root / "current"
+        identity = current.lstat().st_ino
+        actual = state_resolver._is_reparse
+        # Portable physical-boundary fault injection; ordinary directory tests
+        # above exercise the actual filesystem, including unknown empty children.
+        def reparse(details):
+            return details.st_ino == identity or actual(details)
+
+        before = tree_snapshot(self.install.project_root)
+        with mock.patch.object(state_resolver, "_is_reparse", side_effect=reparse):
+            for read_only in (True, False):
+                result = self.run_setup(read_only=read_only)
+                self.assertFalse(result.ok)
+                self.assertEqual(result.error_code, "project_state_unreadable")
+                self.assertEqual(tree_snapshot(self.install.project_root), before)
+
+    def test_legacy_marker_retry_revalidates_under_locks_and_preserves_drift(self):
+        target = self.old_legacy()
+        self.interrupt_separation("sealed")
+        actual = setup._revalidate_scope
+        sentinel = self.old_root / "current" / "unexpected.txt"
+
+        def drift(**kwargs):
+            scope = actual(**kwargs)
+            sentinel.write_bytes(b"external change while locks held")
+            return scope
+
+        before = tree_snapshot(self.install.project_root)
+        with mock.patch.object(setup, "_revalidate_scope", side_effect=drift):
+            result = self.run_setup()
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "project_state_unreadable")
+        self.assertEqual(result.data["completed_writes"], [])
+        after = tree_snapshot(self.install.project_root)
+        sentinel_key = sentinel.relative_to(self.install.project_root).as_posix()
+        self.assertEqual(set(after) - set(before), {sentinel_key})
+        self.assertEqual({key: value for key, value in after.items() if key != sentinel_key}, before)
+        sentinel.unlink()  # Test-only interference, restored for the lock case.
+        with zero_wait_artifact_lock(self.new_root / "taskgov-state.lock"):
+            result = self.run_setup()
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "database_busy")
+        self.assertEqual(tree_snapshot(self.install.project_root), before)
+        self.assertTrue(target.db_path.is_file())
 
     def test_legacy_backup_only_source_recovers_without_deleting_generations(self):
         project = project_identity(self.install.project_root)

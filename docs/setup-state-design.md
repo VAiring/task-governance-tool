@@ -416,6 +416,17 @@ the recorded source/candidate observations. Before fencing, preview compares the
 already inspected original-source inventory with its recorded fingerprint;
 write setup repeats that comparison under locks. Once fenced, the retained
 snapshot uses its own seal, never the original database's byte fingerprint.
+For a sealed private legacy origin, marker preparation may already have made
+the old physical `current/` directory without publishing a marker. Setup passes
+the inspected separation record to the shared old-source resolver on preview,
+under transition/domain locks, and before fencing. Only that explicit context
+may bypass an exactly empty fixed destination: the bounded old-material
+inspector requires the sole original legacy inventory and retained seal to
+match, and the candidate inventory must match its seal. Existing legacy DB
+admission, identity/binding comparison and candidate validation still run.
+Held lock bytes use the existing inventory mechanism. Ordinary resolution never
+supplies this context; fresh and fixed-origin recovery keep their existing
+rules. No state is deleted or rewritten to make a retry admissible.
 The sealed-candidate reader retains ordinary supplied-token validation for a
 nonrelocated source and validates the already-authorized binding result for a
 relocated source. New backup-policy options do not rewrite a sealed candidate:

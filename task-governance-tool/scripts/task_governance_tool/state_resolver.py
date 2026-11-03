@@ -41,7 +41,9 @@ from task_governance_tool.state_paths import (
 from task_governance_tool.state_separation import (
     SeparationError,
     SeparationObservation,
+    SeparationRecord,
     inspect_separation,
+    separation_paths,
 )
 from task_governance_tool.project_binding_repository import (
     read_project_binding_state,
@@ -588,6 +590,8 @@ def resolve_package_project_state(
     *,
     skill_root: Path,
     repo: Path,
+    separation_record: SeparationRecord | None = None,
+    held_locks: dict[Path, bytes] | None = None,
 ) -> ProjectStateResolution:
     """Deeply observe an old source for setup, including lock-held revalidation."""
 
@@ -599,6 +603,8 @@ def resolve_package_project_state(
         repair_evidence_artifacts=True,
         include_doctor_state=False,
         retain_read_connection=False,
+        separation_record=separation_record,
+        held_locks=held_locks,
     )
 
 
@@ -688,6 +694,7 @@ def _resolve_separated_state(
             repair_evidence_artifacts=setup_mode,
             include_doctor_state=False,
             retain_read_connection=False,
+            separation_record=transition.record if setup_mode else None,
         )
         if source.error_code is not None:
             return _error_resolution(paths, current_root, source.error_code)
@@ -813,11 +820,17 @@ def _resolve_with_paths(
     review_task_id: str | None = None,
     operation_local: bool = False,
     deadline: float | None = None,
+    separation_record: SeparationRecord | None = None,
+    held_locks: dict[Path, bytes] | None = None,
 ) -> ProjectStateResolution:
     try:
         _validate_optional_directory(paths.state_root)
         _validate_optional_regular_file(paths.transition_lock)
-        fixed = _resolve_fixed(
+        legacy_retry = (include_legacy and validate_fixed_artifacts
+                        and _sealed_legacy_retirement_retry(
+                            paths, current_root, separation_record, held_locks=held_locks,
+                        ))
+        fixed = None if legacy_retry else _resolve_fixed(
             paths,
             current_root,
             validate_artifacts=validate_fixed_artifacts,
@@ -838,7 +851,7 @@ def _resolve_with_paths(
                 setup_mode=validate_fixed_artifacts,
             )
         raise _ResolverFailure("project_state_unreadable")
-    except _ResolverFailure as exc:
+    except (_ResolverFailure, SeparationError) as exc:
         return _error_resolution(paths, current_root, exc.code)
     except StorageError as exc:
         return _error_resolution(
@@ -944,6 +957,43 @@ def _require_contained(path: Path, parent: Path) -> None:
         resolve_strict_path(path).relative_to(resolve_strict_path(parent))
     except (OSError, RuntimeError, ValueError) as exc:
         raise _ResolverFailure("project_state_unreadable") from exc
+
+
+def _sealed_legacy_retirement_retry(
+    paths: CanonicalStatePaths, current_root: CurrentRootObservation,
+    record: SeparationRecord | None, *, held_locks: dict[Path, bytes] | None,
+) -> bool:
+    """Recognize only a sealed Setup's pre-marker empty destination.
+
+    Normal source selection never supplies this record. Do not infer ownership
+    from an empty directory, or use the retained copy as a fallback source.
+    Setup still validates the source/candidate DBs and repeats this under locks.
+    """
+    if (record is None or record.phase != "private"
+            or record.source_layout != "legacy_projects_v1"
+            or record.retained_digest is None or record.candidate_digest is None
+            or not _validate_optional_directory(paths.fixed_root)):
+        return False
+    if paths != package_state_paths(paths.skill_root):
+        raise SeparationError()
+    inspect_physical_directory(paths.fixed_root, root=paths.state_root)
+    if any(paths.fixed_root.iterdir()):
+        raise SeparationError()
+    from task_governance_tool.setup_state_inventory import inspect_inventory, inspect_retired_source
+    from task_governance_tool.verification_runner_lifecycle import VerificationRunnerLifecycleError
+
+    prepared = separation_paths(canonical_state_paths(
+        paths.skill_root, repo=current_root.canonical_repo,
+    ).state_root)
+    # The existing bounded inspector verifies the sole legacy source's original
+    # fingerprint and retained seal, including unexpected competing material.
+    try:
+        inspect_retired_source(paths.state_root, prepared.source, record, held_locks=held_locks)
+        if inspect_inventory(prepared.candidate, strict=True).digest != record.candidate_digest:
+            raise SeparationError()
+    except VerificationRunnerLifecycleError as exc:
+        raise SeparationError() from exc
+    return True
 
 
 def _resolve_fixed(

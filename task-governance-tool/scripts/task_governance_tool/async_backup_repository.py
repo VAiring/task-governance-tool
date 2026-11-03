@@ -8,6 +8,7 @@ migration and recovery keep their existing admission and publication paths.
 from __future__ import annotations
 
 import sqlite3
+import re
 from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -52,6 +53,31 @@ class BackupControl:
     schema_version: int
     schema_cookie: int
     binding: ProjectBindingState
+    database_epoch: str
+
+
+def _read_database_epoch(connection, project_id: str) -> str:
+    rows = connection.execute(
+        "SELECT database_epoch FROM viewer_projection_state WHERE project_id = ? LIMIT 2",
+        (project_id,),
+    ).fetchall()
+    if (len(rows) != 1 or type(rows[0][0]) is not str
+            or re.fullmatch("[0-9a-f]{32}", rows[0][0]) is None):
+        raise failure()
+    return rows[0][0]
+
+
+def read_runtime_identity(target: DatabaseTarget) -> tuple[tuple[int, int], str]:
+    """Bounded observation only; never admits backup contents or repairs state."""
+    identity = _database_identity(target)
+    try:
+        with closing(connect_readonly(target.db_path, timeout=0)) as connection:
+            epoch = _read_database_epoch(connection, target.project.project_id)
+            if _database_identity(target) != identity:
+                raise failure()
+            return identity, epoch
+    except sqlite3.Error as exc:
+        raise operational_sqlite_error(exc, fallback_message="backup identity could not be read") from exc
 
 
 def _validate_maintenance(state: metadata.ProjectMaintenanceState | None) -> None:
@@ -92,6 +118,7 @@ def _read_control(connection: sqlite3.Connection, target: DatabaseTarget,
     generations = tuple(metadata._metadata_from_generation_row(row) for row in rows)
     metadata.validate_managed_backup_metadata_set(generations)
     cookie = connection.execute("PRAGMA schema_version").fetchone()[0]
+    epoch = _read_database_epoch(connection, target.project.project_id)
     if type(cookie) is not int or cookie < 0:
         raise failure()
     if _database_identity(target) != identity:
@@ -99,13 +126,13 @@ def _read_control(connection: sqlite3.Connection, target: DatabaseTarget,
     if version is None:
         from task_governance_tool.storage import SCHEMA_VERSION
         version = SCHEMA_VERSION
-    return BackupControl(state, generations, identity, version, cookie, binding)
+    return BackupControl(state, generations, identity, version, cookie, binding, epoch)
 
 
 def _basis(value: BackupControl) -> tuple:
     state = value.maintenance
     return (
-        value.database_identity, value.schema_version, value.schema_cookie,
+        value.database_identity, value.database_epoch, value.schema_version, value.schema_cookie,
         value.binding, value.generations, state.project_id, state.enabled_at,
         state.backup_interval_minutes, state.backup_generations,
         state.applied_backup_generations, state.backup_last_success_at,

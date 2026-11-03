@@ -485,7 +485,7 @@ class DoctorCommandTests(unittest.TestCase):
             control = async_backup_repository.read_control(target)
             runtime_root = async_backup_state.runtime_root(target, create=True)
             record = {
-                "v": 1,
+                "v": 2,
                 "attempt_id": "a" * 32,
                 "state": "succeeded",
                 "started_at": FIXED_TIME,
@@ -497,6 +497,7 @@ class DoctorCommandTests(unittest.TestCase):
                 "binding_generation": target.binding_generation,
                 "schema_version": control.schema_version,
                 "database_identity": list(control.database_identity),
+                "database_epoch": control.database_epoch,
             }
             async_backup_state.write_record(runtime_root, record)
             before = install.state_snapshot()
@@ -557,7 +558,7 @@ class DoctorCommandTests(unittest.TestCase):
             ):
                 with self.subTest(saved=saved):
                     record = {
-                        "v": 1,
+                        "v": 2,
                         "attempt_id": "b" * 32,
                         "state": saved,
                         "started_at": FIXED_TIME,
@@ -569,6 +570,7 @@ class DoctorCommandTests(unittest.TestCase):
                         "binding_generation": target.binding_generation,
                         "schema_version": control.schema_version,
                         "database_identity": list(control.database_identity),
+                        "database_epoch": control.database_epoch,
                     }
                     async_backup_state.write_record(runtime_root, record)
                     before = install.state_snapshot()

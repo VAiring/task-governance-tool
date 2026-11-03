@@ -119,13 +119,14 @@ def launch_backup(target, *, observed_at=None, _spawn_child=None,
             if _admit_launch is not None and _admit_launch() is not True:
                 return BackupLaunchResult("deferred")
             nonce = uuid4().hex
-            record = dict(v=1, attempt_id=nonce, state="starting", started_at=timestamp,
+            record = dict(v=2, attempt_id=nonce, state="starting", started_at=timestamp,
                           captured_at=None, published_at=None, generation_id=None,
                           project_id=target.project.project_id,
                           binding_path_hash=target.binding_path_hash,
                           binding_generation=target.binding_generation,
                           schema_version=control.schema_version,
-                          database_identity=list(control.database_identity))
+                          database_identity=list(control.database_identity),
+                          database_epoch=control.database_epoch)
             write_record(root, record)
             try:
                 process = (_spawn_child or _spawn)(target, nonce)
@@ -191,7 +192,7 @@ def _worker_main(repo: Path, nonce: str, *, skill_root: Path, go_stream=None) ->
         from task_governance_tool.state_paths import inspect_physical_directory
         inspect_physical_directory(root, root=Path(repo))
         initial = _same_attempt(root, nonce)
-        if initial["state"] != "starting":
+        if initial["v"] != 2 or initial["state"] != "starting":
             return 2
         with zero_wait_artifact_lock(root / "worker.lock", require_single_link=True):
             record = _same_attempt(root, nonce)
@@ -209,7 +210,8 @@ def _worker_main(repo: Path, nonce: str, *, skill_root: Path, go_stream=None) ->
                 record = _same_attempt(root, nonce)
                 with managed_backup_lock(target):
                     control = read_control(target)
-                    if (control.schema_version != record["schema_version"]
+                    if (control.database_epoch != record["database_epoch"]
+                            or control.schema_version != record["schema_version"]
                             or list(control.database_identity) != record["database_identity"]):
                         raise StorageError("backup_basis_changed", "backup basis changed")
                     # Reuse this existing admitted basis; logging adds no DB read.

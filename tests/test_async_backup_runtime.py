@@ -78,13 +78,14 @@ class AsyncBackupRuntimeTests(unittest.TestCase):
 
     def record(self, *, nonce="a" * 32, status="starting"):
         control = repository.read_control(self.target)
-        return dict(v=1, attempt_id=nonce, state=status, started_at=timestamp(0),
+        return dict(v=2, attempt_id=nonce, state=status, started_at=timestamp(0),
                     captured_at=None, published_at=None, generation_id=None,
                     project_id=self.target.project.project_id,
                     binding_path_hash=self.target.binding_path_hash,
                     binding_generation=self.target.binding_generation,
                     schema_version=control.schema_version,
-                    database_identity=list(control.database_identity))
+                    database_identity=list(control.database_identity),
+                    database_epoch=control.database_epoch)
 
     def prepare(self, **kwargs):
         root = state.runtime_root(self.target, create=True)
@@ -104,6 +105,52 @@ class AsyncBackupRuntimeTests(unittest.TestCase):
         self.assertEqual(state.observe_runtime(self.target)["state"], "interrupted")
         self.assertEqual(state.read_record(root), record)
         self.assertEqual(tree_snapshot(root), before)
+
+    def test_runtime_epoch_and_legacy_records_are_observation_only(self):
+        from task_governance_tool.storage import connect_existing
+        root, record = self.prepare(status="running")
+        before = tree_snapshot(root)
+        with closing(connect_existing(self.target.db_path)) as connection:
+            connection.execute("UPDATE viewer_projection_state SET database_epoch=?",
+                               ("b" * 32 if record["database_epoch"] != "b" * 32 else "c" * 32,))
+            connection.commit()
+        self.assertEqual(state.observe_runtime(self.target)["state"], "unknown")
+        self.assertEqual(tree_snapshot(root), before)
+        # Otherwise admissible phase isolates the legacy-version rejection.
+        legacy = dict(record, v=1, state="starting")
+        del legacy["database_epoch"]
+        state.write_record(root, legacy)
+        before = tree_snapshot(root)
+        self.assertEqual(state.observe_runtime(self.target)["state"], "unknown")
+        self.assertEqual(tree_snapshot(root), before)
+        with mock.patch.object(capture, "run_backup") as run:
+            self.assertEqual(runtime.worker_main(self.install.project_root, record["attempt_id"],
+                skill_root=self.install.skill_root, go_stream=io.BytesIO(b"G")), 2)
+            run.assert_not_called()
+        self.assertEqual(tree_snapshot(root), before)
+
+    def test_runtime_epoch_format_and_unavailable_read_fail_closed(self):
+        root, record = self.prepare(status="running")
+        for invalid in (None, 1, b"a" * 32, "A" * 32, "a" * 31):
+            with self.subTest(epoch=invalid), self.assertRaises(StorageError):
+                state.validate_record(dict(record, database_epoch=invalid))
+        with self.assertRaises(StorageError):
+            state.validate_record(dict(record, v=1))
+        before = tree_snapshot(root)
+        with mock.patch.object(repository, "read_runtime_identity", side_effect=StorageError("database_busy", "busy")):
+            self.assertEqual(state.observe_runtime(self.target)["state"], "unknown")
+        self.assertEqual(tree_snapshot(root), before)
+
+    def test_epoch_change_before_go_rejects_worker_effect(self):
+        root, record = self.prepare()
+        current = repository.read_control(self.target)
+        changed = replace(current, database_epoch="b" * 32 if current.database_epoch != "b" * 32 else "c" * 32)
+        with mock.patch.object(repository, "read_control", return_value=changed), \
+                mock.patch.object(capture, "run_backup") as run:
+            self.assertEqual(runtime.worker_main(self.install.project_root, record["attempt_id"],
+                skill_root=self.install.skill_root, go_stream=io.BytesIO(b"G")), 2)
+            run.assert_not_called()
+        self.assertEqual(repository.read_control(self.target), current)
 
     def test_live_observer_closes_before_waiting_writer_replaces_state(self):
         root, record = self.prepare()

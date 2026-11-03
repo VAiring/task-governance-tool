@@ -1284,6 +1284,13 @@ worker is alive or stopped. Startup failure and abnormal termination preserve
 the last normal backup. The next eligible changed mutation can recover an
 interrupted attempt and try again without a separate user operation. An
 uncertain owner remains unknown rather than being replaced unsafely.
+Runtime outcomes must match both the physical database file identity and the
+database epoch rotated by formal restoration. Reused file identifiers cannot
+revive an outcome from before restore. A bounded, read-only lookup of that
+epoch establishes continuity only, not backup validity. Missing, malformed or
+unavailable identity is unknown. Older runtime records without an epoch remain
+preserved but cannot establish a current outcome or authorize worker effects;
+a later independently admitted launch may replace them with a fresh attempt.
 Runtime-state publication and reading coordinate through a short file lock,
 without retaining a database transaction or process wait. Diagnosis neither
 creates this lock nor waits for it. A transient unavailable state is not proof

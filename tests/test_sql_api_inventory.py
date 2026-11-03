@@ -30,6 +30,10 @@ destination uses connect_traced. Live core/Usage databases are never written.
 schema_evidence_reference_index borrows Setup's observed storage connection.
 It owns the migration transaction and restores connection flags on every exit;
 the source-query consumers borrow their caller's admitted snapshot as before.
+
+async_backup_repository reads the restoration epoch through the existing
+observed control snapshot, or a zero-wait sqlite_connection.connect_readonly
+for runtime observation. It adds no native dispatch or unobserved connection.
 """
 import ast
 import json

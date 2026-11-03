@@ -14,6 +14,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tests.test_m17_recovery_hardening import _setup_current
 from tests.test_routine_backup import timestamp
@@ -280,13 +281,13 @@ class AsyncBackupProcessTests(unittest.TestCase):
     def test_state_publication_process_crash_has_only_fixed_recoverable_residue(self):
         root = state.runtime_root(self.target, create=True)
         control = repository.read_control(self.target)
-        record = dict(v=1, attempt_id="a" * 32, state="starting", started_at=timestamp(0),
+        record = dict(v=2, attempt_id="a" * 32, state="starting", started_at=timestamp(0),
                       captured_at=None, published_at=None, generation_id=None,
                       project_id=self.target.project.project_id,
                       binding_path_hash=self.target.binding_path_hash,
                       binding_generation=self.target.binding_generation,
                       schema_version=control.schema_version,
-                      database_identity=list(control.database_identity))
+                      database_identity=list(control.database_identity), database_epoch=control.database_epoch)
         # An old unreleased native temporary is an unknown artifact, not a
         # cleanup target. Repeated new-format recovery must leave it untouched.
         retained = root / "state.json~RF-fixture.TMP"
@@ -343,13 +344,13 @@ state.write_record(root, dict(record, state="running"))
     def test_state_reader_writer_process_stress_has_no_missing_record_or_random_residue(self):
         root = state.runtime_root(self.target, create=True)
         control = repository.read_control(self.target)
-        record = dict(v=1, attempt_id="a" * 32, state="starting", started_at=timestamp(0),
+        record = dict(v=2, attempt_id="a" * 32, state="starting", started_at=timestamp(0),
                       captured_at=None, published_at=None, generation_id=None,
                       project_id=self.target.project.project_id,
                       binding_path_hash=self.target.binding_path_hash,
                       binding_generation=self.target.binding_generation,
                       schema_version=control.schema_version,
-                      database_identity=list(control.database_identity))
+                      database_identity=list(control.database_identity), database_epoch=control.database_epoch)
         state.write_record(root, record)
         child_source = r'''
 import json, sys
@@ -397,6 +398,7 @@ print(json.dumps({"attempts": 100, "failures": failures}), flush=True)
         self.assert_succeeded()
         root = state.runtime_root(self.target)
         retained_runtime = (root / "state.json").read_bytes()
+        old_record = state.read_record(root)
         self.assertTrue(self.target.db_path.is_relative_to(self.directory))
         self.target.db_path.unlink()  # Only this test's isolated canonical DB.
         restored = subprocess.run(
@@ -411,6 +413,11 @@ print(json.dumps({"attempts": 100, "failures": failures}), flush=True)
         self.assertTrue(self.target.db_path.exists())
         self.assertEqual((root / "state.json").read_bytes(), retained_runtime)
         self.assertEqual(state.observe_runtime(self.target)["state"], "unknown")
+        # Force inode reuse independently of the host allocator. Actual restored
+        # DB epoch must still reject the retained pre-restore success record.
+        with mock.patch.object(repository, "_database_identity", return_value=tuple(old_record["database_identity"])):
+            self.assertEqual(state.observe_runtime(self.target)["state"], "unknown")
+        self.assertNotEqual(repository.read_control(self.target).database_epoch, old_record["database_epoch"])
         shown = subprocess.run(
             [sys.executable, "-I", "-S", "-B", str(self.install.entrypoint),
              "--repo", str(self.install.project_root), "--read-only", "--json",

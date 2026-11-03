@@ -3,8 +3,8 @@
   "owners": {
     "async_backup_repository.py": {
       "attributes": {
-        "execute": 5,
-        "fetchall": 2,
+        "execute": 6,
+        "fetchall": 3,
         "fetchone": 1
       },
       "kind": "observed_connection"

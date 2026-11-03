@@ -1323,6 +1323,18 @@ the closed runtime control files `state.json`, `.state-next.json`, `state.lock`,
 `launch.lock`, `worker.lock` and the optional 32-byte `.launch-uncertain` attempt marker; the JSON
 record is at most 8 KiB. It retains one attempt, not an unbounded queue or
 history. Atomic replacement follows physical-directory and regular-file checks.
+New version-two records also retain the existing 32-character database epoch
+from `viewer_projection_state`. The repository reads that field with the
+already admitted control snapshot; control comparison and worker entry require
+it to match. Runtime observation performs one indexed, zero-wait read of this
+field, checking physical database identity before and after it, outside the
+state-file lock. It does not scan Task history, validate Viewer publication
+tuples, or certify backup content. Formal restore already rotates this epoch
+before publication, so inode reuse does not resurrect old outcomes. Ordinary
+Task/Viewer mutations preserve the epoch. Closed version-one records remain
+readable as residue and are not rewritten by observation, but project unknown
+and cannot enter a new worker. Fresh admitted launches write version two.
+No core schema migration or change to backup selection is required.
 Every runtime-state reader and writer uses the same short `state.lock` while
 opening and closing the state file. Writers publish the fixed temporary with
 ordinary atomic replacement only after readers have closed their handles;

@@ -59,6 +59,40 @@ class AsyncBackupRepositoryTests(unittest.TestCase):
         with self.assertRaises(storage.StorageError):
             repository.commit_inventory(target, before, (metadata(1, 0, 3),), success=True)
 
+    def test_epoch_change_invalidates_control_even_with_same_file_identity(self):
+        target = self.fixture()
+        before = repository.read_control(target)
+        with closing(storage.connect_existing(target.db_path)) as connection:
+            connection.execute("UPDATE viewer_projection_state SET database_epoch=?",
+                               ("b" * 32 if before.database_epoch != "b" * 32 else "c" * 32,))
+            connection.commit()
+        after = repository.read_control(target)
+        self.assertEqual(before.database_identity, after.database_identity)
+        with self.assertRaises(storage.StorageError):
+            repository.commit_inventory(target, before, (metadata(1, 0, 3),), success=True)
+
+    def test_runtime_identity_uses_one_selected_read_and_rejects_missing_epoch(self):
+        target = self.fixture()
+        statements = []
+        original = repository.connect_readonly
+        def opened(*args, **kwargs):
+            connection = original(*args, **kwargs)
+            connection.set_trace_callback(statements.append)
+            return connection
+        with mock.patch.object(repository, "connect_readonly", side_effect=opened) as connect:
+            identity, epoch = repository.read_runtime_identity(target)
+        self.assertEqual(connect.call_count, 1)
+        self.assertEqual(len([query for query in statements if query.startswith("SELECT")]), 1)
+        self.assertFalse(any("from tasks" in query.lower() or "quick_check" in query.lower() for query in statements))
+        self.assertEqual((identity, epoch), (repository.read_control(target).database_identity,
+                                            repository.read_control(target).database_epoch))
+        with closing(storage.connect_existing(target.db_path)) as connection:
+            connection.execute("DROP TRIGGER trg_viewer_projection_state_no_delete")
+            connection.execute("DELETE FROM viewer_projection_state")
+            connection.commit()
+        with self.assertRaises(storage.StorageError):
+            repository.read_runtime_identity(target)
+
     def test_equal_count_replacement_prevents_old_outcome(self):
         target = self.fixture()
         current = repository.read_control(target)

@@ -145,10 +145,15 @@ def _unique(pairs):
 
 
 def validate_record(record: object) -> dict:
-    if type(record) is not dict or set(record) != _FIELDS:
+    if type(record) is not dict or type(record.get("v")) is not int or record["v"] not in {1, 2}:
         raise _failure()
-    if (type(record["v"]) is not int or record["v"] != 1
-            or type(record["attempt_id"]) is not str
+    fields = _FIELDS if record["v"] == 1 else _FIELDS | {"database_epoch"}
+    if set(record) != fields:
+        raise _failure()
+    if record["v"] == 2 and (type(record["database_epoch"]) is not str
+                             or not _TOKEN.fullmatch(record["database_epoch"])):
+        raise _failure()
+    if (type(record["attempt_id"]) is not str
             or not _TOKEN.fullmatch(record["attempt_id"])
             or type(record["state"]) is not str or record["state"] not in _STATES
             or type(record["project_id"]) is not str
@@ -312,8 +317,13 @@ def observe_runtime(target, *, observed_at=None, schema_version=None) -> dict:
                 or first["binding_generation"] != target.binding_generation
                 or (schema_version is not None and first["schema_version"] != schema_version)):
             return result
-        from task_governance_tool.backup_metadata_repository import _backup_database_identity
-        if list(_backup_database_identity(target)) != first["database_identity"]:
+        # Version one never recorded restoration identity. Preserve its bytes,
+        # but do not infer that its old outcome describes this database.
+        if first["v"] != 2:
+            return result
+        from task_governance_tool.async_backup_repository import read_runtime_identity
+        identity, epoch = read_runtime_identity(target)
+        if list(identity) != first["database_identity"] or epoch != first["database_epoch"]:
             return result
         state = first["state"]
         if state == "running" and not worker:

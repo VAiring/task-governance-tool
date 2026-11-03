@@ -399,6 +399,7 @@ class M243CRunnerGateTests(unittest.TestCase):
                     _snapshot,
                     *,
                     completion_revision=None,
+                    git_validation=None,
                 ):
                     nonlocal physical_checks
                     physical_checks += 1

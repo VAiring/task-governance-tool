@@ -159,7 +159,7 @@ def checkpoint_connection(
                 task_id,
                 project.project_id,
                 contract_revision,
-                "2026-07-27T00:00:00.000000Z",
+                "2026-07-27T00:00:00Z",
             ),
         )
     connection.commit()
@@ -263,7 +263,7 @@ class CheckpointRepositoryTests(unittest.TestCase):
                       'Checkpoint scope', 'Checkpoint accepted', '',
                       'user_instruction:tg_task_checkpoint:2',
                       'Scope updated',
-                      '2026-07-27T01:00:00.000000Z')
+                      '2026-07-27T01:00:00Z')
             """,
             (self.project.project_id,),
         )

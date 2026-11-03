@@ -38,7 +38,8 @@ ENVELOPE_KEYS = {
     "errors",
 }
 HELP_CHOICES = {
-    (): ("setup", "doctor", "task", "handoff", "review", "verification"),
+    (): ("setup", "doctor", "backup", "task", "handoff", "review", "verification"),
+    ("backup",): ("protect",),
     ("task",): (
         "add",
         "list",
@@ -66,7 +67,6 @@ REMOVED_OR_REPLACEMENT_ROOTS = (
     "web",
     "database",
     "viewer",
-    "backup",
     "export",
     "repair",
     "restore",
@@ -243,7 +243,7 @@ class M14IntegratedAcceptanceTests(unittest.TestCase):
                     }
                 ],
             }
-            for args in (("task", "bogus"), ("doctor", "--bogus")):
+            for args in (("task", "bogus"), ("backup", "bogus"), ("doctor", "--bogus")):
                 with self.subTest(invalid_argument=args):
                     result = install.run(*args, "--json")
                     self.assertEqual(result.returncode, 1)

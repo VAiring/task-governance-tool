@@ -300,6 +300,9 @@ class CollectionDiagnosticTests(unittest.TestCase):
         self.session._reader = lambda *args, **kwargs: lambda: binding
         self.session._finalizer = Mock(return_value=None)
         self.session._wait_round_current = Mock()
+        # These cases exercise collection diagnostics for the original fixed-turn
+        # protocol, not current multi-turn tracking or a live project database.
+        self.session._answer_tracking = Mock(return_value={})
         self.session._enabled = Mock(return_value=True)
         self.host.read_child.return_value = ChildTurn(self.child, self.metadata["binding"]["initial_turn_id"],
             "completed" if ended else "inProgress", "idle" if ended else "active")

@@ -200,15 +200,22 @@ class FinalizationGitTests(unittest.TestCase):
                     expected = verify_git_snapshot_commit(repo, candidate, **options, git_validation=validation)
                     resolve, read_stat, read_git = Path.resolve, Path.stat, snapshots.run_git_bytes
                     identity = snapshots._read_snapshot_source_identity
+                    # Git and pathlib can spell a Windows temp path differently
+                    # (short names, resolved junctions, slash/case normalization).
+                    # Inject faults into the actual observed physical paths.
+                    root_path = repo.resolve(strict=True)
+                    git_path = Path(os.fsdecode(read_git(root_path,
+                        ["rev-parse", "--path-format=absolute", "--git-dir"])[:-1]))
+                    resolved_git_path = git_path.resolve(strict=True)
                     seen = 0
                     def resolving(path, *args, **kwargs):
                         if kwargs.get("strict") and ((failure == "root_resolve" and path == repo)
-                                or (failure == "git_resolve" and path == repo / ".git")):
+                                or (failure == "git_resolve" and path == git_path)):
                             raise FileNotFoundError("isolated source unavailable")
                         return resolve(path, *args, **kwargs)
                     def stating(path, *args, **kwargs):
-                        if ((failure == "root_stat" and path == repo)
-                                or (failure == "git_stat" and path == repo / ".git")):
+                        if ((failure == "root_stat" and path == root_path)
+                                or (failure == "git_stat" and path == resolved_git_path)):
                             raise PermissionError("isolated source unavailable")
                         return read_stat(path, *args, **kwargs)
                     def reading(project, arguments, **kwargs):

@@ -10,28 +10,49 @@ import sqlite3
 import sys
 import threading
 from time import perf_counter_ns
+import weakref
 
 from .debug_log_values import code_location
 
 MAX_GROUPS = 32
 MAX_ACTIVE = 128
 MAX_DETAILS = 64
+MAX_LOCATIONS = 128
 RESERVED_EVENTS = MAX_GROUPS + MAX_DETAILS + 1
 MAX_COUNT = 2**63 - 1
 _active = ContextVar('sql_execution', default=None)
 _INFRASTRUCTURE = {'sqlite_sql_trace', 'sqlite_transaction_trace'}
 
 
-def _source(api):
+class _Locations:
+    """Operation-local lexical metadata, without retaining code or its constants."""
+    def __init__(self):
+        self.entries = {}
+
+    def get(self, code):
+        # Do not hash/equality-compare code objects: that traverses constants.
+        key = id(code)
+        entry = self.entries.get(key)
+        if entry is not None and entry[0]() is code:
+            return entry[1]
+        location = code_location(code)
+        value = ((location['module'], location['function']) if location and
+                 len(location['module']) + len(location['function']) <= 384 else None)
+        if entry is not None or len(self.entries) < MAX_LOCATIONS:
+            self.entries[key] = (weakref.ref(code), value)
+        return value
+
+
+def _source(api, locations):
     frame = None
     try:
         frame = sys._getframe(1)
         for _ in range(32):
             if frame is None:
                 break
-            location = code_location(frame.f_code)
-            if location and location['module'] not in _INFRASTRUCTURE:
-                label = f"{location['module']}.{location['function']}:{frame.f_lineno}:{frame.f_lasti}:{api}"
+            location = locations.get(frame.f_code)
+            if location and location[0] not in _INFRASTRUCTURE:
+                label = f"{location[0]}.{location[1]}:{frame.f_lineno}:{frame.f_lasti}:{api}"
                 if len(label) <= 384:
                     return label
             frame = frame.f_back
@@ -115,6 +136,7 @@ class Metrics:
     def __init__(self, mode, emit, collector, *, context=None):
         self.mode, self.emit, self.collector = mode, emit, collector
         self.groups, self.active, self.details = {}, {}, []
+        self.locations = _Locations()
         self.sequence = self.calls = self.omitted_groups = self.untracked = 0
         self.omitted_details = self.unknown_fetches = self.custom_cursors = 0
         self.instrumentation_ns = 0
@@ -146,7 +168,7 @@ class Metrics:
             self.saturated = True
             return None
         self.bump('sequence')
-        identity = _source(api)
+        identity = _source(api, self.locations)
         if identity.startswith('other:'):
             self.bump('unknown_sources')
         parent = _active.get()
@@ -263,13 +285,19 @@ class Metrics:
             key = ('complete_results' if state['consumption'] in {'complete', 'no_rows', 'discarded'}
                    else 'unknown_results' if state['consumption'] == 'unknown' else 'partial_results')
             self.add(group, key, 1)
+        failed = state['outcome'] != 'succeeded'
+        if not failed and len(self.details) >= MAX_DETAILS:
+            # End/account for every execution, but do not project a record
+            # that the unchanged detail policy would immediately discard.
+            self.bump('omitted_details')
+            return
         record = {key: value for key, value in state.items()
                   if key not in {'started_ns', 'ended', 'tracked', 'outcome_observed'}}
         if not state['execute_measured']:
             record['execute_ns'] = None
         record.update(end_reason=reason, wall_lifetime_ns=max(0, perf_counter_ns() - state['started_ns']),
                       internal_statements='unknown', timing_scope='inclusive_native_api')
-        self.detail(record, failed=state['outcome'] != 'succeeded')
+        self.detail(record, failed=failed)
 
     def close_connection(self, connection_id):
         for state in list(self.active.values()):
@@ -277,6 +305,16 @@ class Metrics:
                 self.end(state, 'connection_closed')
 
     def finish(self, *, publish):
+        try:
+            self._finish(publish=publish)
+        finally:
+            self.closed = True
+            self.active.clear()
+            self.details.clear()
+            self.groups.clear()
+            self.locations.entries.clear()
+
+    def _finish(self, *, publish):
         if publish:
             for state in list(self.active.values()):
                 self.end(state, 'scope_ended')
@@ -303,10 +341,6 @@ class Metrics:
                           'untracked_executions': self.untracked, 'custom_cursors': self.custom_cursors,
                           'partial': True},
                           failed=True, reserved=True)
-        self.closed = True
-        self.active.clear()
-        self.details.clear()
-        self.groups.clear()
 
 
 def _metrics(connection):

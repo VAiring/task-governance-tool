@@ -198,7 +198,7 @@
     "scripts/task_governance_tool/sqlite_connection.py": "sha256:36d398abb5ba8ea27570f5c61ba5496a2f2df843b280fb5ee413d6b63e7462a2",
     "scripts/task_governance_tool/sqlite_diagnostics.py": "sha256:b30b51ff2251c117c5684a6d4d912302f42c3ba2e26f57bf1c267aeec50fb147",
     "scripts/task_governance_tool/sqlite_file_access.py": "sha256:ffbf5672fe4e846377e96188bebe88de874a503bb3aefadbf8d486dc158b5d79",
-    "scripts/task_governance_tool/sqlite_sql_trace.py": "sha256:2567ffd0c8ce6c9ab7d73e37f0923f8fd82a9a5abf79e42452d3deb4f5f7fc3c",
+    "scripts/task_governance_tool/sqlite_sql_trace.py": "sha256:af6c2607608d6e747b0db70c5c72ad945b3528e6b30d4da01dcd758cb22ee455",
     "scripts/task_governance_tool/sqlite_transaction_trace.py": "sha256:2578245a6eef053828972673f6cd5df2ec00db52d6bba83ac38626611035aa30",
     "scripts/task_governance_tool/state_paths.py": "sha256:b9048f1613f422b879614c53a4b807e5dccb50ffc6c5c40239e438269eeb8cc0",
     "scripts/task_governance_tool/state_resolver.py": "sha256:ee99bb9b20133f8dcabdb8a6603aa0406e4b3efa9922541430f04722e3853b25",

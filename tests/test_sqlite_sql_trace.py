@@ -1,13 +1,178 @@
 """Real-driver SQL/fetch observations and differential native semantics."""
 from contextlib import closing
+import gc
 import json
+from pathlib import Path
 import sqlite3
+import threading
+from types import SimpleNamespace
 import unittest
 from unittest import mock
+import weakref
 
 from tests import test_debug_log as fixtures
 from task_governance_tool import sqlite_sql_trace as trace
 from task_governance_tool.sqlite_transaction_trace import connect_traced
+
+
+class SQLMetadataTests(unittest.TestCase):
+    def code(self, name='query', filename=None):
+        return self.code.__code__.replace(co_name=name, co_filename=filename or
+            str(Path(trace.__file__).with_name('sql_fixture.py')))
+
+    def metrics(self, mode='debug', emit=None):
+        collector = SimpleNamespace(thread_id=threading.get_ident(), sealed=False,
+                                    _untracked=False, _open={})
+        return trace.Metrics(mode, emit or (lambda *a, **kw: None), collector)
+
+    def state(self, metrics, outcome='succeeded', consumption='complete'):
+        connection = SimpleNamespace(_diagnostic_id=1, _diagnostic_transaction=None)
+        with mock.patch.object(trace, '_source', return_value='fixture.query:1:1:execute'):
+            state = metrics.begin(connection, 'execute')
+        metrics.observed(state, 'execute', 10, None, outcome=outcome, consumption=consumption)
+        return state
+
+    def test_identity_reuse_unknown_and_finite_overflow(self):
+        locations = trace._Locations()
+        known = self.code()
+        unknown = self.code(filename='outside.py')
+        excess = self.code('excess')
+        with mock.patch.object(trace, 'MAX_LOCATIONS', 2), \
+                mock.patch.object(trace, 'code_location', wraps=trace.code_location) as parse:
+            for _ in range(4):
+                self.assertEqual(locations.get(known), ('sql_fixture', 'query'))
+                self.assertIsNone(locations.get(unknown))
+            self.assertEqual(parse.call_count, 2)
+            for _ in range(3):
+                self.assertEqual(locations.get(excess), ('sql_fixture', 'excess'))
+            self.assertEqual(parse.call_count, 5)
+            self.assertEqual(len(locations.entries), 2)
+
+    def test_equal_code_objects_are_not_equal_cache_keys_and_do_not_stay_alive(self):
+        locations = trace._Locations()
+        code = self.code()
+        other = code.replace()
+        self.assertEqual(code, other)
+        self.assertIsNot(code, other)
+        with mock.patch.object(trace, 'code_location', wraps=trace.code_location) as parse:
+            locations.get(code)
+            locations.get(other)
+            self.assertEqual(parse.call_count, 2)
+            parse.reset_mock()  # Mock call arguments otherwise keep the code alive.
+        reference = weakref.ref(code)
+        del code
+        gc.collect()
+        self.assertIsNone(reference())
+        # Deterministic simulation of an ID slot whose former object expired.
+        locations.entries[id(other)] = (reference, ('wrong', 'stale'))
+        self.assertEqual(locations.get(other), ('sql_fixture', 'query'))
+
+    def test_dynamic_lines_offsets_api_and_code_replacement_are_not_cached(self):
+        namespace = {'source': trace._source}
+        exec(compile('def query(cache, api):\n'
+                     '    a = source(api, cache); b = source(api, cache)\n'
+                     '    c = source(api, cache)\n'
+                     '    return a, b, c\n',
+                     str(Path(trace.__file__).with_name('sql_fixture.py')), 'exec'), namespace)
+        function, locations = namespace['query'], trace._Locations()
+        first = function(locations, 'execute')
+        self.assertEqual(len(set(first)), 3)
+        fields = [value.split(':') for value in first]
+        self.assertEqual(fields[0][1], fields[1][1])
+        self.assertNotEqual(fields[0][2], fields[1][2])
+        self.assertNotEqual(fields[0][1], fields[2][1])
+        self.assertEqual(function(locations, 'fetch'), tuple(v.rsplit(':', 1)[0] + ':fetch' for v in first))
+        function.__code__ = function.__code__.replace(co_name='replacement', co_firstlineno=100)
+        changed = function(locations, 'execute')
+        self.assertTrue(all(value.startswith('sql_fixture.replacement:') for value in changed))
+        self.assertTrue(set(changed).isdisjoint(first))
+
+    def test_metadata_cache_does_not_retain_oversized_module_names(self):
+        locations = trace._Locations()
+        code = self.code(filename=str(Path(trace.__file__).parent.joinpath(*(['a' * 70] * 10), 'fixture.py')))
+        self.assertIsNone(locations.get(code))
+        self.assertIsNone(locations.entries[id(code)][1])
+
+    def test_operation_exit_discards_cache_even_on_suppression_or_emit_failure(self):
+        code = self.code()
+        for publish, fail in ((True, False), (False, False), (True, True)):
+            with self.subTest(publish=publish, fail=fail):
+                metrics = self.metrics(emit=mock.Mock(side_effect=RuntimeError('sink')) if fail else None)
+                metrics.locations.get(code)
+                if fail:
+                    with self.assertRaises(RuntimeError):
+                        metrics.finish(publish=publish)
+                else:
+                    metrics.finish(publish=publish)
+                self.assertTrue(metrics.closed)
+                self.assertEqual(metrics.locations.entries, {})
+                self.assertEqual((metrics.active, metrics.groups, metrics.details), ({}, {}, []))
+        with mock.patch.object(trace, 'code_location', wraps=trace.code_location) as parse:
+            for _ in range(2):
+                metrics = self.metrics()
+                metrics.locations.get(code)
+                metrics.finish(publish=False)
+            self.assertEqual(parse.call_count, 2)
+
+    def test_full_detail_budget_skips_projection_but_not_end_or_aggregates(self):
+        class NoProjection(dict):
+            def items(self):
+                raise AssertionError('discarded detail projected')
+        metrics = self.metrics()
+        for _ in range(trace.MAX_DETAILS):
+            metrics.end(self.state(metrics), 'cursor_closed')
+        state = NoProjection(self.state(metrics, consumption='pending'))
+        metrics.end(state, 'cursor_closed')
+        self.assertTrue(state['ended'])
+        self.assertEqual(state['consumption'], 'partial')
+        self.assertNotIn(state['execution_id'], metrics.active)
+        group = next(iter(metrics.groups.values()))
+        self.assertEqual((group['executions'], group['complete_results'], group['partial_results']),
+                         (trace.MAX_DETAILS + 1, trace.MAX_DETAILS, 1))
+        self.assertEqual(metrics.omitted_details, 1)
+        self.assertEqual(len(metrics.details), trace.MAX_DETAILS)
+
+    def test_capacity_edges_keep_late_failure_cancellation_unknown_and_oldest_priority(self):
+        metrics = self.metrics()
+        for n in range(trace.MAX_DETAILS + 1):
+            metrics.end(self.state(metrics), 'cursor_closed')
+            self.assertEqual(len(metrics.details), min(n + 1, trace.MAX_DETAILS))
+            self.assertEqual(metrics.omitted_details, max(0, n + 1 - trace.MAX_DETAILS))
+        for outcome in ('failed', 'cancelled', 'unknown'):
+            state = self.state(metrics, outcome, 'unknown')
+            metrics.end(state, 'execute_failed')
+            self.assertEqual(metrics.details[-1][0]['outcome'], outcome)
+            self.assertTrue(metrics.details[-1][1])
+        self.assertEqual(metrics.omitted_details, 4)
+        self.assertEqual(metrics.details[0][0]['execution_id'], 4)
+        for _ in range(trace.MAX_DETAILS):
+            metrics.end(self.state(metrics, 'failed', 'unknown'), 'execute_failed')
+        self.assertTrue(all(failed for _, failed, _ in metrics.details))
+        oldest = metrics.details[0][0]['execution_id']
+        metrics.end(self.state(metrics, 'cancelled', 'unknown'), 'execute_failed')
+        self.assertNotIn(oldest, [record['execution_id'] for record, _, _ in metrics.details])
+
+    def test_unobserved_execution_is_retained_as_unknown_after_full_budget(self):
+        metrics = self.metrics()
+        for _ in range(trace.MAX_DETAILS):
+            metrics.end(self.state(metrics), 'cursor_closed')
+        state = metrics.begin(SimpleNamespace(_diagnostic_id=1, _diagnostic_transaction=None), 'execute')
+        metrics.end(state, 'scope_ended')
+        record = metrics.details[-1][0]
+        self.assertEqual((record['outcome'], record['consumption']), ('unknown', 'unknown'))
+        self.assertIsNone(record['execute_ns'])
+        self.assertFalse(record['rows_known'])
+
+    def test_errors_mode_keeps_only_failure_records_and_omission_counts(self):
+        metrics = self.metrics('errors')
+        for _ in range(trace.MAX_DETAILS + 1):
+            metrics.end(self.state(metrics), 'cursor_closed')
+        self.assertEqual((metrics.details, metrics.groups, metrics.omitted_details), ([], {}, 0))
+        for _ in range(trace.MAX_DETAILS + 1):
+            metrics.end(self.state(metrics, 'unknown', 'unknown'), 'cursor_closed')
+        self.assertEqual(len(metrics.details), trace.MAX_DETAILS)
+        self.assertEqual(metrics.omitted_details, 1)
+        self.assertTrue(all(record['outcome'] == 'unknown' for record, _, _ in metrics.details))
 
 
 class SQLTraceTests(unittest.TestCase):
@@ -202,6 +367,21 @@ class SQLTraceTests(unittest.TestCase):
             self.assertEqual(actual, ['SELECT 8'] * 3)
         self.assertGreater(next(r for r in self.records() if r['event'] == 'db.sql.summary')['observation_failures'], 0)
 
+    def test_location_cache_fault_is_unknown_without_changing_native_calls(self):
+        self.configure()
+        with self.scope(), closing(connect_traced(':memory:')) as c:
+            actual = []
+            c.set_trace_callback(actual.append)
+            with mock.patch.object(trace._Locations, 'get', side_effect=RuntimeError('metadata')):
+                self.assertEqual(c.execute('SELECT 8').fetchall(), [(8,)])
+                with self.assertRaises(sqlite3.OperationalError):
+                    c.execute('bad-sql')
+            self.assertEqual(actual, ['SELECT 8'])
+        self.assertTrue(all(record['sql_id'] == 'other:execute' for record in self.executions()))
+        summary = next(r for r in self.records() if r['event'] == 'db.sql.summary')
+        self.assertEqual(summary['unknown_source_executions'], 2)
+        self.assertTrue(summary['partial'])
+
     def test_off_errors_readonly_and_factory_boundaries(self):
         self.marker.unlink()
         with self.scope(), closing(connect_traced(':memory:')) as c:
@@ -229,7 +409,7 @@ class SQLTraceTests(unittest.TestCase):
         self.configure()
         with self.scope(), closing(connect_traced(':memory:')) as c:
             with mock.patch.object(trace, 'MAX_GROUPS', 2), mock.patch.object(trace, 'MAX_ACTIVE', 2):
-                with mock.patch.object(trace, '_source', side_effect=lambda api: 'site.' + str(counter[0])):
+                with mock.patch.object(trace, '_source', side_effect=lambda api, locations: 'site.' + str(counter[0])):
                     counter = [0]
                     cursors = []
                     for n in range(4):

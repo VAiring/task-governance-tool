@@ -1264,6 +1264,13 @@ statement counts/durations are unknown. Failed reexecution cannot bind old
 remaining rows to the failed SQL. Code location is revision-local, not a durable
 cross-version query identity.
 
+Invariant lexical location metadata may be reused in a finite operation-local
+cache without retaining code, constants, frames or locals. Dynamic call-site and
+execution associations remain freshly observed. Once the existing detail budget
+is full, successful executions still finish and update aggregates and omission
+counts, but need not construct details that cannot be retained. Failures,
+cancellations and unknown outcomes keep their existing retention priority.
+
 Per-operation bounded aggregates retain call counts, totals and maxima even
 when individual details overflow. Omitted groups/details, unknown binding,
 unmeasured factories and observation failures explicitly indicate partial

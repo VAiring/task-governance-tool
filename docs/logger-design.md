@@ -211,6 +211,13 @@ sql_idにする。最大32フレームの字句的な探索で特定不能なら
 同じ呼出し位置の動的SQLは同一集計となる。これはSQLの意味や版をまたぐ同一性を
 保証するIDではない。入力由来のSQL名・自由ラベルを受け付けない。
 
+字句解析済みのmodule/function（特定不能も含む）はoperation内で最大128コード位置まで
+再利用する。コードのidentityを弱参照で照合し、コード自体・定数・frame・localsを保持せず、
+コードのhashや等価比較を使わない。行・bytecode offset・APIと実行ごとの関連付けは毎回取得する。
+保持するmodule/functionの合計は384文字以下とし、SQL IDの上限に収まらない位置は保持しない。
+上限後の未保持位置は通常どおり解析し、観測や集計は省略しない。別operationへ持ち越さず、
+終了・出力抑止・最終出力失敗時にも破棄する。
+
 invocation_id内でexecution_idを発行し、connection_id、開始前と戻り時のtransaction_id、
 親execution_id、API、bindingを保持する。transactionがない場合はnull。
 fetch時点のtransactionは別記し、消費中に切り替わった場合はmixedとして単一IDを推測しない。
@@ -260,6 +267,9 @@ script自身のaggregateを閉じても旧結果との対応は維持する。CO
 確定していない成否や消費状態を成功・完全取得にせず、既知の失敗・取消を保持する。
 超過した集計呼出し、詳細、追跡不能実行、unbound fetch、custom cursor、位置不明、観測失敗を
 SQL summaryで報告する。詳細は失敗を優先し、同じ優先度では古い失敗を落とす。
+debugの詳細枠が満杯なら、成功が確定した実行だけは終了状態・集計・省略数を更新してから
+保存されない詳細の組立てを省く。失敗・取消・unknownは従来の優先保持を通し、後続失敗が
+既存の成功詳細を置き換える規則を維持する。errorsの成功省略と集計・詳細上限は変更しない。
 256イベントのうち97枠をSQL詳細・集計・summary、33枠を通常処理の集計・summary、
 1枠を全体summaryに予約する。
 既存のbyte上限やsink拒否で出力自体が失われ得るため、summaryのpartial=falseでも

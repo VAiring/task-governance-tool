@@ -89,7 +89,8 @@ def global_page(connection, *, limit=128):
     connection.executemany("INSERT OR IGNORE INTO usage_reconcile_component_work VALUES (?)", rows)
     if len(rows) < limit:
         connection.execute("DELETE FROM usage_reconcile_global_work WHERE kind=?", (work[0],))
-        connection.execute("DELETE FROM usage_reconcile_global_progress WHERE kind=?", (work[0],))
+        if position is not None:
+            connection.execute("DELETE FROM usage_reconcile_global_progress WHERE kind=?", (work[0],))
     else:
         connection.execute("INSERT INTO usage_reconcile_global_progress VALUES (?,?) ON CONFLICT(kind) DO UPDATE SET position=excluded.position",
                            (work[0], rows[-1][0]))

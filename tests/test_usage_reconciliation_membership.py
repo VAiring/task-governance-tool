@@ -43,6 +43,49 @@ class MembershipTests(unittest.TestCase):
         self.assertEqual(self.component("exclusive", [A])["response_keys"], [("openai", "r4"), ("openai", "r5")])
         self.assertEqual(self.component("exclusive", [B])["response_keys"], [("openai", "r0"), ("openai", "r1")])
 
+    def test_known_empty_actions_skip_delete_but_keep_old_new_key_work(self):
+        from task_governance_tool.usage_reconciliation_owner_effects import replace_actions
+        from tests.test_usage_collection import THREAD
+        variants = ([], [[("openai", "r0"), [["add", A]]]], [[("openai", "r1"), [["add", B]]]])
+        for old in variants:
+            for new in variants:
+                with self.subTest(old=old, new=new), self.repository.connection(write=True) as connection:
+                    connection.execute("DELETE FROM usage_reconcile_base_actions")
+                    replace_actions(connection, THREAD, turn(1), 1, old)
+                    connection.execute("DELETE FROM usage_reconcile_base_key_work")
+                    sql = []
+                    connection.set_trace_callback(sql.append)
+                    replace_actions(connection, THREAD, turn(1), 1, new)
+                    connection.set_trace_callback(None)
+                    deletes = [item for item in sql if item.startswith("DELETE FROM usage_reconcile_base_actions")]
+                    self.assertEqual(len(deletes), int(bool(old)))
+                    self.assertEqual({tuple(row) for row in connection.execute("SELECT provider,response_id FROM usage_reconcile_base_actions")},
+                                     {tuple(key) for key, _ in new})
+                    self.assertEqual({tuple(row) for row in connection.execute("SELECT * FROM usage_reconcile_base_key_work")},
+                                     {tuple(key) for key, _ in old + new})
+
+    def test_each_contribution_delete_uses_its_own_existing_read(self):
+        tables = ("usage_reconcile_membership", "usage_reconcile_unknown", "usage_reconcile_gaps")
+        cases = ({}, {"owners": [("openai", "r0", A)]}, {"unknown": [("openai", "r1")]},
+                 {"gaps": [(A, "boundary_unknown")]},
+                 {"owners": [("openai", "r0", A)], "unknown": [("openai", "r1")], "gaps": [(A, "boundary_unknown")]})
+        for old in cases:
+            for new in cases:
+                with self.subTest(old=old, new=new), self.repository.connection(write=True) as connection:
+                    membership.replace_contribution(connection, "review", "selected")
+                    membership.replace_contribution(connection, "review", "selected", **old)
+                    membership.replace_contribution(connection, "review", "outside", owners=[("openai", "r5", B)])
+                    sql = []
+                    connection.set_trace_callback(sql.append)
+                    membership.replace_contribution(connection, "review", "selected", **new)
+                    connection.set_trace_callback(None)
+                    for field, table in zip(("owners", "unknown", "gaps"), tables):
+                        deletes = [item for item in sql if item.startswith("DELETE FROM " + table + " ")]
+                        self.assertEqual(len(deletes), int(bool(old.get(field)) and old != new))
+                        selected = [tuple(row)[2:] for row in connection.execute("SELECT * FROM " + table + " WHERE kind='review' AND origin='selected'")]
+                        self.assertEqual(set(selected), set(new.get(field, ())))
+                    self.assertEqual(connection.execute("SELECT COUNT(*) FROM usage_reconcile_membership WHERE origin='outside'").fetchone()[0], 1)
+
     def test_old_new_shared_partitions_and_unknown_removal_are_exact(self):
         self.replace("a", owners=[("openai", "r0", A), ("openai", "r1", A)])
         self.replace("b", owners=[("openai", "r1", B), ("openai", "r2", B)])
@@ -55,6 +98,98 @@ class MembershipTests(unittest.TestCase):
         self.replace("b", owners=[("openai", "r2", B)])
         self.drain()
         self.assertEqual(self.component("exclusive", [A])["response_keys"], [("openai", "r0"), ("openai", "r1")])
+
+    def test_empty_owner_cleanup_deletes_only_a_previously_present_row(self):
+        for present in (False, True):
+            with self.subTest(present=present), self.repository.connection(write=True) as connection:
+                identity = membership._component(connection, "partial", (A,))
+                if present:
+                    connection.execute("INSERT INTO usage_reconcile_empty_components VALUES (?,?)", (A, identity))
+                membership.replace_contribution(connection, "missing", A, gaps=[(A, "usage_pending")])
+                connection.execute("INSERT OR IGNORE INTO usage_reconcile_execution_work VALUES (?)", (A,))
+                sql = []
+                connection.set_trace_callback(sql.append)
+                membership.reconcile_execution(connection, A)
+                connection.set_trace_callback(None)
+                self.assertEqual(sum(item.startswith("DELETE FROM usage_reconcile_empty_components") for item in sql), int(present))
+                self.assertIsNone(connection.execute("SELECT 1 FROM usage_reconcile_empty_components").fetchone())
+                self.assertIsNone(connection.execute("SELECT 1 FROM usage_reconcile_execution_work WHERE execution_id=?", (A,)).fetchone())
+                self.assertIsNone(connection.execute("SELECT 1 FROM usage_reconcile_gaps WHERE kind='missing'").fetchone())
+                self.assertIsNotNone(connection.execute("SELECT 1 FROM usage_reconcile_component_work WHERE component_id=?", (identity,)).fetchone())
+
+    def test_unattributed_old_new_cross_product_preserves_totals(self):
+        from task_governance_tool import usage_reconciliation_totals as totals
+        def select(connection, kind):
+            connection.execute("DELETE FROM usage_reconcile_response_result")
+            if kind is not None:
+                connection.execute("INSERT INTO usage_reconcile_response_result VALUES ('openai','r0',NULL,?)", (int(kind == "unknown"),))
+        for old in (None, "unknown", "unassigned"):
+            for new in (None, "unknown", "unassigned"):
+                with self.subTest(old=old, new=new), self.repository.connection(write=True) as connection:
+                    select(connection, None)
+                    totals.reconcile(connection, "openai", "r0")
+                    select(connection, old)
+                    totals.reconcile(connection, "openai", "r0")
+                    select(connection, new)
+                    sql = []
+                    connection.set_trace_callback(sql.append)
+                    totals.reconcile(connection, "openai", "r0")
+                    connection.set_trace_callback(None)
+                    self.assertEqual(sum(item.startswith("DELETE FROM usage_reconcile_unattributed_keys") for item in sql),
+                                     int(old is not None and old != new))
+                    result = totals.totals(connection)
+                    for kind in ("unknown", "unassigned"):
+                        self.assertEqual(result[kind]["response_count"], int(kind == new))
+                        self.assertEqual(len(result[kind]["models"]), int(kind == new))
+
+    def test_source_projection_absence_keeps_compare_and_swap_and_present_delete(self):
+        from task_governance_tool.usage_reconciliation_sources import SourceDelta, adopt_sources
+        value = {"thread": "thread", "incarnation": 1, "diagnostics": [], "pending": []}
+        for present in (False, True):
+            with self.subTest(present=present), self.repository.connection(write=True) as connection:
+                if present:
+                    adopt_sources(connection, [SourceDelta("source", None, value)])
+                sql = []
+                connection.set_trace_callback(sql.append)
+                adopt_sources(connection, [SourceDelta("source", value if present else None, None)])
+                connection.set_trace_callback(None)
+                self.assertEqual(sum(item.startswith("DELETE FROM usage_reconcile_sources") for item in sql), int(present))
+                self.assertIsNone(connection.execute("SELECT 1 FROM usage_reconcile_sources").fetchone())
+                with self.assertRaisesRegex(UsageError, "cursor_stale"):
+                    adopt_sources(connection, [SourceDelta("source", value, None)])
+
+    def test_global_progress_cleanup_retains_required_queue_consumption(self):
+        from task_governance_tool.usage_reconciliation_basis import global_page
+        for present in (False, True):
+            with self.subTest(present=present), self.repository.connection(write=True) as connection:
+                connection.execute("INSERT INTO usage_reconcile_global_work VALUES ('operation_unbound')")
+                if present:
+                    connection.execute("INSERT INTO usage_reconcile_global_progress VALUES ('operation_unbound','previous')")
+                sql = []
+                connection.set_trace_callback(sql.append)
+                self.assertEqual(global_page(connection), 0)
+                connection.set_trace_callback(None)
+                self.assertEqual(sum(item.startswith("DELETE FROM usage_reconcile_global_progress") for item in sql), int(present))
+                self.assertEqual(sum(item.startswith("DELETE FROM usage_reconcile_global_work") for item in sql), 1)
+                self.assertIsNone(connection.execute("SELECT 1 FROM usage_reconcile_global_progress").fetchone())
+                self.assertIsNone(connection.execute("SELECT 1 FROM usage_reconcile_global_work").fetchone())
+
+    def test_unresolved_global_absence_only_skips_when_the_whole_set_is_empty(self):
+        from task_governance_tool.usage_reconciliation_events import reconcile_task
+        for selected, outside in ((False, False), (True, False), (False, True), (True, True)):
+            with self.subTest(selected=selected, outside=outside), self.fixture.reader() as core, self.repository.connection(write=True) as connection:
+                connection.execute("DELETE FROM usage_reconcile_unresolved")
+                if selected:
+                    connection.execute("INSERT INTO usage_reconcile_unresolved VALUES (?, 'selected')", (A,))
+                if outside:
+                    connection.execute("INSERT INTO usage_reconcile_unresolved VALUES (?, 'outside')", (B,))
+                sql = []
+                connection.set_trace_callback(sql.append)
+                reconcile_task(self.repository, core, connection, A, [])
+                connection.set_trace_callback(None)
+                self.assertEqual(sum(item.startswith("DELETE FROM usage_reconcile_unresolved") for item in sql), int(selected or outside))
+                self.assertEqual(list(map(tuple, connection.execute("SELECT * FROM usage_reconcile_unresolved"))),
+                                 [(B, "outside")] if outside else [])
 
     def test_removing_one_gap_origin_cannot_remove_another_equal_gap(self):
         self.replace("numbers", owners=[("openai", "r0", A)])

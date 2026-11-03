@@ -1005,13 +1005,20 @@ ranges are reclassified. Unchanged histories in the same session are not an
 unconditional dependency. The exact response partition, diagnostic provenance,
 original-key deduplication and immutable evidence meanings remain unchanged.
 
-Each committed work unit retains its progress for a later lifecycle event;
+Each committed work unit or bounded phase page retains its progress for a later lifecycle event;
 pending work or a changed capture fence cannot be published as current. Binding,
 schema, algorithm or database epoch/physical identity changes and regressed or
 missing tracking require reestablishment, never reuse of an obsolete capture.
 Migration preserves numerical originals, existing continuations and immutable
 history; its new reconciliation epoch starts with an unestablished baseline.
 The existing deadline and rotating snapshot/file audit remain in force.
+The four turn/effect stages use a first standalone unit followed by pages of at
+most 128 units, stopping optional starts after 250 ms or at the existing
+deadline's 50 ms commit margin. Uncommitted page results and queue consumption
+roll back together; later events resume from the committed frontier. These are
+cooperative bounds, not an absolute duration guarantee. The response classifier
+retains its separate eight-key/50 ms pages. Exact phase boundaries are owned by
+[reconciliation tracking](database-design.md#usage-reconciliation-tracking).
 Fresh physical/schema/binding admission and transaction-bound revision checks
 fence display and final publication. They do not claim detection of an external
 rewrite that bypasses and then restores the tracking protocol; whole-state

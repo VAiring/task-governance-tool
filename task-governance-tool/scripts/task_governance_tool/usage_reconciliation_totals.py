@@ -51,7 +51,7 @@ def reconcile(connection, provider, response):
         return
     if before is not None:
         _apply(connection, row["kind"], before, -1)
-    connection.execute("DELETE FROM usage_reconcile_unattributed_keys WHERE provider=? AND response_id=?", (provider, response))
+        connection.execute("DELETE FROM usage_reconcile_unattributed_keys WHERE provider=? AND response_id=?", (provider, response))
     if after is not None:
         _apply(connection, kind, after, 1)
         connection.execute("INSERT INTO usage_reconcile_unattributed_keys VALUES (?,?,?,?,?)",

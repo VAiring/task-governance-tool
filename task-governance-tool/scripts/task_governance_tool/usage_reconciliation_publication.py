@@ -14,17 +14,21 @@ def reconcile(repository, core_reader):
     from .usage_reconciliation_runtime import advance_initial, advance_effects
     from .usage_reconciliation_snapshots import advance
     first_response = True
+    committed_phases = set()
     for function, complete in ((advance_initial, "effects_pending"), (advance_effects, "classification_pending"), (advance, "captured")):
         while True:
             repository.check_budget()
             if function is advance_effects:
                 # Commit one feasible key before a later, potentially expensive
                 # sibling can interrupt an entire page on every Hook restart.
-                result = function(repository, core_reader, single_response=first_response)
+                result = function(repository, core_reader, single_response=first_response, committed_phases=committed_phases)
                 if result["phase"] == "response":
                     first_response = False
+            elif function is advance_initial:
+                result = function(repository, core_reader, committed_phases=committed_phases)
             else:
                 result = function(repository, core_reader)
+            committed_phases.add(result["phase"])
             if result["phase"] == complete:
                 break
     return result["basis"]

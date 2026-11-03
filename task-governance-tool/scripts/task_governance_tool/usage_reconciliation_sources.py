@@ -102,7 +102,8 @@ def adopt_sources(connection, deltas):
         if old != item.before:
             raise UsageError("cursor_stale")
         if item.after is None:
-            connection.execute("DELETE FROM usage_reconcile_sources WHERE source_id=?", (item.source_id,))
+            if old is not None:
+                connection.execute("DELETE FROM usage_reconcile_sources WHERE source_id=?", (item.source_id,))
         elif item.changed:
             connection.execute("INSERT INTO usage_reconcile_sources VALUES (?,?,?) ON CONFLICT(source_id) DO UPDATE SET "
                                "document=excluded.document,digest=excluded.digest",

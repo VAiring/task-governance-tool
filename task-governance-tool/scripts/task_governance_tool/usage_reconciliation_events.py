@@ -158,7 +158,8 @@ def reconcile_task(repository, core, connection, task_id, transitions):
         if identity in displacements:
             connection.execute("INSERT INTO usage_reconcile_displacements VALUES (?,?,?,?,?,?)", displacements[identity])
     was_unresolved = connection.execute("SELECT 1 FROM usage_reconcile_unresolved LIMIT 1").fetchone() is not None
-    connection.execute("DELETE FROM usage_reconcile_unresolved WHERE task_id=?", (task_id,))
+    if was_unresolved:
+        connection.execute("DELETE FROM usage_reconcile_unresolved WHERE task_id=?", (task_id,))
     connection.executemany("INSERT INTO usage_reconcile_unresolved VALUES (?,?)", [(task_id, identity) for identity in sorted(qualified.unresolved)])
     is_unresolved = connection.execute("SELECT 1 FROM usage_reconcile_unresolved LIMIT 1").fetchone() is not None
     if was_unresolved != is_unresolved:

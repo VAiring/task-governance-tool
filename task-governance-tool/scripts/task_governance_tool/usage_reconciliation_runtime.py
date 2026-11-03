@@ -23,6 +23,26 @@ from .usage_values import UsageError
 
 _RESPONSE_PAGE_SIZE = 8
 _RESPONSE_PAGE_SECONDS = 0.050
+_TURN_PAGE_SIZE = 128
+_TURN_PAGE_SECONDS = 0.250
+
+
+def _turn_page(repository, phase, first, step, started, committed_phases):
+    """Finish only this phase in the caller's admitted writer/read transaction.
+
+    The caller records the phase only after this transaction commits. A new
+    reconciliation run therefore always makes its first feasible unit durable
+    before optional siblings can fail. No connection or admission escapes here.
+    """
+    if phase in committed_phases:
+        stop = min(started + _TURN_PAGE_SECONDS, repository.deadline - 0.050)
+        for _ in range(1, _TURN_PAGE_SIZE):
+            if monotonic() >= stop:
+                break
+            repository.check_budget()
+            if step() is None:
+                break
+    return {"phase": phase, **first}
 
 
 def _exists(connection, table):
@@ -70,8 +90,9 @@ def _participant_one(connection):
     return dict(work)
 
 
-def advance_initial(repository, core_reader):
-    """Commit one finite admission/allocation unit; report the next phase."""
+def advance_initial(repository, core_reader, *, committed_phases=()):
+    """Commit one admission unit or one bounded selected-phase page."""
+    started = monotonic()
     with repository.connection(write=True) as connection, core_reader() as core:
         repository.check_budget()
         admit_identity(repository, connection)
@@ -99,7 +120,8 @@ def advance_initial(repository, core_reader):
             return {"phase": "intervals", "task_id": work[0], "changed": changed}
         staged = stage_one(repository, core, connection)
         if staged is not None:
-            return {"phase": "turn_inputs", **staged}
+            return _turn_page(repository, "turn_inputs", staged,
+                lambda: stage_one(repository, core, connection), started, committed_phases)
         def execution_task(execution):
             rows = tuple(connection.execute("SELECT DISTINCT task_id FROM usage_reconcile_events WHERE execution_id=? LIMIT 2", (execution,)))
             if len(rows) != 1:
@@ -107,15 +129,17 @@ def advance_initial(repository, core_reader):
             return rows[0][0]
         replayed = replay_one(connection, execution_task=execution_task)
         if replayed is not None:
-            return {"phase": "allocation", **replayed}
+            return _turn_page(repository, "allocation", replayed,
+                lambda: replay_one(connection, execution_task=execution_task), started, committed_phases)
         base = apply_base_one(connection)
         if base is not None:
-            return {"phase": "base_effects", **base}
+            return _turn_page(repository, "base_effects", base,
+                lambda: apply_base_one(connection), started, committed_phases)
         capture_inputs(repository, core, connection)
         return {"phase": "effects_pending"}
 
 
-def advance_effects(repository, core_reader, *, single_response=False):
+def advance_effects(repository, core_reader, *, single_response=False, committed_phases=()):
     """Selected effect stages; publication still has its separate fresh guard."""
     from . import usage_reconciliation_uncertainty as uncertainty
     from . import usage_reconciliation_overlays as overlays
@@ -141,10 +165,15 @@ def advance_effects(repository, core_reader, *, single_response=False):
         expanded = expand_range_page(connection)
         if expanded is not None:
             return {"phase": "affected_turns", **expanded}
-        turn = connection.execute("SELECT thread_id,turn_id FROM usage_reconcile_overlay_turn_work ORDER BY rowid LIMIT 1").fetchone()
-        if turn is not None:
+        def overlay_one():
+            turn = connection.execute("SELECT thread_id,turn_id FROM usage_reconcile_overlay_turn_work ORDER BY rowid LIMIT 1").fetchone()
+            if turn is None:
+                return None
             uncertainty.apply_turn(connection, *turn)
-            return {"phase": "turn_overlays", **overlays.apply_turn(connection, *turn)}
+            return overlays.apply_turn(connection, *turn)
+        overlaid = overlay_one()
+        if overlaid is not None:
+            return _turn_page(repository, "turn_overlays", overlaid, overlay_one, started, committed_phases)
         responses = connection.execute("SELECT provider,response_id FROM usage_reconcile_response_work "
             "ORDER BY rowid LIMIT ?", (1 if single_response else _RESPONSE_PAGE_SIZE,)).fetchall()
         if responses:

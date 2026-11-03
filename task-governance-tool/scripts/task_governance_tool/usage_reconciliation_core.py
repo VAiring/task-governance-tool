@@ -191,7 +191,8 @@ def sync_page(repository, core, connection):
             connection.executemany("INSERT OR IGNORE INTO usage_reconcile_execution_work VALUES (?)",
                                    [(identity,) for identity in sorted(before_executions | after_executions)])
             connection.execute("DELETE FROM usage_reconcile_periods WHERE task_id=?", (task_id,))
-            connection.execute("DELETE FROM usage_reconcile_period_executions WHERE task_id=?", (task_id,))
+            if before_executions:
+                connection.execute("DELETE FROM usage_reconcile_period_executions WHERE task_id=?", (task_id,))
             for ordinal, period in enumerate(value["periods"]):
                 connection.execute("INSERT INTO usage_reconcile_periods VALUES (?,?,?,?)",
                     (task_id, ordinal, period["preceding_completion"], period["completion_cycle_id"]))

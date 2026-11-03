@@ -1145,6 +1145,10 @@ does not reset it. Operation-local core admission retains physical/schema/bindin
 checks. The numerical change consumer validates affected ownership, cycle and
 actual-reviewer relations, preserves pending progress and expands their old/new
 ranges under the [reconciliation contract](database-design.md#usage-reconciliation-tracking).
+Turn-input, allocation, base-effect and turn-overlay work commits its first
+unit separately, then shares admission only within bounded 128-unit/250 ms
+pages, retaining a 50 ms margin against that same deadline. These cooperative
+limits do not extend the Hook budget or bound a single unit/commit absolutely.
 Final index replacement still requires fresh admitted reads and matching
 transaction-bound generations, with no pending reconciliation work. Prior
 classification alone cannot certify the fresh basis.

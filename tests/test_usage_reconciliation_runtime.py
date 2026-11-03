@@ -79,6 +79,34 @@ class RuntimeTests(unittest.TestCase):
                 mock.patch.object(turn_inputs, "read_selected_relations", side_effect=AssertionError("unchanged original relations")):
             self.assertEqual(advance_initial(self.repository, self.reader), {"phase": "effects_pending"})
 
+    def test_period_membership_replacement_uses_existing_old_set(self):
+        self.assertEqual(advance_initial(self.repository, self.reader)["phase"], "core")
+        with self.reader() as core:
+            original = core_inputs.read_task_inputs(core, self.repository.basis[0], {self.task_id})
+        for old_present, new_present in ((True, False), (False, False), (False, True), (True, True)):
+            with self.subTest(old=old_present, new=new_present), self.repository.connection(write=True) as connection, self.reader() as core:
+                self.assertEqual(bool(connection.execute("SELECT 1 FROM usage_reconcile_period_executions").fetchone()), old_present)
+                selected = {self.task_id: {**original[self.task_id], "periods": original[self.task_id]["periods"] if new_present else []}}
+                # Vary the period boundary as well as membership, exercising a
+                # real replacement even for equal empty/nonempty member sets.
+                selected[self.task_id]["periods"] = [{**period, "preceding_completion": "changed"}
+                    for period in selected[self.task_id]["periods"]]
+                saved = core_inputs._decode(connection.execute("SELECT document,digest FROM usage_reconcile_core_inputs").fetchone())
+                saved["periods"] = [{"test_old_boundary": True}]
+                from task_governance_tool.usage_evidence import digest, encode
+                connection.execute("UPDATE usage_reconcile_core_inputs SET document=?,digest=?", (encode(saved).decode(), digest(saved)))
+                cursor = core_inputs.cursor(connection)
+                core_inputs._save_cursor(connection, {**cursor, "complete": False, "after_generation": -1, "after_task": ""})
+                sql = []
+                connection.set_trace_callback(sql.append)
+                with mock.patch.object(core_inputs, "read_task_inputs", return_value=selected):
+                    core_inputs.sync_page(self.repository, core, connection)
+                connection.set_trace_callback(None)
+                self.assertEqual(sum(item.startswith("DELETE FROM usage_reconcile_period_executions") for item in sql), int(old_present))
+                self.assertEqual({row[0] for row in connection.execute("SELECT execution_id FROM usage_reconcile_period_executions")},
+                                 {self.execution} if new_present else set())
+                self.assertIsNotNone(connection.execute("SELECT 1 FROM usage_reconcile_execution_work WHERE execution_id=?", (self.execution,)).fetchone())
+
     def test_interrupted_base_key_reduction_cannot_certify_current_inputs(self):
         from task_governance_tool.usage_reconciliation_basis import require_inputs
         from task_governance_tool.usage_values import UsageError
@@ -255,10 +283,10 @@ class RuntimeTests(unittest.TestCase):
         from task_governance_tool.usage_values import UsageError
         phases = []
         original = runtime.advance_initial
-        def bounded(repository, reader):
+        def bounded(repository, reader, **options):
             if len(phases) == 5:
                 raise UsageError("usage_pending")
-            result = original(repository, reader)
+            result = original(repository, reader, **options)
             phases.append(result["phase"])
             return result
         with mock.patch.object(runtime, "advance_initial", side_effect=bounded):

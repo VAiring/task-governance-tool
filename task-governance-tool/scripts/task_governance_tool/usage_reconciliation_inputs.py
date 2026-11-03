@@ -61,8 +61,9 @@ def _last_positions(connection, thread, keys):
     before = {row["turn_id"] for row in connection.execute("SELECT position.turn_id FROM json_each(?) key "
         "CROSS JOIN usage_reconcile_last_positions position ON position.thread_id=? "
         "AND position.provider=json_extract(key.value,'$[0]') AND position.response_id=json_extract(key.value,'$[1]')", (parameter, thread))}
-    connection.execute("DELETE FROM usage_reconcile_last_positions WHERE thread_id=? AND (provider,response_id) IN "
-        "(SELECT json_extract(value,'$[0]'),json_extract(value,'$[1]') FROM json_each(?))", (thread, parameter))
+    if before:
+        connection.execute("DELETE FROM usage_reconcile_last_positions WHERE thread_id=? AND (provider,response_id) IN "
+            "(SELECT json_extract(value,'$[0]'),json_extract(value,'$[1]') FROM json_each(?))", (thread, parameter))
     connection.execute("INSERT INTO usage_reconcile_last_positions SELECT position.thread_id,position.provider,position.response_id,"
         "position.turn_id,position.started_at,position.ordinal FROM json_each(?) key CROSS JOIN usage_reconcile_positions position "
         "ON position.provider=json_extract(key.value,'$[0]') AND position.response_id=json_extract(key.value,'$[1]') AND position.thread_id=? "
@@ -187,7 +188,8 @@ def stage_input_turn(repository, core, connection, thread, turn):
         affected_keys = set(map(tuple, previous["ordered"] or ())) if previous else set()
         affected_keys.update(sequence or ())
         had_order = connection.execute("SELECT 1 FROM usage_reconcile_positions WHERE thread_id=? LIMIT 1", (thread,)).fetchone() is not None
-        connection.execute("DELETE FROM usage_reconcile_positions WHERE thread_id=? AND turn_id=?", (thread, turn))
+        if had_order:
+            connection.execute("DELETE FROM usage_reconcile_positions WHERE thread_id=? AND turn_id=?", (thread, turn))
         connection.executemany("INSERT INTO usage_reconcile_positions VALUES (?,?,?,?,?,?)",
                                [(thread, turn, clock, ordinal, *key) for ordinal, key in enumerate(sequence or ())])
         _last_positions(connection, thread, affected_keys)

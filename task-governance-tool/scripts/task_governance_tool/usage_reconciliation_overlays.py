@@ -133,7 +133,8 @@ def apply_turn(connection, thread, turn):
         save(kind, identity, chosen, execution, partial=interval["identity_only"])
     for kind, origin in before - adopted:
         replace_contribution(connection, kind, origin)
-    connection.execute("DELETE FROM usage_reconcile_turn_contributions WHERE thread_id=? AND turn_id=?", (thread, turn))
+    if before:
+        connection.execute("DELETE FROM usage_reconcile_turn_contributions WHERE thread_id=? AND turn_id=?", (thread, turn))
     connection.executemany("INSERT INTO usage_reconcile_turn_contributions VALUES (?,?,?,?)", [(thread, turn, *value) for value in sorted(adopted)])
     connection.execute("DELETE FROM usage_reconcile_overlay_turn_work WHERE thread_id=? AND turn_id=?", (thread, turn))
     return {"thread_id": thread, "turn_id": turn, "intervals": len(intervals)}

@@ -87,7 +87,8 @@ def locate_one(connection):
     _dependents(connection, old)
     event = connection.execute("SELECT * FROM usage_reconcile_events WHERE transition_id=?", (identity,)).fetchone()
     if event is None:
-        connection.execute("DELETE FROM usage_reconcile_event_locations WHERE transition_id=?", (identity,))
+        if old is not None:
+            connection.execute("DELETE FROM usage_reconcile_event_locations WHERE transition_id=?", (identity,))
         current = None
     else:
         value = _old_value(event)
@@ -196,10 +197,13 @@ def _displaced(connection, origin):
 def replace_rule(connection, kind, origin, value, events, dependencies):
     identity = encode([kind, origin]).decode()
     old = _decode(connection.execute("SELECT document,digest FROM usage_reconcile_uncertainty WHERE kind=? AND origin=?", (kind, origin)).fetchone())
+    had_namespaces = False
     for row in connection.execute("SELECT namespace FROM usage_reconcile_rule_namespaces WHERE kind=? AND origin=?", (kind, origin)):
+        had_namespaces = True
         # Dependency identity includes the namespace, as one rule has several.
         replace_range(connection, "dependency", encode([kind, origin, row[0]]).decode(), None)
-    connection.execute("DELETE FROM usage_reconcile_rule_namespaces WHERE kind=? AND origin=?", (kind, origin))
+    if had_namespaces:
+        connection.execute("DELETE FROM usage_reconcile_rule_namespaces WHERE kind=? AND origin=?", (kind, origin))
     connection.execute("DELETE FROM usage_reconcile_rule_events WHERE kind=? AND origin=?", (kind, origin))
     if old != value:
         for changed in (old, value):
@@ -276,5 +280,6 @@ def apply_turn(connection, thread, turn):
                              gaps=rule["conditional_gaps"] if affected else ())
     for origin in previous - current:
         replace_contribution(connection, "uncertainty", origin)
-    connection.execute("DELETE FROM usage_reconcile_turn_uncertainty WHERE thread_id=? AND turn_id=?", (thread, turn))
+    if previous:
+        connection.execute("DELETE FROM usage_reconcile_turn_uncertainty WHERE thread_id=? AND turn_id=?", (thread, turn))
     connection.executemany("INSERT INTO usage_reconcile_turn_uncertainty VALUES (?,?,?)", [(thread, turn, origin) for origin in sorted(current)])

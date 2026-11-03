@@ -46,7 +46,8 @@ def replace_encounter(connection, thread, turn, qualified, relations, ordered):
              and (entry[0], entry[1], entry[2].provider, entry[2].response_id) not in anchors]
     ranks += [(1, relations.boundary_order[entry]) for entry in qualified.anchors
               if (entry[2].thread_id, entry[2].turn_id) == (thread, turn)]
-    connection.execute("DELETE FROM usage_reconcile_turn_encounters WHERE thread_id=? AND turn_id=?", (thread, turn))
+    if before is not None:
+        connection.execute("DELETE FROM usage_reconcile_turn_encounters WHERE thread_id=? AND turn_id=?", (thread, turn))
     if ordered and ranks:
         connection.execute("INSERT INTO usage_reconcile_turn_encounters VALUES (?,?,?,?)", (thread, turn, *min(ranks)))
     if before != _thread_order(connection, thread):
@@ -60,7 +61,8 @@ def replace_encounter(connection, thread, turn, qualified, relations, ordered):
 def replace_actions(connection, thread, turn, started_at, actions):
     old = {tuple(row) for row in connection.execute("SELECT provider,response_id FROM usage_reconcile_base_actions "
                                                    "WHERE thread_id=? AND turn_id=?", (thread, turn))}
-    connection.execute("DELETE FROM usage_reconcile_base_actions WHERE thread_id=? AND turn_id=?", (thread, turn))
+    if old:
+        connection.execute("DELETE FROM usage_reconcile_base_actions WHERE thread_id=? AND turn_id=?", (thread, turn))
     connection.executemany("INSERT INTO usage_reconcile_base_actions VALUES (?,?,?,?,?,?,?)",
         [(thread, turn, started_at, *key, encode(value).decode(), digest(value)) for key, value in actions])
     connection.executemany("INSERT OR IGNORE INTO usage_reconcile_base_key_work VALUES (?,?)",

@@ -62,7 +62,8 @@ def replace_admissions(connection, kind, origin, admissions):
     admissions = set(map(tuple, admissions))
     if previous == admissions:
         return False
-    connection.execute("DELETE FROM usage_reconcile_source_admissions WHERE kind=? AND origin=?", (kind, origin))
+    if previous:
+        connection.execute("DELETE FROM usage_reconcile_source_admissions WHERE kind=? AND origin=?", (kind, origin))
     connection.executemany("INSERT INTO usage_reconcile_source_admissions VALUES (?,?,?,?)",
                            [(kind, origin, *value) for value in sorted(admissions)])
     connection.executemany("INSERT OR IGNORE INTO usage_reconcile_diagnostic_work VALUES (?)",
@@ -125,8 +126,10 @@ def replace_contribution(connection, kind, origin, *, owners=(), unknown=(), gap
     # required empty pending component, even when no diagnostic was changed.
     executions = {row[2] for row in before_owners | owners} | {row[0] for row in before_gaps | gaps}
     connection.executemany("INSERT OR IGNORE INTO usage_reconcile_execution_work VALUES (?)", [(value,) for value in sorted(executions)])
-    for table in ("usage_reconcile_membership", "usage_reconcile_unknown", "usage_reconcile_gaps"):
-        connection.execute("DELETE FROM " + table + " WHERE kind=? AND origin=?", (kind, origin))
+    for table, previous in (("usage_reconcile_membership", before_owners),
+                            ("usage_reconcile_unknown", before_unknown), ("usage_reconcile_gaps", before_gaps)):
+        if previous:
+            connection.execute("DELETE FROM " + table + " WHERE kind=? AND origin=?", (kind, origin))
     connection.executemany("INSERT INTO usage_reconcile_membership VALUES (?,?,?,?,?)", [(kind, origin, *row) for row in sorted(owners)])
     connection.executemany("INSERT INTO usage_reconcile_unknown VALUES (?,?,?,?)", [(kind, origin, *row) for row in sorted(unknown)])
     connection.executemany("INSERT INTO usage_reconcile_gaps VALUES (?,?,?,?)", [(kind, origin, *row) for row in sorted(gaps)])
@@ -163,7 +166,7 @@ def reconcile_response(connection, provider, response):
     if exists and not conflict:
         connection.execute("INSERT INTO usage_reconcile_response_result VALUES (?,?,?,?) ON CONFLICT(provider,response_id) DO UPDATE SET "
                            "component_id=excluded.component_id,unknown=excluded.unknown", (*key, identity, int(unknown)))
-    else:
+    elif before is not None:
         connection.execute("DELETE FROM usage_reconcile_response_result WHERE provider=? AND response_id=?", key)
     # Missing/conflicting original counters contribute diagnostics to their
     # actual owners but never acquire numerical membership themselves.
@@ -217,7 +220,8 @@ def reconcile_execution(connection, execution):
                            (execution, identity))
         replace_contribution(connection, "missing", execution, gaps=((execution, "usage_pending"), (execution, "response_binding_unknown")))
     else:
-        connection.execute("DELETE FROM usage_reconcile_empty_components WHERE execution_id=?", (execution,))
+        if old is not None:
+            connection.execute("DELETE FROM usage_reconcile_empty_components WHERE execution_id=?", (execution,))
         replace_contribution(connection, "missing", execution)
     connection.execute("INSERT OR IGNORE INTO usage_reconcile_component_work SELECT component_id FROM usage_reconcile_component_executions WHERE execution_id=?",
                        (execution,))
@@ -279,6 +283,6 @@ def apply_base_one(connection):
     _mark_keys(connection, map(tuple, ordered["keys"]) if ordered else ())
     connection.execute("INSERT OR IGNORE INTO usage_reconcile_overlay_turn_work VALUES (?,?)", key)
     connection.execute("DELETE FROM usage_reconcile_turn_effects WHERE thread_id=? AND turn_id=?", key)
-    if inputs is None:
+    if inputs is None and allocation is not None:
         connection.execute("DELETE FROM usage_reconcile_turn_allocations WHERE thread_id=? AND turn_id=?", key)
     return {"thread_id": key[0], "turn_id": key[1]}

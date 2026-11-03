@@ -1283,8 +1283,39 @@ The separately required rotating snapshot/file audit remains unchanged.
 `usage_reconciliation_runtime.py` composes ordered initial, effect and capture
 phases. Core/changes/source pages, selected Task operations and intervals, turn
 input/allocation, contribution replacement, uncertainty/pending/range overlays,
-response totals, diagnostics and selected snapshots commit as separate units.
+response totals, diagnostics and selected snapshots retain separate phase boundaries.
 Read transactions open after the numerical writer; no core write occurs.
+For each of `turn_inputs`, `allocation`, `base_effects` and `turn_overlays`,
+the first unit in each reconciliation run commits alone. Subsequent pages use
+one admitted numerical writer and its subsequently opened Core read for at most
+128 units of that phase. The ordinary unit algorithms and queue order are
+unchanged; no full-history prefetch or outer batching of response pages is used.
+After 250 ms from page entry, or within 50 ms of the existing event deadline,
+no additional unit starts. A single indivisible unit and commit can take longer:
+250 ms is an optional-start allowance, not an absolute transaction duration.
+Results and queue consumption commit atomically; failure rolls back the whole
+uncommitted page while earlier pages remain durable. Run-local first-unit
+tracking advances only after a successful commit and resets on a later run.
+Every page reopens admission and checks Core revisions and higher-priority work;
+no validated state is cached across transactions or connections. A Core writer
+can proceed between pages. Other stages and the independent fresh final guard
+retain their existing boundaries.
+
+Replacement skips a DELETE only when an existing read in that same writer
+proves the entire deletion predicate empty. New inserts, old/new affected-key
+propagation, idempotent inserts and required queue consumption remain intact.
+The scope includes base actions, encounter/position absence, last positions,
+source admissions, contribution membership/unknown/gaps, response results,
+removed allocations, event locations, rule namespaces, empty-owner components,
+unattributed keys, source projections, period execution membership, global
+progress and turn overlay/uncertainty membership. A globally empty unresolved
+operation set also proves any selected Task subset empty. An empty thread
+minimum proves an empty subset, but a nonempty minimum proves nothing about a
+particular turn. Receipt-key reads scoped to a turn do not prove absence under
+their wider transition-only DELETE; that deletion remains. Source positions,
+reset records and other tables without an existing sufficient absence read
+retain their deletes. No SELECT is added just to avoid a DELETE.
+
 For response work the first key in each reconciliation run commits on its own.
 Subsequent pages select up to eight keys in queue order under one numerical
 writer and one fresh Core input check. Each key uses the ordinary response

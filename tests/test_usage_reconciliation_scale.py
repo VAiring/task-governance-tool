@@ -46,12 +46,12 @@ class ScaleTests(unittest.TestCase):
                 state = fixture.repository.advance_publication(state)
             with fixture.repository.publication_guard(fixture.reader, index, state):
                 pass
-        # Seventeen registrations become one per page (1 + 8 + 8).
+        # Registrations become one per page (first key, then two full pages).
         # The independent geometry SELECT is still required in both runs.
-        self.assertEqual(measurements[0][:2], (18, 34))
+        self.assertEqual(measurements[0][:2], (len(keys) + 1, 2 * len(keys)))
         self.assertEqual(measurements[1][:2], (4, 6))
         self.assertEqual(fixture.assert_same(), expected)
-        print("component_response_pages_17=" + repr(measurements))
+        print(f"component_response_pages_{len(keys)}=" + repr(measurements))
 
     def test_same_response_keys_use_fewer_core_admissions_and_sql(self):
         from tests.test_integrity_consumer_closure import observe_sql

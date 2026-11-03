@@ -1,4 +1,4 @@
-"""Safety gates for the disposable 128/250 response experiment, not runtime policy."""
+"""Safety gates for the adopted response page, executing the shipped runtime."""
 
 from contextlib import closing
 import json
@@ -50,6 +50,13 @@ def crash_hook(root):
 
 
 class ResponsePageExperimentTests(unittest.TestCase):
+    def test_candidate_uses_unmodified_product_function_and_adopted_policy(self):
+        advance = runtime.advance_effects
+        with policy("candidate"):
+            self.assertIs(runtime.advance_effects, advance)
+            self.assertEqual((runtime._RESPONSE_PAGE_SIZE, runtime._RESPONSE_PAGE_SECONDS,
+                              runtime._RESPONSE_COMMIT_MARGIN_SECONDS), (128, .250, .050))
+
     def fixture(self):
         fixture = changed.ChangedRuntimeTests()
         fixture.setUp()
@@ -57,7 +64,7 @@ class ResponsePageExperimentTests(unittest.TestCase):
         return fixture
 
     def test_zero_one_boundaries_and_multiple_pages_preserve_fifo_and_full_oracle(self):
-        for count in (0, 1, 8, 9, 127, 128, 129, 257):
+        for count in (0, 1, 7, 8, 9, 127, 128, 129, 257):
             with self.subTest(count=count):
                 fixture = self.fixture()
                 keys, expected = fixture.queued_responses(count)

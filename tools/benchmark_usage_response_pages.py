@@ -1,16 +1,15 @@
-"""Disposable response-page experiment; never a product or live-state entrypoint.
+"""Compare the shipped response page with its prior policy in disposable fixtures.
 
 python -B tools/benchmark_usage_response_pages.py --output .tmp-response-results.json
-The only policy changes exist in this process. Timing/counting are separate;
+Only the baseline overrides policy; the candidate runs the shipped implementation.
+Timing/counting are separate;
 identical synthetic state is restored before alternating baseline/candidate runs.
 """
 
 import argparse
-import ast
 from collections import Counter
 from contextlib import contextmanager, ExitStack
 import hashlib
-import inspect
 import json
 from pathlib import Path
 import sqlite3
@@ -26,25 +25,15 @@ POLICIES = {"baseline": (8, .050), "candidate": (128, .250)}
 
 @contextmanager
 def policy(name):
-    """Closed test-only prototype; keep the existing 50 ms deadline margin.
-
-    Recompile the current function with exactly one expression replaced. Preserve
-    module globals, filename and line numbers, including diagnostic call sites.
-    Fail on drift instead of silently copying/replacing an evolving algorithm.
-    """
+    """Run the actual candidate, or override only the previous policy values."""
     from task_governance_tool import usage_reconciliation_runtime as runtime
-    assert (runtime._RESPONSE_PAGE_SIZE, runtime._RESPONSE_PAGE_SECONDS) == POLICIES["baseline"]
-    lines, first = inspect.getsourcelines(runtime.advance_effects)
-    source = "".join(lines)
-    old = "repository.deadline - _RESPONSE_PAGE_SECONDS"
-    assert source.count(old) == 1
-    tree = ast.parse(source.replace(old, "repository.deadline - 0.050"))
-    ast.increment_lineno(tree, first - 1)
-    namespace = {}
-    exec(compile(tree, runtime.__file__, "exec"), runtime.__dict__, namespace)
+    assert (runtime._RESPONSE_PAGE_SIZE, runtime._RESPONSE_PAGE_SECONDS) == POLICIES["candidate"]
+    assert runtime._RESPONSE_COMMIT_MARGIN_SECONDS == .050
+    if name == "candidate":
+        yield
+        return
     size, seconds = POLICIES[name]
-    with mock.patch.object(runtime, "advance_effects", namespace["advance_effects"]), \
-            mock.patch.object(runtime, "_RESPONSE_PAGE_SIZE", size), \
+    with mock.patch.object(runtime, "_RESPONSE_PAGE_SIZE", size), \
             mock.patch.object(runtime, "_RESPONSE_PAGE_SECONDS", seconds):
         yield
 

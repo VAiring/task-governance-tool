@@ -21,8 +21,9 @@ from .usage_reconciliation_basis import admit_identity, capture_inputs, require_
 from .usage_values import UsageError
 
 
-_RESPONSE_PAGE_SIZE = 8
-_RESPONSE_PAGE_SECONDS = 0.050
+_RESPONSE_PAGE_SIZE = 128
+_RESPONSE_PAGE_SECONDS = 0.250
+_RESPONSE_COMMIT_MARGIN_SECONDS = 0.050
 _TURN_PAGE_SIZE = 128
 _TURN_PAGE_SECONDS = 0.250
 
@@ -180,7 +181,7 @@ def advance_effects(repository, core_reader, *, single_response=False, committed
             repository.check_budget()
             # The first key may use the remaining hard budget. Start optional
             # siblings only within the lock-time allowance and with commit margin.
-            stop = min(started + _RESPONSE_PAGE_SECONDS, repository.deadline - _RESPONSE_PAGE_SECONDS)
+            stop = min(started + _RESPONSE_PAGE_SECONDS, repository.deadline - _RESPONSE_COMMIT_MARGIN_SECONDS)
             for response in responses:
                 membership.reconcile_response(connection, *response)
                 if monotonic() >= stop:

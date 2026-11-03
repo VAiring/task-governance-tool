@@ -1027,7 +1027,9 @@ most 128 units, stopping optional starts after 250 ms or at the existing
 deadline's 50 ms commit margin. Uncommitted page results and queue consumption
 roll back together; later events resume from the committed frontier. These are
 cooperative bounds, not an absolute duration guarantee. The response classifier
-retains its separate eight-key/50 ms pages. Exact phase boundaries are owned by
+also commits its first key alone, then uses separate pages of at most 128 keys
+with a 250 ms optional-start allowance and the same 50 ms deadline margin.
+Exact phase boundaries are owned by
 [reconciliation tracking](database-design.md#usage-reconciliation-tracking).
 Fresh physical/schema/binding admission and transaction-bound revision checks
 fence display and final publication. They do not claim detection of an external

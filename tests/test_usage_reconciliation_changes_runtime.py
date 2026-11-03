@@ -107,7 +107,7 @@ class ChangedRuntimeTests(unittest.TestCase):
         from task_governance_tool import usage_reconciliation_runtime as runtime
         from task_governance_tool.usage_values import UsageError
         keys, _ = self.queued_responses(4)
-        self.repository.deadline = 100 + runtime._RESPONSE_PAGE_SECONDS / 2
+        self.repository.deadline = 100 + runtime._RESPONSE_COMMIT_MARGIN_SECONDS / 2
         try:
             with mock.patch.object(incremental, "monotonic", return_value=100), \
                     mock.patch.object(runtime, "monotonic", return_value=100):

@@ -1320,12 +1320,16 @@ reset records and other tables without an existing sufficient absence read
 retain their deletes. No SELECT is added just to avoid a DELETE.
 
 For response work the first key in each reconciliation run commits on its own.
-Subsequent pages select up to eight keys in queue order under one numerical
+Subsequent pages select up to 128 keys in queue order under one numerical
 writer and one fresh Core input check. Each key uses the ordinary response
-classifier. The page stops starting additional keys after 50 ms from entry or
-within 50 ms of the existing deadline. One indivisible key can take longer.
+classifier. The page stops starting additional keys after 250 ms from entry or
+within 50 ms of the existing deadline. The deadline margin is independent of
+the optional-start allowance; one indivisible key and commit can take longer.
 Its result, totals and queue removal commit with the rest of that page.
 An interrupted transaction leaves its keys pending and earlier pages durable.
+The larger page can hold Core readers longer and require more retry work after
+rollback, but is bounded by the selected keys and cooperative allowance. It
+does not guarantee an absolute transaction duration or writer-wait limit.
 The next page repeats admission and higher-priority selection; diagnostic and
 snapshot work and the final publication guard retain their separate reads.
 The pure whole-turn allocator is shared with the full attribution oracle.

@@ -50,6 +50,55 @@ class EvidenceSourceLookupScalingTests(unittest.TestCase):
         self.assertEqual(verified.returncode, 0, verified.stdout)
         return task
 
+    def test_null_owner_neither_hides_valid_sources_nor_escapes_selected_rejection(self):
+        from tests.test_m22_evidence_ledger_storage import rewrite_table_schema_sql
+        for version in (36, 37):
+            with self.subTest(version=version), candidate_runtime(version), tempfile.TemporaryDirectory() as directory:
+                repo, db = initialize(Path(directory))
+                task = self._verified_task(db, repo)
+                with closing(storage.connect(db)) as connection:
+                    connection.execute('PRAGMA foreign_keys = OFF')
+                    # Only this disposable corruption fixture relaxes NOT NULL;
+                    # exercise the shared row readers after structural admission.
+                    rewrite_table_schema_sql(connection, table_name='evidence_references',
+                        old='task_id TEXT NOT NULL,', new='task_id TEXT,')
+                    for kind in ('artifact_manifest', 'verification_receipt', 'review_receipt'):
+                        with self.subTest(kind=kind):
+                            reference = dict(connection.execute(
+                                'SELECT * FROM evidence_references WHERE task_id=? AND source_kind=? LIMIT 1',
+                                (task, kind)).fetchone())
+                            project, source = reference['project_id'], reference['source_id']
+                            for selected in (False, True):
+                                with self.subTest(selected=selected):
+                                    connection.execute('SAVEPOINT isolated_null')
+                                    try:
+                                        duplicate = dict(reference)
+                                        if not selected:
+                                            duplicate['source_id'] = source[:-1] + ('1' if source[-1] == '0' else '0')
+                                        self._insert_extra_reference(connection, duplicate, None)
+                                        def validate_chunk():
+                                            storage._validate_selected_reference_source_chunk(connection,
+                                                expected_project_id=project, selected_task_ids={task},
+                                                source_owners={(kind, source): task})
+                                        checks = [validate_chunk]
+                                        if kind == 'artifact_manifest':
+                                            authority = storage._validated_authority_context(connection,
+                                                snapshot_ids={reference['authority_snapshot_id']})
+                                            manifests, _ = storage._validate_artifact_manifest_storage(connection,
+                                                snapshots=authority.snapshots, links=authority.links, manifest_ids={source})
+                                            checks.append(lambda: storage.validate_manifest_evidence_references(connection,
+                                                manifests=manifests, selected_project_id=project))
+                                        for check in checks:
+                                            if selected:
+                                                with self.assertRaises(storage.StorageError) as failed:
+                                                    check()
+                                                self.assertEqual(failed.exception.code, 'evidence_ledger_inconsistent')
+                                            else:
+                                                check()
+                                    finally:
+                                        connection.execute('ROLLBACK TO isolated_null')
+                                        connection.execute('RELEASE isolated_null')
+
     def test_predecessor_uncaptured_task_cost_is_independent_of_reference_history(self):
         with candidate_runtime(36), tempfile.TemporaryDirectory() as directory:
             repo, db = initialize(Path(directory))
@@ -264,6 +313,103 @@ class EvidenceSourceLookupScalingTests(unittest.TestCase):
         self.assertEqual(large['connections'], small['connections'])
         self.assertEqual(large['sql'], small['sql'])
         self.assertEqual(large['vm'], small['vm'])
+
+
+class ReferenceOwnerSeekTests(unittest.TestCase):
+    """Query-level matrix complements admitted schema-36/37 consumer fixtures."""
+
+    KINDS = ('artifact_manifest', 'verification_receipt', 'review_receipt',
+             'review_finding', 'completion_evidence', 'runner_observation')
+
+    def fixture(self):
+        connection = self.enterContext(closing(sqlite3.connect(':memory:')))
+        connection.row_factory = sqlite3.Row
+        connection.executescript('''
+            CREATE TABLE tasks(project_id TEXT, task_id TEXT);
+            CREATE INDEX idx_tasks_project_task_identity ON tasks(project_id,task_id);
+            CREATE TABLE evidence_references(evidence_reference_id TEXT, project_id TEXT,
+                task_id TEXT, source_kind TEXT, source_id TEXT, payload TEXT);
+            CREATE INDEX idx_evidence_references_source ON evidence_references(project_id,task_id,source_kind,source_id);
+            CREATE INDEX idx_evidence_references_source_identity ON evidence_references(project_id,source_kind,source_id);
+            INSERT INTO tasks VALUES ('project','selected');
+            INSERT INTO tasks VALUES ('project','unrelated');
+        ''')
+        return connection
+
+    def read(self, connection, version, kind, *, identity=False, keys=None):
+        return evidence_repository._read_reference_source_rows(connection,
+            project_id='project', source_keys={(kind, 'source')} if keys is None else keys,
+            schema_version=version, expected_count=1, identity_only=identity)
+
+    def insert(self, connection, owner, kind, source='source', identity='reference'):
+        connection.execute('INSERT INTO evidence_references VALUES (?,\'project\',?,?,?,\'payload\')',
+                           (identity, owner, kind, source))
+
+    def test_all_source_kinds_empty_normal_and_malformed_owners(self):
+        for version in (18, 22, 36, 37):
+            for identity_only in (False, True):
+                for kind in self.KINDS:
+                    with self.subTest(version=version, identity=identity_only, kind=kind):
+                        connection = self.fixture()
+                        self.assertEqual(self.read(connection, version, kind, identity=identity_only), [])
+                        # Both a NULL prefix and a BLOB prefix unrelated to this
+                        # source must not suppress the valid TEXT owner.
+                        self.insert(connection, None, kind, 'outside-null', 'outside-null')
+                        self.insert(connection, b'outside', kind, 'outside-blob', 'outside-blob')
+                        self.insert(connection, 'selected', kind)
+                        rows = self.read(connection, version, kind, identity=identity_only)
+                        self.assertEqual([(r['evidence_reference_id'], r['matched_owner']) for r in rows], [('reference', 'selected')])
+                        self.assertEqual('payload' in rows[0].keys(), not identity_only)
+                        sql = []
+                        connection.set_trace_callback(sql.append)
+                        self.assertEqual(self.read(connection, version, kind, identity=identity_only, keys=set()), [])
+                        connection.set_trace_callback(None)
+                        self.assertEqual(sql, [])
+                        for owner in (None, 'missing', b'selected'):
+                            with self.subTest(owner=repr(owner)):
+                                self.insert(connection, owner, kind, identity='corrupt')
+                                with self.assertRaises(storage.StorageError) as failed:
+                                    self.read(connection, version, kind, identity=identity_only)
+                                self.assertEqual(failed.exception.code, 'evidence_ledger_inconsistent')
+                                connection.execute("DELETE FROM evidence_references WHERE evidence_reference_id='corrupt'")
+                        # No non-NULL owner exists: NULL is still a real probe.
+                        connection.execute('DELETE FROM evidence_references')
+                        self.insert(connection, None, kind)
+                        with self.assertRaises(storage.StorageError) as failed:
+                            self.read(connection, version, kind, identity=identity_only)
+                        self.assertEqual(failed.exception.code, 'evidence_ledger_inconsistent')
+
+    def test_null_and_nonnull_unrelated_history_does_not_grow_selected_work(self):
+        for version in (36, 37):
+            for identity_only in (False, True):
+                with self.subTest(version=version, identity=identity_only):
+                    measurements = []
+                    for size in (2, 258):
+                        # Equal fresh connections include the same initial
+                        # statement/schema work in both measurements.
+                        connection = self.fixture()
+                        self.insert(connection, 'selected', 'artifact_manifest')
+                        for owner in (None, 'unrelated', b'outside'):
+                            for number in range(size):
+                                self.insert(connection, owner, 'artifact_manifest', f'outside-{number}', f'outside-{number}')
+                        sql, steps = [], [0]
+                        def progress():
+                            steps[0] += 1
+                            return 0
+                        connection.set_progress_handler(progress, 1)
+                        connection.set_trace_callback(sql.append)
+                        rows = self.read(connection, version, 'artifact_manifest', identity=identity_only)
+                        connection.set_progress_handler(None, 0)
+                        connection.set_trace_callback(None)
+                        self.assertEqual([r['evidence_reference_id'] for r in rows], ['reference'])
+                        self.assertEqual(len(sql), 1)
+                        plan = '\n'.join(row[3] for row in connection.execute('EXPLAIN QUERY PLAN ' + sql[0]))
+                        index = 'idx_evidence_references_source_identity' if version == 37 else 'idx_evidence_references_source'
+                        self.assertRegex(plan, r'SEARCH reference USING (?:COVERING )?INDEX ' + index)
+                        self.assertNotIn('SCAN reference', plan)
+                        self.assertNotRegex(plan, r'\bSCAN owner\b')
+                        measurements.append(steps[0])
+                    self.assertEqual(*measurements)
 
 
 if __name__ == '__main__':

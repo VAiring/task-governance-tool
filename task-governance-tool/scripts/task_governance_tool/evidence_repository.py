@@ -1439,23 +1439,24 @@ def _read_reference_source_rows(
                     INDEXED BY idx_evidence_references_source_identity"""
         owner_match = ""
     else:
-        # Seek past each distinct owner in the Reference index. This includes
-        # orphan keys and skips all intervening generations for the same owner.
+        # Descend through distinct non-NULL owners, then probe NULL once. A
+        # malformed NULL owner must neither end enumeration early nor disappear.
+        # Each seek skips intervening generations for the same owner.
         source = """(
             WITH RECURSIVE owner_keys(task_id) AS (
                 SELECT (SELECT task_id FROM evidence_references INDEXED BY idx_evidence_references_source
-                         WHERE project_id = :project_id ORDER BY task_id LIMIT 1)
+                         WHERE project_id = :project_id ORDER BY task_id DESC LIMIT 1)
                 UNION ALL
                 SELECT (SELECT r.task_id FROM evidence_references AS r INDEXED BY idx_evidence_references_source
-                         WHERE r.project_id = :project_id AND r.task_id > prior.task_id
-                         ORDER BY r.task_id LIMIT 1)
+                         WHERE r.project_id = :project_id AND r.task_id < prior.task_id
+                         ORDER BY r.task_id DESC LIMIT 1)
                   FROM owner_keys AS prior WHERE prior.task_id IS NOT NULL
             )
-            SELECT task_id FROM owner_keys WHERE task_id IS NOT NULL
+            SELECT task_id FROM owner_keys
         ) AS indexed_owner
         CROSS JOIN selected_sources AS selected
         CROSS JOIN evidence_references AS reference INDEXED BY idx_evidence_references_source"""
-        owner_match = "AND reference.task_id = indexed_owner.task_id"
+        owner_match = "AND reference.task_id IS indexed_owner.task_id"
     rows = connection.execute(
         f"""WITH selected_sources(value) AS (SELECT value FROM json_each(:source_keys))
             SELECT {columns}, owner.task_id AS matched_owner FROM {source}

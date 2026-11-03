@@ -832,6 +832,9 @@ materialization; it is not a substitute for indexed selection. Sources through
 36 use the existing owner-leading Reference index without assuming that every
 owner exists; they do not require the newer index. Ordinary commands
 never create indexes or silently fall back to a whole-project audit.
+In that compatibility path a NULL owner must not suppress later non-NULL
+owners. Selected NULL-owned References are rejected, including when a valid
+Reference is also present; unrelated NULL-owned sources do not enter selection.
 
 The schema inventory is 52 tables, 64 explicit indexes and 107 triggers. Only
 the Bundle source discriminator and coupled cycle guard are rebuilt to admit

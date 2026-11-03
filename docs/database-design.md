@@ -833,9 +833,12 @@ References on every supported schema. On schema 37 it seeks References by exact
 project/kind/ID for each selected source. A left join on the actual project/Task
 identity preserves missing owners for rejection. Each consumer then validates
 its expected ownership, types and duplicates within the expected-count-plus-one
-bound. Through schema 36, the selector seeks the first stored owner key in the
-project's Reference index, then seeks the next strictly greater owner key. For
-each distinct owner it probes the full project/owner/kind/source key. This
+bound. Through schema 36, the selector seeks the greatest stored owner key in the
+project's Reference index, then seeks the next strictly smaller non-NULL key.
+The final NULL step probes with NULL-safe owner equality, even when no non-NULL
+owner exists. A stored NULL therefore cannot terminate enumeration early or
+hide a selected corrupt Reference. For each distinct owner it probes the full
+project/owner/kind/source key. This
 keeps orphan owners visible and skips intervening rows when an unrelated owner
 accumulates history. The compatibility cost depends on the number of distinct
 stored owner keys and selected sources. The current schema requires its

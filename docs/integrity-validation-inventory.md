@@ -481,12 +481,13 @@ The manifest reader (`evidence_repository._read_owner_indexed_evidence_reference
 and the all-kind reader (`evidence_validation_repository._validate_selected_reference_source_chunk`)
 share `evidence_repository._read_reference_source_rows`. Empty selections skip
 the Reference lookup. Schema 37 seeks each selected project/kind/source key.
-Schemas through 36 seek successive distinct owner keys in the Reference index
-and probe each selected source under those keys, skipping intervening history
-for the same non-NULL owner. Both paths expose missing Task rows for stored
-TEXT and BLOB owner keys. A malformed NULL owner in a predecessor Reference
-can terminate that older lookup early. Schema 37 selects by source before
-checking ownership, including a NULL owner. Current ordinary commands require
+Schemas through 36 descend through successive distinct non-NULL owner keys in
+the Reference index and finish with one NULL-safe owner probe, even when there
+are no non-NULL owners. Each probe selects only the requested sources, skipping
+intervening history for the same owner, including NULL. Both paths expose
+missing Task rows for stored TEXT and BLOB owner keys and reject selected
+NULL owners without hiding normal references behind unrelated NULL rows.
+Schema 37 selects by source before checking ownership. Current ordinary commands require
 the current container schema.
 `verification_receipt_repository.read_verification_receipt_snapshot` uses
 the companion Task/kind index for References. For manual Receipts it seeks

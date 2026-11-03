@@ -1,7 +1,11 @@
 """Changed windows retain outside membership and independent gap provenance."""
 
 from collections import defaultdict
+from contextlib import closing, nullcontext
+import sqlite3
+from time import perf_counter
 import unittest
+from unittest import mock
 
 from tests import test_usage_reconciliation_inputs as inputs
 from tests.test_usage_response_repository import A, B
@@ -10,6 +14,276 @@ from tests.test_usage_attribution import turn
 from task_governance_tool import usage_reconciliation_membership as membership
 from task_governance_tool.usage_response_repository import component_identity
 from task_governance_tool.usage_values import UsageError
+from task_governance_tool.sqlite_admission import AdmissionConnection
+from task_governance_tool import usage_component_reuse as reuse
+
+
+class ComponentReuseTests(unittest.TestCase):
+    def connection(self):
+        connection = self.enterContext(closing(sqlite3.connect(":memory:", factory=AdmissionConnection)))
+        connection.row_factory = sqlite3.Row
+        for statement in membership.TABLES:
+            connection.execute(statement)
+        connection.execute("BEGIN IMMEDIATE")
+        return connection
+
+    def counts(self, sql):
+        return (sum(item.startswith("SELECT assignment,members FROM usage_reconcile_components") for item in sql),
+                sum(item.startswith("INSERT OR IGNORE INTO usage_reconcile_components ") or
+                    item.startswith("INSERT OR IGNORE INTO usage_reconcile_component_executions ") for item in sql))
+
+    def test_512_repetitions_reduce_sql_without_changing_rows(self):
+        measurements = []
+        for enabled in (False, True):
+            connection = self.connection()
+            sql = []
+            connection.set_trace_callback(sql.append)
+            start = perf_counter()
+            with reuse.component_writer(connection) if enabled else mock.patch.object(reuse, "confirmed_components", return_value=None):
+                identities = [membership._component(connection, "exclusive", (A,)) for _ in range(512)]
+            elapsed = perf_counter() - start
+            self.assertEqual(len(set(identities)), 1)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM usage_reconcile_components").fetchone()[0], 1)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM usage_reconcile_component_executions").fetchone()[0], 1)
+            measurements.append((*self.counts(sql), round(elapsed, 6)))
+        self.assertEqual([item[:2] for item in measurements], [(512, 1024), (1, 2)])
+        print("component_synthetic_512=" + repr(measurements))
+
+    def test_distinct_assignments_and_partial_links_keep_first_checks(self):
+        connection = self.connection()
+        cases = (("exclusive", (A,)), ("exclusive", (B,)), ("shared", (A, B)), ("partial", (A, B)))
+        sql = []
+        with reuse.component_writer(connection):
+            connection.set_trace_callback(sql.append)
+            first = [membership._component(connection, *case) for case in cases]
+            for _ in range(3):
+                self.assertEqual([membership._component(connection, *case) for case in cases], first)
+            self.assertEqual(self.counts(sql), (4, 10))
+            # An existing component alone is not proof that all links exist.
+            connection.execute("DELETE FROM usage_reconcile_component_executions WHERE execution_id=?", (B,))
+            sql.clear()
+            self.assertEqual(membership._component(connection, *cases[2]), first[2])
+            self.assertEqual(self.counts(sql), (1, 3))
+            self.assertEqual([row[0] for row in connection.execute(
+                "SELECT execution_id FROM usage_reconcile_component_executions WHERE component_id=? ORDER BY execution_id", (first[2],))], [A, B])
+            connection.execute("UPDATE usage_reconcile_components SET members='[]' WHERE component_id=?", (first[2],))
+            with self.assertRaisesRegex(UsageError, "usage_schema_invalid"):
+                membership._component(connection, *cases[2])
+
+    def test_retirement_and_regeneration_recheck_in_same_writer(self):
+        connection = self.connection()
+        with reuse.component_writer(connection):
+            identity = membership._component(connection, "exclusive", (A,))
+            membership.retire_component(connection, identity)
+            self.assertIsNone(connection.execute("SELECT 1 FROM usage_reconcile_components").fetchone())
+            sql = []
+            connection.set_trace_callback(sql.append)
+            self.assertEqual(membership._component(connection, "exclusive", (A,)), identity)
+            self.assertEqual(self.counts(sql), (1, 2))
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM usage_reconcile_component_executions").fetchone()[0], 1)
+
+    def test_upsert_rechecks_contents_and_restores_required_links(self):
+        for prefix in ("INSERT OR IGNORE", "INSERT"):
+            for table in ("components", "links"):
+                with self.subTest(prefix=prefix, table=table):
+                    connection = self.connection()
+                    with reuse.component_writer(connection):
+                        identity = membership._component(connection, "exclusive", (A,))
+                        if table == "components":
+                            connection.execute(prefix + " INTO usage_reconcile_components VALUES (?,?,?) "
+                                "ON CONFLICT(component_id) DO UPDATE SET members=excluded.members",
+                                (identity, "exclusive", "[]"))
+                            with self.assertRaisesRegex(UsageError, "usage_schema_invalid"):
+                                membership._component(connection, "exclusive", (A,))
+                        else:
+                            connection.execute(prefix + " INTO usage_reconcile_component_executions VALUES (?,?) "
+                                "ON CONFLICT(component_id,execution_id) DO UPDATE SET execution_id=?",
+                                (identity, A, B))
+                            sql = []
+                            connection.set_trace_callback(sql.append)
+                            membership._component(connection, "exclusive", (A,))
+                            self.assertEqual(self.counts(sql), (1, 2))
+                            self.assertEqual({row[0] for row in connection.execute(
+                                "SELECT execution_id FROM usage_reconcile_component_executions")}, {A, B})
+
+    def test_quoted_literals_reuse_but_insert_expression_revokes_confirmation(self):
+        connection = self.connection()
+        member = "quoted ' ON CONFLICT DO UPDATE; SELECT text"
+        with reuse.component_writer(connection):
+            sql = []
+            connection.set_trace_callback(sql.append)
+            identity = membership._component(connection, "exclusive", (member,))
+            membership._component(connection, "exclusive", (member,))
+            self.assertEqual(self.counts(sql), (1, 2))
+            # A syntactically additive prefix with an expression is not the
+            # established registration shape, even when it happens to be inert.
+            connection.execute("INSERT OR IGNORE INTO usage_reconcile_component_executions VALUES (?,upper(?))",
+                               (identity, member))
+            sql.clear()
+            membership._component(connection, "exclusive", (member,))
+            self.assertEqual(self.counts(sql), (1, 2))
+
+    def test_pre_registration_ddl_and_nested_scope_cannot_reactivate_reuse(self):
+        for nested, registered in ((False, False), (True, False), (True, True)):
+            with self.subTest(nested=nested, registered=registered):
+                connection = self.connection()
+                with reuse.component_writer(connection):
+                    if registered:
+                        membership._component(connection, "exclusive", (A,))
+                    connection.execute("CREATE TEMP TRIGGER erase_component AFTER INSERT ON usage_reconcile_component_work "
+                        "BEGIN DELETE FROM usage_reconcile_components; DELETE FROM usage_reconcile_component_executions; END")
+                    with reuse.component_writer(connection) if nested else nullcontext():
+                        identity = membership._component(connection, "exclusive", (A,))
+                        connection.execute("INSERT OR IGNORE INTO usage_reconcile_component_work VALUES (?)", (identity,))
+                        self.assertIsNone(connection.execute("SELECT 1 FROM usage_reconcile_components").fetchone())
+                        sql = []
+                        connection.set_trace_callback(sql.append)
+                        membership._component(connection, "exclusive", (A,))
+                        self.assertEqual(self.counts(sql), (1, 2))
+                        self.assertEqual(connection.execute("SELECT COUNT(*) FROM usage_reconcile_components").fetchone()[0], 1)
+                        self.assertEqual(connection.execute("SELECT COUNT(*) FROM usage_reconcile_component_executions").fetchone()[0], 1)
+
+    def test_native_control_before_first_registration_stays_revoked_in_nested_scope(self):
+        connection = self.connection()
+        with reuse.component_writer(connection):
+            connection.set_authorizer(lambda *args: sqlite3.SQLITE_OK)
+            with reuse.component_writer(connection):
+                sql = []
+                connection.set_trace_callback(sql.append)
+                membership._component(connection, "exclusive", (A,))
+                membership._component(connection, "exclusive", (A,))
+                self.assertEqual(self.counts(sql), (2, 4))
+
+    def test_transaction_boundaries_and_scope_exit_never_reuse_old_confirmation(self):
+        for boundary in ("commit", "rollback", "cursor", "script", "savepoint"):
+            with self.subTest(boundary=boundary):
+                connection = self.connection()
+                with reuse.component_writer(connection):
+                    if boundary == "savepoint":
+                        connection.execute("SAVEPOINT before_component")
+                    membership._component(connection, "exclusive", (A,))
+                    if boundary in {"commit", "rollback"}:
+                        getattr(connection, boundary)()
+                        connection.execute("BEGIN IMMEDIATE")
+                    elif boundary == "cursor":
+                        connection.cursor().execute("ROLLBACK")
+                        connection.cursor().execute("BEGIN IMMEDIATE")
+                    elif boundary == "script":
+                        # executescript commits the previous transaction itself.
+                        connection.executescript("BEGIN IMMEDIATE;")
+                    else:
+                        connection.execute("ROLLBACK TO before_component")
+                    sql = []
+                    connection.set_trace_callback(sql.append)
+                    membership._component(connection, "exclusive", (A,))
+                    self.assertEqual(self.counts(sql), (1, 2))
+                connection.commit()
+                connection.execute("BEGIN IMMEDIATE")
+                sql.clear()
+                with reuse.component_writer(connection):
+                    membership._component(connection, "exclusive", (A,))
+                    membership._component(connection, "exclusive", (A,))
+                self.assertEqual(self.counts(sql), (1, 2))
+                self.assertIsNone(connection._usage_components)
+                self.assertIsNone(connection._admission_watching)
+
+    def test_partial_registration_failure_is_not_confirmed(self):
+        connection = self.connection()
+        native = AdmissionConnection.executemany
+        def fail_after_first(db, sql, rows):
+            native(db, sql, rows[:1])
+            raise InterruptedError("isolated registration interruption")
+        with reuse.component_writer(connection):
+            with mock.patch.object(AdmissionConnection, "executemany", fail_after_first):
+                with self.assertRaises(InterruptedError):
+                    membership._component(connection, "shared", (A, B))
+            sql = []
+            connection.set_trace_callback(sql.append)
+            membership._component(connection, "shared", (A, B))
+            self.assertEqual(self.counts(sql), (1, 3))
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM usage_reconcile_component_executions").fetchone()[0], 2)
+
+    def test_native_controls_and_unknown_statements_revoke_reuse(self):
+        controls = (
+            lambda db: db.set_authorizer(lambda *args: sqlite3.SQLITE_OK),
+            lambda db: db.execute("CREATE TEMP TABLE extra(value)"),
+            lambda db: db.execute("WITH chosen AS (SELECT 1) SELECT * FROM chosen"),
+            lambda db: setattr(db, "row_factory", sqlite3.Row),
+        )
+        for control in controls:
+            with self.subTest(control=control):
+                connection = self.connection()
+                with reuse.component_writer(connection):
+                    membership._component(connection, "exclusive", (A,))
+                    control(connection)
+                    sql = []
+                    connection.set_trace_callback(sql.append)
+                    membership._component(connection, "exclusive", (A,))
+                    self.assertEqual(self.counts(sql), (1, 2))
+
+    def test_replaced_user_trace_and_nested_scope_keep_invalidation(self):
+        connection = self.connection()
+        first, second = [], []
+        connection.set_trace_callback(first.append)
+        with reuse.component_writer(connection):
+            membership._component(connection, "exclusive", (A,))
+            with reuse.component_writer(connection):
+                connection.set_trace_callback(second.append)
+                connection.execute("DELETE FROM usage_reconcile_components")
+            membership._component(connection, "exclusive", (A,))
+        self.assertEqual(self.counts(first), (1, 2))
+        self.assertEqual(self.counts(second), (1, 2))
+        connection.execute("SELECT 123")
+        self.assertEqual(second[-1], "SELECT 123")
+
+    def test_callback_mutation_during_registration_cannot_publish_stale_fact(self):
+        connection = self.connection()
+        with reuse.component_writer(connection):
+            mutated = False
+            def callback(sql):
+                nonlocal mutated
+                if not mutated and sql.startswith("INSERT OR IGNORE INTO usage_reconcile_component_executions"):
+                    mutated = True
+                    connection.execute("DELETE FROM usage_reconcile_components")
+            connection.set_trace_callback(callback)
+            membership._component(connection, "exclusive", (A,))
+            connection.set_trace_callback(None)
+            membership._component(connection, "exclusive", (A,))
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM usage_reconcile_components").fetchone()[0], 1)
+
+    def test_plain_native_connection_retains_original_path(self):
+        connection = self.enterContext(closing(sqlite3.connect(":memory:")))
+        connection.row_factory = sqlite3.Row
+        for statement in membership.TABLES:
+            connection.execute(statement)
+        connection.execute("BEGIN")
+        sql = []
+        connection.set_trace_callback(sql.append)
+        with reuse.component_writer(connection):
+            for _ in range(2):
+                membership._component(connection, "exclusive", (A,))
+        self.assertEqual(self.counts(sql), (2, 4))
+
+    def test_connection_reinitialization_and_exception_scope_discard_facts(self):
+        connection = self.connection()
+        with self.assertRaises(InterruptedError):
+            with reuse.component_writer(connection):
+                membership._component(connection, "exclusive", (A,))
+                raise InterruptedError("isolated writer exit")
+        self.assertIsNone(connection._usage_components)
+        connection.rollback()
+        with reuse.component_writer(connection):
+            # No active transaction means the original implicit-DML path.
+            membership._component(connection, "exclusive", (A,))
+        with reuse.component_writer(connection):
+            membership._component(connection, "exclusive", (A,))
+            connection.__init__(":memory:")
+            connection.row_factory = sqlite3.Row
+            for statement in membership.TABLES:
+                connection.execute(statement)
+            connection.execute("BEGIN")
+            membership._component(connection, "exclusive", (A,))
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM usage_reconcile_components").fetchone()[0], 1)
 
 
 class MembershipTests(unittest.TestCase):
@@ -33,6 +307,37 @@ class MembershipTests(unittest.TestCase):
     def component(self, assignment, owners):
         with self.repository.connection() as connection:
             return membership.component_geometry(connection, component_identity({"assignment": assignment, "executions": sorted(owners)}))
+
+    def test_repository_writer_reset_and_empty_owner_keep_registration_and_work(self):
+        with self.repository.connection(write=True) as connection:
+            identity = membership._component(connection, "partial", (A,))
+            sql = []
+            connection.set_trace_callback(sql.append)
+            membership._component(connection, "partial", (A,))
+            self.assertEqual(ComponentReuseTests.counts(self, sql), (0, 0))
+            self.repository._reset_reconciliation(connection)
+            sql.clear()
+            self.assertEqual(membership._component(connection, "partial", (A,)), identity)
+            self.assertEqual(ComponentReuseTests.counts(self, sql), (1, 2))
+            # The allowlist depends on the exact admitted schema, not arbitrary
+            # runtime SQL or an optimization-time full-table inspection.
+            for table in reuse._OTHER_EFFECTS | reuse._COMPONENTS:
+                self.assertEqual(list(connection.execute("SELECT 1 FROM sqlite_master WHERE type='trigger' AND tbl_name=?", (table,))), [])
+                self.assertEqual(list(connection.execute("PRAGMA foreign_key_list(" + table + ")")), [])
+
+    def test_admitted_writer_observes_ddl_before_registration_and_nested_entry(self):
+        for nested in (False, True):
+            with self.subTest(nested=nested), self.repository.connection(write=True) as connection:
+                connection.execute("DELETE FROM usage_reconcile_component_work")
+                connection.execute("CREATE TEMP TRIGGER erase_component AFTER INSERT ON usage_reconcile_component_work "
+                    "BEGIN DELETE FROM usage_reconcile_components; DELETE FROM usage_reconcile_component_executions; END")
+                with reuse.component_writer(connection) if nested else nullcontext():
+                    identity = membership._component(connection, "exclusive", (A,))
+                    connection.execute("INSERT OR IGNORE INTO usage_reconcile_component_work VALUES (?)", (identity,))
+                    self.assertIsNone(connection.execute("SELECT 1 FROM usage_reconcile_components").fetchone())
+                    membership._component(connection, "exclusive", (A,))
+                    self.assertEqual(connection.execute("SELECT COUNT(*) FROM usage_reconcile_components").fetchone()[0], 1)
+                    self.assertEqual(connection.execute("SELECT COUNT(*) FROM usage_reconcile_component_executions").fetchone()[0], 1)
 
     def test_disjoint_outside_windows_are_not_replaced_by_changed_window(self):
         self.replace("first", owners=[("openai", "r0", A), ("openai", "r1", A)])

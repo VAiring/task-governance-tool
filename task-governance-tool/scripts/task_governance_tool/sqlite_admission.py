@@ -60,6 +60,7 @@ class _Observer:
     owners: int = 1
     epoch: int = 0
     basis: tuple | None = None
+    listeners: list = field(default_factory=list)
 
 
 @dataclass
@@ -92,6 +93,8 @@ class AdmissionConnection(GuardedConnection):
         # permission check. SELECT-side user functions are also covered by the
         # actual transaction epoch, write count and schema-cookie observation.
         prefix = sql[:4096]
+        for listener in tuple(self._admission_watching.listeners):
+            listener(sql)
         if getattr(self, "_retained_version", None) is not None and not self.in_transaction:
             # A savepoint can start a new transaction after an implicit rollback.
             self._retained_version = None
@@ -123,6 +126,8 @@ class AdmissionConnection(GuardedConnection):
         if self._admission_watching is not None:
             self._admission_watching.epoch += 1
             self._retained_version = None
+            for listener in tuple(self._admission_watching.listeners):
+                listener(None)
 
     @_invalidates_native_read
     def deserialize(self, *args, **kwargs):

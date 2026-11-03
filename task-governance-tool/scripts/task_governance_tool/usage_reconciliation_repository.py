@@ -6,6 +6,7 @@ Explicit Setup alone creates this schema; historical observations stay intact.
 """
 
 from dataclasses import dataclass
+from contextlib import contextmanager, nullcontext
 
 from .usage_work_order_repository import UsageWorkOrderRepository
 from .usage_values import UsageError
@@ -147,6 +148,13 @@ class UsageReconciliationRepository(UsageWorkOrderRepository):
                          *_UNCERTAINTY_TABLES, *_PENDING_TABLES, *_BASIS_TABLES, *_SNAPSHOT_TABLES, *_TOTAL_TABLES, *_triggers())
     migrations = (*UsageWorkOrderRepository.migrations, (10, "reconciliation_changes"))
     _previous_repositories = (UsageWorkOrderRepository, *UsageWorkOrderRepository._previous_repositories)
+
+    @contextmanager
+    def connection(self, *, write=False, admission=None):
+        from .usage_component_reuse import component_writer
+        with super().connection(write=write, admission=admission) as connection:
+            with component_writer(connection) if write else nullcontext():
+                yield connection
 
     def _after_numerical_upgrade(self, connection, previous):
         connection.execute("INSERT INTO usage_reconcile_state VALUES (1,lower(hex(randomblob(16))),0)")

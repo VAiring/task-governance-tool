@@ -744,6 +744,12 @@ created before the native change takes effect. A control change during probing c
 reusable basis. Separate connections cannot share
 facts, and no savepoint owned by a consumer is released to test validity.
 
+The same temporary native trace multiplexer can notify the separately owned
+[Usage component-registration reuse](database-design.md#usage-reconciliation-tracking)
+scope of statements and native control invalidation. That writer-local consumer
+does not add domain results to structural facts. Listener exit preserves other
+observer owners and the caller's current trace callback; SQL is not retained.
+
 This facility neither opens nor extends a transaction. Fresh writers retain
 `BEGIN IMMEDIATE` and revalidation; external effects end the old read before
 their guard. Full audit is the default for unconverted consumers. Ordinary

@@ -14,6 +14,45 @@ from task_governance_tool import usage_reconciliation_membership as membership
 
 
 class ScaleTests(unittest.TestCase):
+    def test_actual_response_pages_reuse_component_without_changing_publication(self):
+        from contextlib import nullcontext
+        import sqlite3
+        from task_governance_tool import usage_component_reuse as reuse, usage_reconciliation_runtime as runtime
+        from tests.test_usage_reconciliation_membership import ComponentReuseTests
+        fixture = changed_support.ChangedRuntimeTests()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        keys, expected = fixture.queued_responses(2 * runtime._RESPONSE_PAGE_SIZE + 1)
+        native = sqlite3.connect
+        measurements = []
+        for enabled in (False, True):
+            if measurements:
+                with fixture.repository.connection(write=True) as connection:
+                    connection.executemany("INSERT INTO usage_reconcile_response_work VALUES (?,?)", keys)
+            sql = []
+            def connect(*args, **kwargs):
+                connection = native(*args, **kwargs)
+                connection.set_trace_callback(sql.append)
+                return connection
+            start = time.monotonic()
+            with mock.patch.object(sqlite3, "connect", connect), \
+                    mock.patch.object(runtime, "monotonic", return_value=0), \
+                    (nullcontext() if enabled else mock.patch.object(reuse, "confirmed_components", return_value=None)):
+                index, state = fixture.repository.prepare_publication(fixture.reader)
+            self.assertEqual(index, expected)
+            measurements.append((*ComponentReuseTests.counts(self, sql), round(time.monotonic() - start, 6)))
+            for identity in index["snapshots"][state["position"]:]:
+                fixture.repository.publication_snapshot(identity)
+                state = fixture.repository.advance_publication(state)
+            with fixture.repository.publication_guard(fixture.reader, index, state):
+                pass
+        # Seventeen registrations become one per page (1 + 8 + 8).
+        # The independent geometry SELECT is still required in both runs.
+        self.assertEqual(measurements[0][:2], (18, 34))
+        self.assertEqual(measurements[1][:2], (4, 6))
+        self.assertEqual(fixture.assert_same(), expected)
+        print("component_response_pages_17=" + repr(measurements))
+
     def test_same_response_keys_use_fewer_core_admissions_and_sql(self):
         from tests.test_integrity_consumer_closure import observe_sql
         from task_governance_tool import storage, usage_reconciliation_runtime as runtime

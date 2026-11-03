@@ -137,14 +137,23 @@ def replace_contribution(connection, kind, origin, *, owners=(), unknown=(), gap
 
 
 def _component(connection, assignment, members):
+    from .usage_component_reuse import confirmed_components
     members = tuple(sorted(set(members)))
     identity = component_identity({"assignment": assignment, "executions": list(members)})
     document = encode(members).decode()
+    confirmed = confirmed_components(connection)
+    key = identity, assignment, document
+    if confirmed is not None and key in confirmed:
+        return identity
     old = connection.execute("SELECT assignment,members FROM usage_reconcile_components WHERE component_id=?", (identity,)).fetchone()
     if old is not None and tuple(old) != (assignment, document):
         raise UsageError("usage_schema_invalid")
     connection.execute("INSERT OR IGNORE INTO usage_reconcile_components VALUES (?,?,?)", (identity, assignment, document))
     connection.executemany("INSERT OR IGNORE INTO usage_reconcile_component_executions VALUES (?,?)", [(identity, value) for value in members])
+    # Publish only after the existing mismatch check and every required link
+    # insertion succeeded. A callback/control may have revoked the scope.
+    if confirmed is not None and confirmed_components(connection) is confirmed:
+        confirmed.add(key)
     return identity
 
 

@@ -1336,6 +1336,35 @@ of the original classifier. Range bins find actual interval consumers without
 scanning every historical interval in the session.
 
 Current partition indexes contain active response/empty membership only.
+`usage_component_reuse.py` retains completed component registrations inside
+the admitted reconciliation repository writer. `_component` first performs its
+existing identity/content comparison and all required execution-link inserts;
+only a successful complete registration can serve a later equal request. The
+key includes the identity, assignment and canonical members, so a different
+request cannot bypass the stored-content mismatch check. The same boundary
+serves response classification and empty-owner execution reconciliation.
+
+The lexical writer installs the shared native statement observer immediately
+after admission, before yielding to consumer work. Nested scopes share that
+observation and cannot reactivate a revoked writer. It retains no SQL text and
+changes no transaction or page boundary. Only the complete known literal-VALUES
+registration shapes preserve prior confirmations; UPSERT, expressions and
+unfamiliar insert suffixes invalidate them. Destructive component/link mutations
+invalidate them, including retirement and reconciliation reset. Only the closed set of trigger-free,
+foreign-key-free derived effect/queue tables preserves confirmations on other
+DML. Transaction/savepoint controls, DDL, unfamiliar statements and native
+connection-control changes disable reuse for that writer. Connection replacement,
+scope exit, commit and rollback never lend a fact to another transaction.
+Unknown injected connections retain the original SQL path. A mutation during
+registration cannot publish a confirmation from the prior observation.
+
+This reuse does not cover work queues, contribution replacement, diagnostic
+propagation, geometry reads or immutable snapshot validation. Those operations
+have different meanings or must observe the current mutable result. No new
+existence SELECT, whole-history prefetch, persisted flag or schema is introduced.
+The exact admitted DDL keeps the statement allowance valid; tests cover its
+trigger/FK assumptions and preserve the existing full-attribution oracle.
+
 Retiring a partition keeps its one-time snapshot work but removes its derived
 execution reverse index, so past sharing combinations do not accumulate in
 later diagnostic selection. Immutable snapshot heads and lineage are separate.

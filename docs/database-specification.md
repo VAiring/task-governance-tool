@@ -1015,6 +1015,13 @@ missing tracking require reestablishment, never reuse of an obsolete capture.
 Migration preserves numerical originals, existing continuations and immutable
 history; its new reconciliation epoch starts with an unestablished baseline.
 The existing deadline and rotating snapshot/file audit remain in force.
+After a complete derived-component registration, later equal requests in that
+same admitted numerical writer may omit duplicate existence checks and
+idempotent insertion attempts. The first content comparison and every required
+execution link remain mandatory. Destructive changes, rollback, transaction or
+connection replacement and scope exit invalidate reuse; failed or incomplete
+registrations cannot establish it. This adds no persisted state, source
+prefetch, changed queue semantics or cross-transaction validity claim.
 The four turn/effect stages use a first standalone unit followed by pages of at
 most 128 units, stopping optional starts after 250 ms or at the existing
 deadline's 50 ms commit margin. Uncommitted page results and queue consumption

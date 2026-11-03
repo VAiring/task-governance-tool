@@ -20,6 +20,7 @@ from task_governance_tool import debug_log, storage, tasks, viewer, reviews
 from task_governance_tool import viewer_maintenance as service
 from task_governance_tool import viewer_metadata_repository as metadata
 from task_governance_tool import viewer_projection_cache as cache
+from task_governance_tool import viewer_display_validation as display
 from task_governance_tool.viewer_display_validation import _bounded_text_predicate
 from task_governance_tool.session_identity import CallerIdentity
 
@@ -186,7 +187,13 @@ class ViewerIncrementalScaleTests(unittest.TestCase):
                     with mock.patch.object(service, "changed_tasks", side_effect=changes), \
                          mock.patch.object(service, "read_task_projections", side_effect=read), \
                          mock.patch.object(service, "load_candidate", side_effect=timed("cache_validate_ms", service.load_candidate)), \
+                         mock.patch.object(service, "encode_delta", side_effect=timed("merge_encode_ms", service.encode_delta)), \
+                         mock.patch.object(display, "validate_display_tasks", wraps=display.validate_display_tasks) as display_check, \
                          mock.patch.object(service, "render_viewer_html", side_effect=timed("full_html_ms", service.render_viewer_html)), \
+                         mock.patch.object(service, "replace_artifact", side_effect=timed("cache_replace_ms", service.replace_artifact)), \
+                         mock.patch.object(service, "accept_projection_cache", side_effect=timed("cache_accept_ms", service.accept_projection_cache)), \
+                         mock.patch.object(service, "write_viewer_html", side_effect=timed("html_write_ms", service.write_viewer_html)), \
+                         mock.patch.object(service, "accept_projection_html", side_effect=timed("html_accept_ms", service.accept_projection_html)), \
                          mock.patch.object(metadata, "_projection_writer", side_effect=transaction("writer_scope_ms", metadata._projection_writer)), \
                          mock.patch.object(service, "projection_snapshot", side_effect=transaction("capture_scope_ms", service.projection_snapshot)), \
                          debug_log.operation_scope(self.root, entrypoint=self.entrypoint,
@@ -197,6 +204,8 @@ class ViewerIncrementalScaleTests(unittest.TestCase):
                     sys.setprofile(previous)
                 stages["wall_ms"] = (time.perf_counter_ns() - started) / 1e6
                 self.assertEqual(result.code, "succeeded")
+                self.assertEqual([[row["task_id"] for row in call.args[0]]
+                                  for call in display_check.call_args_list], [[selected]])
                 self.assertEqual(dict(counts), dict(_history=1, validate_judgment_storage=1,
                                                   _read_review_evidence_with_materials=1))
                 self.assertTrue(any("SEARCH receipt" in plan for plan in plans), plans)

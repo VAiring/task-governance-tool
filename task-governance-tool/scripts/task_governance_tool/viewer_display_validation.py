@@ -33,8 +33,8 @@ class DisplayValidation:
 
     These sets retain references to already resident display strings. A bounded
     process memo also shares successful short-string privacy predicates. They
-    certify neither source rows nor another transaction/attempt; shape, field
-    limits, relationships and independent cache digests are always checked.
+    certify neither source rows nor another transaction/attempt. Full checks
+    apply to newly generated rows; durable cache reuse belongs to the codec.
     """
     def __init__(self):
         self._text = set()
@@ -215,14 +215,8 @@ def _size(value):
                           separators=(",", ":"), allow_nan=False).encode("utf-8"))
 
 
-def validate_display_tasks(tasks, *, project_id, validation=None):
-    from .tasks import VIEWER_TASK_FIELDS
-    if set(VIEWER_TASK_FIELDS) != set(_task_fields):
-        raise _bad()
-    check = _shape({**_task_fields, "events": _array(_shape(_event_fields), 10),
-                    "review_evidence": _shape(_review_fields),
-                    "completion_history": _shape(_history_fields)})
-    _array(check)(tasks, validation if validation is not None else DisplayValidation())
+def validate_display_collection(tasks, *, project_id):
+    """Cross-row invariants after merging already validated display rows."""
     identifiers = set()
     previous = None
     for task in tasks:
@@ -232,6 +226,18 @@ def validate_display_tasks(tasks, *, project_id, validation=None):
             raise _bad()
         identifiers.add(task["task_id"])
         previous = key
+
+
+def validate_display_tasks(tasks, *, project_id, validation=None):
+    from .tasks import VIEWER_TASK_FIELDS
+    if set(VIEWER_TASK_FIELDS) != set(_task_fields):
+        raise _bad()
+    check = _shape({**_task_fields, "events": _array(_shape(_event_fields), 10),
+                    "review_evidence": _shape(_review_fields),
+                    "completion_history": _shape(_history_fields)})
+    _array(check)(tasks, validation if validation is not None else DisplayValidation())
+    validate_display_collection(tasks, project_id=project_id)
+    for task in tasks:
         review = task["review_evidence"]
         if review["target"] != {"kind": task["review_target_kind"],
                                 "value": task["review_target_value"],

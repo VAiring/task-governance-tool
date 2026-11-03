@@ -43,7 +43,7 @@ def _database_identity(target):
 
 
 def _basis(connection, target, identity):
-    from .storage import current_schema_version, validate_utc_timestamp
+    from .storage import current_schema_version
     from .backup_metadata_repository import read_project_maintenance
     from .project_binding_repository import read_project_binding_state
     from .viewer_projection_repository import read_state
@@ -56,10 +56,8 @@ def _basis(connection, target, identity):
     viewer = read_viewer_maintenance(connection, target.project.project_id)
     if maintenance is None or viewer is None:
         raise StorageError("project_state_unreadable", "Viewer maintenance is unavailable")
-    enabled_at = connection.execute("SELECT enabled_at FROM project_maintenance WHERE project_id=?",
-                                    (target.project.project_id,)).fetchone()[0]
-    if enabled_at is not None:
-        validate_utc_timestamp(enabled_at, field="Viewer opt-in time")
+    # read_project_maintenance already validates the raw SQLite value's text
+    # storage class and timestamp in this same read transaction.
     return ProjectionBasis(identity, read_project_binding_state(connection),
                            read_state(connection, target.project.project_id), viewer, maintenance.enabled_at,
                            current_schema_version(connection))
@@ -157,8 +155,11 @@ def force_projection_rebuild(target, expected):
 
 def accept_projection_cache(target, expected, cache, observed):
     from .viewer_projection_cache import (
-        CACHE_FORMAT_VERSION, PROJECTION_VERSION, cache_output, require_same_artifact,
+        CACHE_FORMAT_VERSION, PROJECTION_VERSION, DisplayCache, cache_output, require_same_artifact,
     )
+    if (type(cache) is not DisplayCache or cache.header != expected.header()
+            or observed.sha256 != cache.sha256 or observed.identity.size != len(cache.data)):
+        raise ViewerBasisChanged()
     generation = expected.state.source_generation
     value = (generation, CACHE_FORMAT_VERSION, PROJECTION_VERSION, cache.sha256, len(cache.data))
     with _projection_writer(target, expected) as (connection, actual):

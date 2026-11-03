@@ -280,17 +280,39 @@ existing canonical-path hash. `tasks` is the complete deterministic ordered v4
 Task array including its current allow-listed events/review/history. Counts
 and project display name are assembled afresh from this array and current
 project metadata; generation/identity/header fields never enter the public v4
-snapshot. Exact nested keys, types, privacy and field capacities are validated
-from the display schema, without database joins or evidence parsing. Duplicate
-Task IDs and an incorrect sort order fail cache validation.
+snapshot. Cache format remains 1; projection version 2 identifies the current
+display schema and validation rules. Advance the projection version whenever
+incompatible display-validation rules change. New/changed rows receive full
+nested-key, type, privacy, field-capacity and within-Task relationship checks
+without database joins or evidence parsing. Duplicate Task IDs and an incorrect
+sort order fail collection validation.
 
-The whole file is bounded at 64 MiB before allocation/parse, and its canonical
-bytes and SHA-256 are compared to the DB cache tuple. Header identity, versions,
-generation and source schema must equal the admitted metadata/physical file.
-Noncanonical bytes are invalid. A cache digest proves only matching generated
+The whole file is bounded at 64 MiB before allocation/parse; a protected physical
+read hashes every byte and checks its length against the independently committed
+DB cache tuple. Header identity, versions, generation and source schema must
+equal the admitted metadata/physical file, with I <= C <= S. Exact matches under
+the current rule version reuse generation-time content and canonical-encoding
+validation, including in a cold process. They need not repeat deep checks or
+canonical re-encoding of unchanged rows on load. Without an admitted basis the
+codec performs full content/canonical validation; those bytes alone never grant
+delta reuse. Noncanonical bytes cannot match a legitimately accepted tuple.
+A cache digest proves only matching generated
 bytes, not freshness of arbitrary source files or protection against an attacker
 rewriting both DB and cache. No stamp, previous private transaction proof or
 caller-supplied validation flag substitutes for these checks.
+
+The codec alone constructs immutable cache objects from validated generation or
+an exact committed-byte match. Hash, header and bytes are bound together;
+decoded payload/header views are copies and cannot change the published content.
+Delta encoding rechecks the admitted tuple, validates the changed rows before
+mapping IDs, merges only with the immutable candidate, then checks global
+project/ID/order invariants and serializes/hashes the entire bounded result.
+Counts are recomputed from that result; no Task is truncated. Unchanged rows
+need no second deep check on encoding. Cache acceptance requires a codec object,
+the captured header and matching protected readback hash/length before its fresh
+short writer records the tuple. A mutable payload or caller label cannot certify
+unvalidated content. Full-file read/hash, JSON processing and full HTML rendering
+remain proportional to display size and are measured separately.
 
 `viewer_maintenance.py` retains the single zero-wait Viewer artifact lock for
 the following sequence, at most twice per opportunity:
@@ -310,8 +332,9 @@ the following sequence, at most twice per opportunity:
    is not replayed; a later opportunity reads its actual committed state.
    Perform this force invalidation once at attempt entry, never again during
    the one permitted follow-up capture.
-   When due, load/hash/validate any candidate cache under the artifact lock,
-   outside SQLite, before opening the capture snapshot below. Invalid candidate
+   When due, load/hash/bind any candidate cache against the just-admitted basis
+   under the artifact lock, outside SQLite, before the capture snapshot below.
+   This earlier binding is rechecked against that fresh snapshot. Invalid candidate
    bytes request a rebuild; they never authorize writes to an unsafe path.
 2. Pin regular DB identity before opening and again within one query-only
    snapshot. Admit schema/history/project/binding/policy and tracking metadata;
@@ -350,15 +373,17 @@ the following sequence, at most twice per opportunity:
    Text checks retain each source field's privacy policy, including the distinct
    title and manual-diagnostic quotation rules and stricter evidence fields.
    It shares exact-field/text privacy and timestamp predicates within a publication
-   attempt, including cache read and re-encoding. Successful pure privacy
+   attempt for new/changed rows or a full rebuild. Successful pure privacy
    checks additionally use a process-local LRU of at most 16,384 strings, each
    at most 1,000 characters, keyed by source field, exact text and predicate callable.
    The attempt-local privacy memo uses the same key, so approval in one field
    cannot certify identical text in another field.
    Rejected/private values, longer strings, DB admission and source-evidence
    results never enter that memo. It is not serialized; cold and warm process
-   costs remain distinct measurements. Field limits, shapes, ownership,
-   ordering, capacity and independent metadata/hash checks still run.
+   costs remain distinct measurements. New/changed rows retain all field limits,
+   shapes and ownership checks; unchanged cache rows reuse them only under the
+   committed-byte protocol above. Merge ordering/counts, total capacity and
+   independent metadata/hash checks still run.
    Source-validation material is reused only within its read snapshot; no
    database validator survives it. Unrelated ownership, raw-note and unregistered-control
    inventories are not a new prerequisite for a display projection.

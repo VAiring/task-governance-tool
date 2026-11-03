@@ -766,8 +766,8 @@
     },
     "viewer_metadata_repository.py": {
       "attributes": {
-        "execute": 12,
-        "fetchone": 2
+        "execute": 11,
+        "fetchone": 1
       },
       "kind": "observed_connection"
     },

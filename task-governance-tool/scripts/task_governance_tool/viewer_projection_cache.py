@@ -24,7 +24,9 @@ from .viewer import (
 )
 
 CACHE_FORMAT_VERSION = 1
-PROJECTION_VERSION = 1
+# Includes the display-validation rules. Any incompatible rule change must
+# advance this version before previously checked bytes can be reused.
+PROJECTION_VERSION = 2
 MAX_BYTES = 64 * 1024 * 1024
 HEADER_KEYS = frozenset({
     "cache_format_version", "projection_version", "project_id",
@@ -73,11 +75,23 @@ def cache_output(target) -> ViewerOutputTarget:
                               target.db_path, target.db_path.parent)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False, slots=True)
 class DisplayCache:
-    payload: dict
+    """Codec-owned immutable bytes; callers cannot supply a validation flag/hash.
+
+    Decoded views are disposable copies, never the publication authority.
+    Construction is private to the checked codec paths below.
+    """
     data: bytes
     sha256: str
+    _header_data: bytes
+
+    def __init__(self):
+        raise TypeError("Use the display cache codec")
+
+    @property
+    def payload(self):
+        return json.loads(self.data)
 
     @property
     def tasks(self):
@@ -85,7 +99,15 @@ class DisplayCache:
 
     @property
     def header(self):
-        return {key: self.payload[key] for key in HEADER_KEYS}
+        return json.loads(self._header_data)
+
+
+def _checked_cache(payload, data, digest):
+    result = object.__new__(DisplayCache)
+    object.__setattr__(result, "data", data)
+    object.__setattr__(result, "sha256", digest)
+    object.__setattr__(result, "_header_data", canonical_bytes({key: payload[key] for key in HEADER_KEYS}))
+    return result
 
 
 def _validate_header(payload):
@@ -118,13 +140,38 @@ def encode_cache(header: dict, tasks: list[dict], *, validation=None) -> Display
     payload = {**header, "tasks": tasks}
     _validate_header(payload)
     validate_display_tasks(tasks, project_id=header["project_id"], validation=validation)
+    return _encode_checked(payload)
+
+
+def _encode_checked(payload):
     data = canonical_bytes(payload)
     if not data or len(data) > MAX_BYTES:
         raise _invalid()
-    return DisplayCache(payload, data, hashlib.sha256(data).hexdigest())
+    return _checked_cache(payload, data, hashlib.sha256(data).hexdigest())
 
 
-def load_candidate(output: ViewerOutputTarget, *, validation=None) -> DisplayCache | None:
+def encode_delta(header: dict, changed: list[dict], candidate: DisplayCache, *, state,
+                 validation=None) -> DisplayCache:
+    """Merge changed rows only with bytes bound to an admitted DB cache tuple."""
+    from .viewer_display_validation import (
+        display_order, validate_display_collection, validate_display_tasks,
+    )
+    if not matches(candidate, header=header, state=state):
+        raise _invalid()
+    # Validate before constructing a map: duplicate changed IDs must not be
+    # silently collapsed. The source reader orders by ID, not display position.
+    validate_display_tasks(sorted(changed, key=display_order),
+                           project_id=header["project_id"], validation=validation)
+    merged = {task["task_id"]: task for task in candidate.tasks}
+    merged.update((task["task_id"], task) for task in changed)
+    ordered = sorted(merged.values(), key=display_order)
+    validate_display_collection(ordered, project_id=header["project_id"])
+    payload = {**header, "tasks": ordered}
+    _validate_header(payload)
+    return _encode_checked(payload)
+
+
+def load_candidate(output: ViewerOutputTarget, *, basis=None, validation=None) -> DisplayCache | None:
     """Invalid bytes rebuild; unsafe physical targets always fail closed."""
     if not artifact_present(output):
         return None
@@ -139,21 +186,30 @@ def load_candidate(output: ViewerOutputTarget, *, validation=None) -> DisplayCac
     try:
         payload = json.loads(data.decode("utf-8"), object_pairs_hook=_unique_object)
         _validate_header(payload)
-        from .viewer_display_validation import validate_display_tasks
-        validate_display_tasks(payload["tasks"], project_id=payload["project_id"], validation=validation)
-        if canonical_bytes(payload) != data:
-            return None
+        candidate = _checked_cache(payload, data, observed.sha256)
+        if basis is not None:
+            # Only the independently committed tuple proves that these exact
+            # bytes passed generation-time checks under the current rules.
+            # The coordinator rechecks this binding in its fresh source read.
+            if not matches(candidate, header=basis.header(), state=basis.state):
+                return None
+        else:
+            from .viewer_display_validation import validate_display_tasks
+            validate_display_tasks(payload["tasks"], project_id=payload["project_id"], validation=validation)
+            if canonical_bytes(payload) != data:
+                return None
     except (ValueError, TypeError, UnicodeError, RecursionError, ViewerError):
         return None
-    return DisplayCache(payload, data, observed.sha256)
+    return candidate
 
 
 def matches(candidate: DisplayCache | None, *, header: dict, state) -> bool:
-    if candidate is None or state.cache_generation is None:
+    if type(candidate) is not DisplayCache or state.cache_generation is None:
         return False
     expected = {**header, "applied_generation": state.cache_generation}
     return (candidate.header == expected
             and state.cache_generation >= state.invalidated_generation
+            and state.cache_generation <= state.source_generation
             and state.cache_format_version == CACHE_FORMAT_VERSION
             and state.projection_version == PROJECTION_VERSION
             and candidate.sha256 == state.cache_sha256

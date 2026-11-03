@@ -74,6 +74,142 @@ class ViewerIncrementalTests(unittest.TestCase):
               mock.patch.object(service, "read_task_projections", side_effect=AssertionError("history"))):
             self.assertEqual(self.publish().code, "current")
 
+    def test_committed_content_reuse_checks_only_changed_rows_at_each_scale(self):
+        from task_governance_tool import viewer_display_validation as validation
+        for total in (4, 40):
+            for index in range(len(self.ids()), total):
+                add_viewer_event(self.target, f"Unchanged display {index}")
+            self.assertEqual(self.publish(force=True).code, "succeeded")
+            selected = self.ids()[0]
+            self.edit(selected)
+            # The public result still equals the independently captured oracle;
+            # deep display-check work must not grow with unchanged Tasks.
+            with mock.patch.object(validation, "validate_display_tasks",
+                                   wraps=validation.validate_display_tasks) as check:
+                self.assertEqual(self.publish().code, "succeeded")
+            self.assertEqual([[row["task_id"] for row in call.args[0]]
+                              for call in check.call_args_list], [[selected]])
+            self.assert_full_parity()
+            self.target.resolved_viewer_path.unlink()
+            with mock.patch.object(validation, "validate_display_tasks",
+                                   wraps=validation.validate_display_tasks) as check:
+                self.assertEqual(self.publish().code, "succeeded")
+            self.assertEqual([len(call.args[0]) for call in check.call_args_list], [0])
+            with mock.patch.object(validation, "validate_display_tasks",
+                                   wraps=validation.validate_display_tasks) as check:
+                self.assertEqual(self.publish(force=True).code, "succeeded")
+            self.assertEqual([len(call.args[0]) for call in check.call_args_list], [total])
+
+    def test_reuse_requires_every_committed_identity_version_and_byte_field(self):
+        from dataclasses import replace
+        add_viewer_event(self.target, "Bound projection")
+        self.assertEqual(self.publish().code, "succeeded")
+        basis = metadata.read_projection_basis(self.target)
+        output = cache.cache_output(self.target)
+        self.assertIsNotNone(cache.load_candidate(output, basis=basis))
+        for field, value in (
+            ("cache_sha256", "f" * 64), ("cache_bytes", basis.state.cache_bytes + 1),
+            ("cache_format_version", cache.CACHE_FORMAT_VERSION + 1),
+            ("projection_version", cache.PROJECTION_VERSION - 1),
+            ("cache_generation", None), ("cache_generation", basis.state.cache_generation + 1),
+            ("invalidated_generation", basis.state.cache_generation + 1),
+            ("database_epoch", "f" * 32),
+        ):
+            with self.subTest(field=field, value=value):
+                bad = replace(basis, state=replace(basis.state, **{field: value}))
+                self.assertIsNone(cache.load_candidate(output, basis=bad))
+        for bad in (replace(basis, identity=(basis.identity[0], basis.identity[1] + 1)),
+                    replace(basis, source_schema_version=36),
+                    replace(basis, binding=replace(basis.binding, project_id="foreign")),
+                    replace(basis, binding=replace(basis.binding, binding_generation=2)),
+                    replace(basis, binding=replace(basis.binding, canonical_path_hash="f" * 64))):
+            with self.subTest(basis=bad):
+                self.assertIsNone(cache.load_candidate(output, basis=bad))
+
+    def test_validation_rule_upgrade_rebuilds_and_invalidates_old_publication(self):
+        add_viewer_event(self.target, "Rule upgrade")
+        self.assertEqual(self.publish().code, "succeeded")
+        old = self.candidate()
+        upgraded = cache.PROJECTION_VERSION + 1
+        with mock.patch.object(cache, "PROJECTION_VERSION", upgraded), \
+             mock.patch.object(service, "PROJECTION_VERSION", upgraded), \
+             mock.patch.object(service, "read_task_projections", wraps=service.read_task_projections) as reader:
+            self.assertEqual(self.publish().code, "succeeded")
+            self.assertIsNone(reader.call_args.kwargs["task_ids"])
+            self.assertNotEqual(self.candidate().header["projection_version"], old.header["projection_version"])
+            self.assert_full_parity()
+
+    def test_decoded_mutation_or_caller_certificate_cannot_certify_new_bytes(self):
+        from dataclasses import FrozenInstanceError
+        from types import SimpleNamespace
+        add_viewer_event(self.target, "Immutable projection")
+        self.assertEqual(self.publish().code, "succeeded")
+        basis = metadata.read_projection_basis(self.target)
+        candidate = cache.load_candidate(cache.cache_output(self.target), basis=basis)
+        original = candidate.data
+        candidate.payload["tasks"][0]["title"] = "token=synthetic-private-value"
+        candidate.header["database_file_identity"]["inode"] = -1
+        self.assertEqual(candidate.data, original)
+        self.assertNotEqual(candidate.tasks[0]["title"], "token=synthetic-private-value")
+        with self.assertRaises(FrozenInstanceError):
+            candidate.data = b"{}"
+        with self.assertRaises(TypeError):
+            cache.DisplayCache()
+        fake = SimpleNamespace(data=b"{}", sha256=candidate.sha256,
+                               header=candidate.header, tasks=candidate.tasks, validated=True)
+        self.assertFalse(cache.matches(fake, header=basis.header(), state=basis.state))
+        with self.assertRaises(viewer.ViewerError):
+            cache.encode_delta(basis.header(), [], fake, state=basis.state)
+        observed = cache.checked_artifact(cache.cache_output(self.target), candidate.data)
+        with self.assertRaises(metadata.ViewerBasisChanged), \
+             mock.patch.object(metadata, "_projection_writer", side_effect=AssertionError("writer entered")):
+            metadata.accept_projection_cache(self.target, basis, fake, observed)
+        from dataclasses import replace
+        with self.assertRaises(metadata.ViewerBasisChanged):
+            metadata.accept_projection_cache(self.target, basis, candidate,
+                                             replace(observed, sha256="f" * 64))
+
+    def test_delta_never_waives_changed_shape_privacy_relations_or_duplicate_ids(self):
+        add_viewer_event(self.target, "Changed projection")
+        self.assertEqual(self.publish().code, "succeeded")
+        basis = metadata.read_projection_basis(self.target)
+        candidate = cache.load_candidate(cache.cache_output(self.target), basis=basis)
+        for mutate in (
+            lambda rows: rows[0].update(title="token=synthetic-private-value"),
+            lambda rows: rows[0].update(extra="unknown"),
+            lambda rows: rows[0].update(project_id="foreign"),
+            lambda rows: rows[0]["review_evidence"]["target"].update(generation=99),
+            lambda rows: rows[0]["completion_history"].update(returned_count=1),
+            lambda rows: rows.append(deepcopy(rows[0])),
+        ):
+            with self.subTest(case=mutate):
+                changed = candidate.tasks
+                mutate(changed)
+                with self.assertRaises(viewer.ViewerError):
+                    cache.encode_delta(basis.header(), changed, candidate, state=basis.state)
+
+    def test_fresh_capture_rechecks_binding_after_candidate_load(self):
+        from task_governance_tool.viewer_projection_repository import invalidate_locked
+        add_viewer_event(self.target, "Captured projection")
+        self.assertEqual(self.publish().code, "succeeded")
+        basis = metadata.read_projection_basis(self.target)
+        candidate = cache.load_candidate(cache.cache_output(self.target), basis=basis)
+        with closing(storage.connect_initialized(self.target, operation_local=True)) as c, c:
+            storage.begin_initialized_write(c, self.target, operation_local=True)
+            invalidate_locked(c, self.target.project.project_id, rotate_epoch=True)
+        with mock.patch.object(service, "read_task_projections", wraps=service.read_task_projections) as reader:
+            service._capture(self.target, candidate, FIXED_TIME)
+        self.assertIsNone(reader.call_args.kwargs["task_ids"])
+
+    def test_basis_does_not_select_opt_in_again_after_validated_maintenance_read(self):
+        with metadata.projection_snapshot(self.target) as (connection, basis):
+            statements = []
+            connection.set_trace_callback(statements.append)
+            self.assertEqual(metadata._basis(connection, self.target, basis.identity), basis)
+            connection.set_trace_callback(None)
+        reads = [s for s in statements if "from project_maintenance" in " ".join(s.lower().split())]
+        self.assertEqual(len(reads), 1, reads)
+
     def test_field_specific_titles_and_manual_diagnostics_match_full_capture(self):
         add_viewer_event(self.target, "Initial title")
         self.assertEqual(self.publish().code, "succeeded")
@@ -511,7 +647,7 @@ class ViewerIncrementalTests(unittest.TestCase):
             lambda p: p["database_file_identity"].update(inode=p["database_file_identity"]["inode"] + 1),
             lambda p: p.update(applied_generation=p["applied_generation"] + 1),
             lambda p: p["tasks"][0].update(title="Unaccepted changed display"),
-            lambda p: p.update(projection_version=2),
+            lambda p: p.update(projection_version=cache.PROJECTION_VERSION + 1),
         ]
         for mutate in mutations:
             with self.subTest(mutation=mutations.index(mutate)):

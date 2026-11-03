@@ -159,6 +159,16 @@ notes, ownership sessions or logs. Cache format/projection version, project,
 binding, database incarnation and physical identity, application generation,
 structure, byte capacity and SHA-256 must match the independently saved
 metadata before reuse. Size or mtime alone is never integrity evidence.
+Generation validates the complete shape, privacy, field limits and within-Task
+relationships of every new display row. For unchanged rows, the independently
+committed byte hash/length and current projection version may certify those
+checks across processes. The projection version includes the display-validation
+rules; incompatible rule changes invalidate prior results. Reuse still requires
+all identity/generation comparisons and fresh source/publication admission.
+Changed rows receive full display validation; merging retains project/ID,
+ordering, counts and total byte-capacity checks. This is not a caller-supplied
+"validated" flag, a general source-validation cache, or a relaxation of the
+changed Task's privacy and evidence checks.
 The [format and publication protocol](viewer-design.md#incremental-cache-and-publication)
 defines exact comparisons and the distinction between applied and published
 generations. The cache and HTML each have a 64 MiB byte cap; exceeding either

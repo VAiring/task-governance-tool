@@ -21,7 +21,7 @@ from .viewer_metadata_repository import (
 )
 from .viewer_projection_cache import (
     CACHE_FORMAT_VERSION, PROJECTION_VERSION, artifact_present, cache_output,
-    checked_artifact, encode_cache, load_candidate, matches, replace_artifact,
+    checked_artifact, encode_cache, encode_delta, load_candidate, matches, replace_artifact,
 )
 from .viewer_projection_repository import changed_tasks
 from .viewer_task_projection_repository import read_task_projections
@@ -57,10 +57,9 @@ def _capture(target, candidate, generated_at, *, validation=None):
             connection, target.project.project_id, after=basis.state.cache_generation,
             through=basis.state.source_generation)) if usable else None)
         changed = read_task_projections(connection, project_id=target.project.project_id, task_ids=task_ids)
-        tasks = {task["task_id"]: task for task in candidate.tasks} if usable else {}
-        tasks.update((task["task_id"], task) for task in changed)
-    ordered = sorted(tasks.values(), key=display_order)
-    cache = encode_cache(basis.header(), ordered, validation=validation)
+    cache = (encode_delta(basis.header(), changed, candidate, state=basis.state, validation=validation)
+             if usable else encode_cache(basis.header(), sorted(changed, key=display_order), validation=validation))
+    ordered = cache.tasks
     counts = {"total": len(ordered), **{status: sum(task["status"] == status for task in ordered)
                                       for status in STATUSES}}
     snapshot = ViewerSnapshotResult({
@@ -105,7 +104,7 @@ def _refresh(target, *, force, observed_at, skill_root):
                         return ViewerRefreshResult("current", 0)
                     for attempt in range(MAX_RENDERS_PER_ATTEMPT):
                         validation = DisplayValidation()
-                        candidate = load_candidate(cache_target, validation=validation)
+                        candidate = load_candidate(cache_target, basis=observed, validation=validation)
                         basis, cache, snapshot = _capture(target, candidate, observed_at, validation=validation)
                         observed = basis
                         if snapshot is None:

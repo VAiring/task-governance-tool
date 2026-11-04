@@ -1,5 +1,6 @@
 import json
 from tests.registration_output_support import registration_task
+from tests.current_database_fixture_support import initialize_current_test_database
 import sqlite3
 import subprocess
 import sys
@@ -25,7 +26,7 @@ def run_taskgov(*args):
 
 
 def init_db(db, repo):
-    return initialize_taskgov_internal(repo=repo, db=db)
+    return initialize_current_test_database(repo=repo, db=db)
 
 
 def add_task(db, repo, title, *extra):
@@ -643,7 +644,7 @@ class TaskEditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_taskgov_internal(repo=repo, db=db)
             with closing(sqlite3.connect(db)) as connection:
                 remove_v10_maintenance_for_test(connection)
                 connection.execute("DELETE FROM schema_migrations WHERE version = 9")
@@ -687,6 +688,7 @@ class TaskEditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
+            initialize_taskgov_internal(repo=repo, db=db)
             first = add_task(
                 db,
                 repo,
@@ -761,6 +763,7 @@ class TaskEditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
+            initialize_taskgov_internal(repo=repo, db=db)
             add_task(
                 db, repo, "Canonical", "--kind", "sequential",
                 "--lane", "CORE", "--order", "1",
@@ -1033,6 +1036,7 @@ class TaskEditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
+            initialize_taskgov_internal(repo=repo, db=db)
             task = add_task(db, repo, "Safe reopen")
             edit_task(
                 db,

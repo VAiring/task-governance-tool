@@ -1,4 +1,9 @@
 import json
+import re
+import sqlite3
+import time
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 import os
 import subprocess
 import sys
@@ -10,6 +15,8 @@ from pathlib import Path
 from tests.registration_output_support import registration_body
 
 from tests.review_test_helpers import seed_review_evidence
+from tests.current_database_fixture_support import EmptyDatabaseTemplate
+from task_governance_tool import storage
 from tests.m14_test_support import (
     initialize_taskgov_internal,
     run_taskgov_internal,
@@ -69,6 +76,102 @@ def add_fixture_task(db, repo, task):
 
 
 class TaskStatusFixtureTests(unittest.TestCase):
+    def test_current_template_matches_real_initialization(self):
+        def snapshot(path):
+            with closing(storage.connect(path)) as connection:
+                schema = [tuple(row) for row in connection.execute(
+                    "SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name")]
+                rows = {}
+                for name, in connection.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"):
+                    # Names come only from the real product's schema inventory.
+                    cursor = connection.execute('SELECT * FROM "' + name.replace('"', '""') + '"')
+                    columns = [column[0] for column in cursor.description]
+                    values = []
+                    for row in cursor:
+                        normalized = []
+                        for column, value in zip(columns, row):
+                            if value is not None and column == "database_epoch":
+                                self.assertRegex(value, r"^[0-9a-f]{32}$")
+                                value = "<epoch>"
+                            elif isinstance(value, str) and re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", value):
+                                storage.validate_utc_timestamp(value, field=column)
+                                value = "<timestamp>"
+                            normalized.append(value)
+                        values.append(tuple(normalized))
+                    rows[name] = values
+                return schema, rows, connection.execute("PRAGMA user_version").fetchone()[0]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            real, copied = root / "real.sqlite", root / "copy.sqlite"
+            before = initialize_taskgov_internal(repo=root / "repo", db=real)
+            after = EmptyDatabaseTemplate().initialize(repo=root / "repo", db=copied)
+            self.assertEqual(after, before)
+            self.assertEqual(snapshot(copied), snapshot(real))
+
+    def test_current_template_parallel_copies_are_independent_and_migrate_once(self):
+        template = EmptyDatabaseTemplate()
+        original = storage.apply_migrations
+        full_migrations = []
+        def observe(connection, **kwargs):
+            if storage.current_schema_version(connection) == 0:
+                full_migrations.append(1)
+            return original(connection, **kwargs)
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(storage, "apply_migrations", side_effect=observe):
+            root = Path(tmp)
+            def prepare(index):
+                db = root / str(index) / "case.sqlite"
+                result = template.initialize(repo=root / str(index) / "repo", db=db)
+                with closing(storage.connect(db)) as connection:
+                    self.assertEqual(connection.execute("SELECT COUNT(*) FROM tasks").fetchone()[0], 0)
+                    connection.execute("CREATE TABLE case_sentinel(value INTEGER)")
+                    connection.execute("INSERT INTO case_sentinel VALUES (?)", (index,))
+                    connection.commit()
+                return db, result["project_id"]
+            with ThreadPoolExecutor(max_workers=3) as pool:
+                results = list(pool.map(prepare, (2, 0, 1)))
+            self.assertEqual(full_migrations, [1])
+            self.assertEqual(len({project for _, project in results}), 3)
+            for index, (db, _) in zip((2, 0, 1), results):
+                with closing(storage.connect(db)) as connection:
+                    self.assertEqual(connection.execute("SELECT value FROM case_sentinel").fetchall()[0][0], index)
+            final = root / "final.sqlite"
+            template.initialize(repo=root / "final", db=final)
+            with closing(storage.connect(final)) as connection:
+                self.assertIsNone(connection.execute("SELECT name FROM sqlite_master WHERE name='case_sentinel'").fetchone())
+            unchanged = final.read_bytes()
+            with self.assertRaises(FileExistsError):
+                template.initialize(repo=root / "other", db=final)
+            self.assertEqual(final.read_bytes(), unchanged)
+
+    def test_current_template_preparation_cost_includes_image_generation(self):
+        from tests.m14_test_support import run_taskgov_internal
+        measurements = []
+        for copied in (False, True, True, False):
+            template = EmptyDatabaseTemplate()
+            prepare_times, operation_times, migrations = [], [], []
+            original = storage.apply_migrations
+            def observe(connection, **kwargs):
+                if storage.current_schema_version(connection) == 0:
+                    migrations.append(1)
+                return original(connection, **kwargs)
+            with tempfile.TemporaryDirectory() as tmp, mock.patch.object(storage, "apply_migrations", side_effect=observe):
+                for index in range(4):
+                    root = Path(tmp) / str(index)
+                    db, repo = root / "case.sqlite", root / "repo"
+                    started = time.perf_counter()
+                    initialize = template.initialize if copied else initialize_taskgov_internal
+                    initialize(repo=repo, db=db)
+                    prepare_times.append(time.perf_counter() - started)
+                    started = time.perf_counter()
+                    result = run_taskgov_internal("task", "add", "--title", "Same measured operation",
+                        "--repo", str(repo), "--db", str(db), "--json", maintenance_enabled=False)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    operation_times.append(time.perf_counter() - started)
+            measurements.append({"copied": copied, "preparation_seconds": prepare_times,
+                "operation_seconds": operation_times, "full_migrations": len(migrations)})
+        self.assertEqual([row["full_migrations"] for row in measurements], [4, 1, 1, 4])
+        print("CURRENT_DB_FIXTURE " + json.dumps(measurements, sort_keys=True))
+
     def test_fixture_can_seed_temp_database_through_task_cli(self):
         fixture = load_fixture()
         with tempfile.TemporaryDirectory() as tmp:

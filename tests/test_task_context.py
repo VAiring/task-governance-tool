@@ -11,6 +11,7 @@ from contextlib import closing
 from pathlib import Path
 from unittest import mock
 from tests.registration_output_support import registration_body
+from tests.current_database_fixture_support import initialize_current_test_database
 
 from tests.m14_test_support import (
     file_snapshot,
@@ -113,7 +114,7 @@ class TaskContextTests(unittest.TestCase):
         self.repo = self.root / "repo"
         self.repo.mkdir()
         self.db = self.root / "taskgov.sqlite"
-        initialize_taskgov_internal(repo=self.repo, db=self.db)
+        initialize_current_test_database(repo=self.repo, db=self.db)
 
     def success(self, *arguments):
         result = run(self.db, self.repo, *arguments)

@@ -1309,6 +1309,16 @@ a real consuming project or Git state. Tests cover:
   legacy upgrade/paired rollback, exact workflow identity, and sanitized
   release evidence.
 
+Ordinary Task context, edit and show tests
+opt into `tests/current_database_fixture_support.py` when current schema is
+only a prerequisite. It generates a project-free image through real migrations
+once per test process, keeps only immutable bytes, and initializes each private
+copy's identity and defaults through production initialization. Setup and
+migration fixtures and explicit corruption/rollback cases retain real creation.
+The fixture tests compare schema, indexes, migration records and seeded rows,
+exercise concurrent copy isolation, and measure preparation separately from
+the feature operation, including cold image creation.
+
 Review-answer and continuation tests share
 `tests/review_answer_fixture_support.py`: callers select the schema and optional
 Contract explicitly. Its context manager owns isolated state, real predecessor

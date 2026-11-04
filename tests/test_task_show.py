@@ -1,5 +1,6 @@
 import json
 from tests.registration_output_support import registration_task
+from tests.current_database_fixture_support import initialize_current_test_database
 import sqlite3
 import subprocess
 import sys
@@ -29,7 +30,7 @@ def run_taskgov(*args):
 
 
 def init_db(db, repo):
-    return initialize_taskgov_internal(repo=repo, db=db)
+    return initialize_current_test_database(repo=repo, db=db)
 
 
 def add_task(db, repo, title, *extra):

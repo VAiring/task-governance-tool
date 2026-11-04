@@ -77,6 +77,14 @@ Contract revision, target generation, proposed evidence kind, and fixed next
 action. Marker `0` retains those two check reads and the manual write path;
 only live marker `2` adds the Runner selection and selected-basis recapture.
 
+Check orchestration classifies both preflight observations before merging
+their readiness results. A non-readiness error is raised in observation order,
+even when another observation supplied a blocker or a changed semantic token.
+The post-Runner recapture applies the same precedence. Only after command
+errors are excluded does drift yield `completion_check_stale`; an unchanged
+basis retains the observed readiness code. Connections and capture exceptions
+propagate normally without retry or an extra validation pass.
+
 All completion connection phases pass the completing Task ID to the storage
 layer's [scoped review admission](database-design.md#conditional-review-continuation-storage),
 including the writer opened by compatibility edit-to-done. The locked edit

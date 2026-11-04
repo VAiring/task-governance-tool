@@ -3550,6 +3550,12 @@ order. Allowed readiness codes are `invalid_status_transition`,
 not-found, project/schema/journal/busy/storage/internal failures remain command
 errors.
 
+Both the ordinary second read and the post-Runner read preserve command
+errors before considering basis drift or readiness blockers. When multiple
+observed errors include a command error, the first command error is retained.
+With no command error, drift takes precedence over a readiness blocker.
+An unchanged post-Runner basis returns its actual allowed blocker.
+
 Check text is exactly three LF-terminated lines:
 `Task <task_id>: ready|not ready`,
 `Blocking: none|<comma-separated codes>`, and

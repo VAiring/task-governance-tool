@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from contextlib import closing
 from pathlib import Path
 from unittest import mock
@@ -1225,6 +1226,94 @@ class TaskCompleteCliTests(unittest.TestCase):
                 max(row_count for _, row_count in normalized_observations),
                 10,
             )
+
+
+class CompletionCheckErrorPriorityTests(unittest.TestCase):
+    def test_public_check_preserves_command_error_with_drift_in_json_and_text(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db, repo = Path(tmp) / "taskgov.sqlite", Path(tmp) / "repo"
+            init_db(db, repo)
+            task = add_task(db, repo, "Error priority", "--status", "in_progress")
+            seed_review_evidence(db, task["task_id"])
+            capture = completion_workflow._capture_preselector_basis
+            for json_mode in (False, True):
+                calls = 0
+                def reread(*args, **kwargs):
+                    nonlocal calls
+                    basis, error = capture(*args, **kwargs)
+                    calls += 1
+                    if calls == 2:
+                        basis = completion_workflow.replace(basis, semantic_token="changed")
+                        error = task_service.TaskRepositoryError("internal_error", "bounded failure")
+                    return basis, error
+                before = db.read_bytes()
+                with mock.patch.object(completion_workflow, "_capture_preselector_basis", side_effect=reread):
+                    result = run_taskgov(*complete_args(db, repo, task["task_id"], "--check",
+                        "--read-only", *(("--json",) if json_mode else ())))
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(db.read_bytes(), before)
+                if json_mode:
+                    payload = json.loads(result.stdout)
+                    self.assertFalse(payload["ok"])
+                    self.assertEqual(payload["errors"][0]["code"], "internal_error")
+                else:
+                    self.assertEqual(result.stdout + result.stderr, "bounded failure\n")
+
+    def check(self, *, runner=False, drift=False, first_error=None, error=None):
+        basis = SimpleNamespace(semantic_token="first", ownership=None,
+                                task={"review_target_runner_basis_version": 2 if runner else 0})
+        later = SimpleNamespace(semantic_token="changed" if drift else "first",
+                                ownership=None, task=basis.task)
+        request = completion_workflow.CompletionRequest("tg_task_priority", True, True)
+        plan = task_service.CompletionPlan(request, basis,
+            SimpleNamespace(completion_evidence_revision=""))
+        reads = [(basis, first_error), (later, error)]
+        if runner:
+            reads = [(basis, None), (basis, None), (later, error)]
+        with (
+            mock.patch.object(completion_workflow, "connect_initialized_readonly") as reader,
+            mock.patch.object(completion_workflow, "connect_initialized", side_effect=AssertionError("read-only")),
+            mock.patch.object(completion_workflow, "_capture_preselector_basis", side_effect=reads),
+            mock.patch.object(completion_workflow, "prepare_request_against_basis", return_value=plan),
+            mock.patch.object(completion_workflow, "_capture_selected_completion_basis", return_value=later),
+            mock.patch.object(completion_workflow, "validate_completion_plan_basis"),
+        ):
+            result = completion_workflow.check_completion_request(mock.Mock(), request,
+                runner_selector=mock.Mock(return_value=None))
+            self.assertEqual(reader.call_count, 3 if runner else 2)
+            return result
+
+    def test_command_errors_win_over_drift_and_earlier_blocker_in_both_rereads(self):
+        for runner in (False, True):
+            for drift in (False, True):
+                for code in ("invalid_argument", "privacy_sensitive_input", "not_found",
+                             "project_state_unreadable", "schema_version_unsupported",
+                             "database_journal_unavailable", "database_busy", "storage_error", "internal_error"):
+                    error = task_service.TaskRepositoryError(code, "bounded failure")
+                    with self.subTest(runner=runner, drift=drift, code=code):
+                        with self.assertRaises(task_service.TaskRepositoryError) as raised:
+                            self.check(runner=runner, drift=drift, error=error,
+                                first_error=task_service.TaskRepositoryError("review_required", "blocker"))
+                        self.assertIs(raised.exception, error)
+
+    def test_ready_drift_and_allowed_blockers_in_both_rereads(self):
+        for runner in (False, True):
+            for drift in (False, True):
+                for code in (None, "review_required", "task_ownership_changed"):
+                    with self.subTest(runner=runner, drift=drift, code=code):
+                        error = None if code is None else task_service.TaskRepositoryError(code, "blocker")
+                        result = self.check(runner=runner, drift=drift, error=error)
+                        self.assertEqual(result.blocking_code, "completion_check_stale" if drift else code)
+
+    def test_first_command_error_is_preserved_against_later_error_or_drift(self):
+        original = task_service.TaskRepositoryError("internal_error", "original failure")
+        for later in (None, task_service.TaskRepositoryError("review_required", "blocker"),
+                      task_service.TaskRepositoryError("not_found", "later failure")):
+            for drift in (False, True):
+                with self.subTest(later=later, drift=drift):
+                    with self.assertRaises(task_service.TaskRepositoryError) as raised:
+                        self.check(first_error=original, error=later, drift=drift)
+                    self.assertIs(raised.exception, original)
 
 
 if __name__ == "__main__":

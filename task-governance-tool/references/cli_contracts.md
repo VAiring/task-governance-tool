@@ -1540,6 +1540,12 @@ or contains the first write-path blocking code. A changed basis during Git
 observation returns `completion_check_stale`. A successful check stores no
 token and never authorizes the later write.
 
+Command errors take precedence over drift and readiness blockers in both
+ordinary and post-Runner rereads. Parse/privacy, not-found and
+project/schema/journal/busy/storage/internal failures retain their command-error
+result. Without a command error, drift wins over a blocker; an unchanged basis
+retains the first applicable readiness code.
+
 Write success emits `command=task.complete` and data keys `task`,
 `changed_fields`, `event`, and `usage={status:pending,coverage:registered_only}`.
 Numerical collection/append is separate; unknown or missing usage is not a

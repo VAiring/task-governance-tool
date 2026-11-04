@@ -201,6 +201,11 @@ def check_completion_request(
             )
         )
     second_basis = second_preselector_basis
+    # A command failure cannot become readiness merely because the basis moved,
+    # or because an earlier read already supplied a readiness blocker.
+    for error in (preflight_error, second_preflight_error):
+        if error is not None and error.code not in COMPLETION_BLOCKING_CODES:
+            raise error
     if preflight_error is None and second_preflight_error is not None:
         preflight_error = second_preflight_error
 
@@ -264,13 +269,23 @@ def check_completion_request(
                 final_basis = final_preselector_basis
         if (
             final_preflight_error is not None
-            or final_preselector_basis.semantic_token
+            and final_preflight_error.code not in COMPLETION_BLOCKING_CODES
+        ):
+            raise final_preflight_error
+        if (
+            final_preselector_basis.semantic_token
             != second_preselector_basis.semantic_token
         ):
             return CompletionCheckOutcome(
                 basis=final_basis,
                 plan=plan,
                 blocking_code="completion_check_stale",
+            )
+        if final_preflight_error is not None:
+            return CompletionCheckOutcome(
+                basis=final_basis,
+                plan=plan,
+                blocking_code=final_preflight_error.code,
             )
 
     plan = replace(plan, basis=final_basis, finalization_basis=finalization_basis)

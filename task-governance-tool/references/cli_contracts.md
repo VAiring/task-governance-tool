@@ -3151,11 +3151,17 @@ Output waits until the operation exits and all observed SQLite connections
 close. Missing output can mean disabled/invalid opt-in, capacity, contention,
 unclosed connections, crashes or sink failure; it does not establish success.
 
-Limits are 256 events and 512 KiB buffered per operation, 16 KiB per event,
-10 MiB per daily file, 30 daily files, and 100 MiB total. A bounded inventory
-and zero-wait lock protect append. There is no deletion or rotation; explicit
-local cleanup is needed at capacity. Keep logs out of source and release
-artifacts and obtain authority before sharing them.
+Buffer capacity, daily-file limits and date retention follow the repository's
+current logging owners, `docs/specification.md#common-debug-logger` and
+`docs/logger-design.md#daily-files`. A zero-wait lock protects append and
+bounded cleanup of expired dates. Only strictly named physical single-link
+logs are eligible for cleanup after a complete bounded directory inventory;
+markers, locks, links, unrelated files and archived subdirectories are preserved.
+OFF, read-only and failed admission perform no cleanup. Reaching daily capacity
+creates no additional same-day generation. Late events cannot recreate expired
+dates or displace newer logs. Capacity, cleanup failure or contention drops
+diagnostics while preserving the primary result. Keep logs out of source and
+release artifacts and obtain authority before sharing them.
 
 SQLite-only diagnosis remains available via
 `<project>/.taskgov/diagnostics/sqlite/enabled` containing exactly

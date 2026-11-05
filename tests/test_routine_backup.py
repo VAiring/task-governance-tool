@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
+
+from tests.current_database_fixture_support import initialize_feature_test_target
+
 import tempfile
 import unittest
 from contextlib import closing
@@ -52,13 +56,7 @@ def metadata(index: int, minute: int, retention: int) -> MigrationBackupMetadata
     )
 
 
-def make_target(
-    root: Path,
-    *,
-    enabled: bool = True,
-    interval: int = 30,
-    generations: int = 3,
-):
+def make_target(root: Path, *, enabled: bool=True, interval: int=30, generations: int=3, real_initialization=True):
     repo = root / "project"
     repo.mkdir(parents=True)
     target = resolve_database_target(
@@ -66,7 +64,7 @@ def make_target(
         db=root / "state" / "taskgov.sqlite",
         script_path=SCRIPT_PATH,
     )
-    initialize_database(target)
+    initialize_feature_test_target(target, real_initialization=real_initialization)
     if enabled:
         configure_project_maintenance(
             target,
@@ -84,7 +82,7 @@ def repository(target):
 class RoutineBackupTests(unittest.TestCase):
     def test_copy_reuses_only_local_successful_privacy_checks_and_rechecks_drift(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp))
+            target = make_target(Path(tmp), real_initialization=not uses_current_database_fixture(self))
             title = "Backup privacy cache task"
             description = "Backup privacy cache description"
             with closing(connect_initialized(target)) as connection:
@@ -114,7 +112,7 @@ class RoutineBackupTests(unittest.TestCase):
             self.assertEqual(observed.count(("description", description)), 1)
 
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp))
+            target = make_target(Path(tmp), real_initialization=not uses_current_database_fixture(self))
             with closing(connect_initialized(target)) as connection:
                 task = add_task(
                     connection,
@@ -172,9 +170,10 @@ class RoutineBackupTests(unittest.TestCase):
             )
             self.assertEqual(discover_managed_backup_metadata(target), ())
 
+    @ordinary_current_database
     def test_routine_reuses_artifact_proofs_and_clears_copy_privacy_cache(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp))
+            target = make_target(Path(tmp), real_initialization=not uses_current_database_fixture(self))
             title = "Routine privacy seed task"
             description = "Routine privacy seed description"
             with closing(connect_initialized(target)) as connection:
@@ -271,9 +270,10 @@ class RoutineBackupTests(unittest.TestCase):
             self.assertIsNot(root_caches[0], root_caches[1])
             self.assertTrue(all(cache == set() for cache in root_caches))
 
+    @ordinary_current_database
     def test_artifact_proofs_do_not_require_source_privacy_cache(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp))
+            target = make_target(Path(tmp), real_initialization=not uses_current_database_fixture(self))
             for item in (metadata(1, 0, 3), metadata(2, 1, 3)):
                 backup_service._copy(target, item)
                 record_managed_backup(target, item)
@@ -287,7 +287,7 @@ class RoutineBackupTests(unittest.TestCase):
 
     def test_post_reconcile_rejects_content_drift_before_decoding_private_values(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp))
+            target = make_target(Path(tmp), real_initialization=not uses_current_database_fixture(self))
             with closing(connect_initialized(target)) as connection:
                 task = add_task(
                     connection,
@@ -366,7 +366,7 @@ class RoutineBackupTests(unittest.TestCase):
 
     def test_routine_clears_copy_cache_when_generation_record_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp))
+            target = make_target(Path(tmp), real_initialization=not uses_current_database_fixture(self))
             real_copy = backup_service._copy
             root_caches = []
 
@@ -395,10 +395,11 @@ class RoutineBackupTests(unittest.TestCase):
             self.assertEqual(len(root_caches), 1)
             self.assertEqual(root_caches[0], set())
 
+    @ordinary_current_database
     def test_opt_in_and_exact_due_offsets_attempt_only_zero_thirty_sixty(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            disabled = make_target(root / "disabled", enabled=False)
+            disabled = make_target(root / "disabled", enabled=False, real_initialization=not uses_current_database_fixture(self))
 
             not_opted_in = run_routine_backup(
                 disabled,
@@ -410,7 +411,7 @@ class RoutineBackupTests(unittest.TestCase):
             self.assertEqual(discover_managed_backup_metadata(disabled), ())
 
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp))
+            target = make_target(Path(tmp), real_initialization=not uses_current_database_fixture(self))
             observed = []
             real_copy = backup_service._copy
 
@@ -448,9 +449,10 @@ class RoutineBackupTests(unittest.TestCase):
             self.assertEqual(len(repository(target).generations), 3)
             self.assertEqual(len(discover_managed_backup_metadata(target)), 3)
 
+    @ordinary_current_database
     def test_rotation_and_reduced_policy_apply_only_after_next_success(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp), generations=3)
+            target = make_target(Path(tmp), generations=3, real_initialization=not uses_current_database_fixture(self))
             for minute in (0, 30, 60):
                 result = run_routine_backup(target, observed_at=timestamp(minute))
                 self.assertEqual(result.code, "succeeded")
@@ -489,9 +491,10 @@ class RoutineBackupTests(unittest.TestCase):
             self.assertEqual(len(discover_managed_backup_metadata(target)), 1)
             self.assertEqual(final.generations[0].publication_retention, 1)
 
+    @ordinary_current_database
     def test_same_second_reverse_id_keeps_new_publication_and_applies_retention(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp), generations=3)
+            target = make_target(Path(tmp), generations=3, real_initialization=not uses_current_database_fixture(self))
             previous = metadata(
                 int("f" * 32, 16),
                 0,
@@ -543,9 +546,10 @@ class RoutineBackupTests(unittest.TestCase):
                 (published,),
             )
 
+    @ordinary_current_database
     def test_routine_metadata_uses_the_reconciled_repository_latest(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp), generations=3)
+            target = make_target(Path(tmp), generations=3, real_initialization=not uses_current_database_fixture(self))
             first = run_routine_backup(target, observed_at=timestamp(0))
             self.assertEqual((first.code, first.attempted), ("succeeded", True))
             previous = repository(target).generations[-1]
@@ -582,7 +586,7 @@ class RoutineBackupTests(unittest.TestCase):
 
     def test_routine_metadata_collision_and_final_reconcile_failure_fail_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp), generations=3)
+            target = make_target(Path(tmp), generations=3, real_initialization=not uses_current_database_fixture(self))
             first = run_routine_backup(target, observed_at=timestamp(0))
             self.assertEqual((first.code, first.attempted), ("succeeded", True))
             previous = repository(target).generations[-1]
@@ -602,7 +606,7 @@ class RoutineBackupTests(unittest.TestCase):
             self.assertEqual(discover_managed_backup_metadata(target), (previous,))
 
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp), generations=3)
+            target = make_target(Path(tmp), generations=3, real_initialization=not uses_current_database_fixture(self))
             first = run_routine_backup(target, observed_at=timestamp(0))
             self.assertEqual((first.code, first.attempted), ("succeeded", True))
 
@@ -624,7 +628,7 @@ class RoutineBackupTests(unittest.TestCase):
 
     def test_lock_deferred_and_copy_failure_both_remain_due(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp))
+            target = make_target(Path(tmp), real_initialization=not uses_current_database_fixture(self))
 
             with managed_backup_lock(target):
                 deferred = run_routine_backup(
@@ -666,9 +670,10 @@ class RoutineBackupTests(unittest.TestCase):
                 "succeeded",
             )
 
+    @ordinary_current_database
     def test_copy_starts_without_a_held_sqlite_writer_transaction(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp))
+            target = make_target(Path(tmp), real_initialization=not uses_current_database_fixture(self))
             real_copy = backup_service._copy
             observed = []
 
@@ -694,7 +699,7 @@ class RoutineBackupTests(unittest.TestCase):
 
     def test_file_only_generation_is_imported_without_second_publication(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp), generations=3)
+            target = make_target(Path(tmp), generations=3, real_initialization=not uses_current_database_fixture(self))
             orphan = metadata(1, 0, 3)
             backup_service._copy(target, orphan)
 
@@ -724,7 +729,7 @@ class RoutineBackupTests(unittest.TestCase):
 
     def test_row_commit_and_file_before_row_prune_crashes_are_reconciled(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp), generations=1)
+            target = make_target(Path(tmp), generations=1, real_initialization=not uses_current_database_fixture(self))
             first = metadata(1, 0, 1)
             second = metadata(2, 1, 1)
             for item in (first, second):
@@ -747,7 +752,7 @@ class RoutineBackupTests(unittest.TestCase):
             self.assertEqual(discover_managed_backup_metadata(target), (second,))
 
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp), generations=1)
+            target = make_target(Path(tmp), generations=1, real_initialization=not uses_current_database_fixture(self))
             first = metadata(3, 0, 1)
             second = metadata(4, 1, 1)
             for item in (first, second):

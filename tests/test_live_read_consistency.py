@@ -1,3 +1,5 @@
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
+from tests.current_database_fixture_support import initialize_feature_test_target
 import json
 import sqlite3
 import subprocess
@@ -42,7 +44,7 @@ def run_taskgov(*args: str) -> subprocess.CompletedProcess[str]:
     return run_taskgov_internal(*args)
 
 
-def initialized_target(tmp: str):
+def initialized_target(tmp: str, *, real_initialization=True):
     root = Path(tmp)
     repo = root / "repo"
     repo.mkdir()
@@ -52,7 +54,7 @@ def initialized_target(tmp: str):
         db=db,
         script_path=SCRIPT_PATH,
     )
-    initialize_database(target)
+    initialize_feature_test_target(target, real_initialization=real_initialization)
     return target
 
 
@@ -109,9 +111,10 @@ class LiveReadConsistencyTests(unittest.TestCase):
                     else:
                         self.assertIs(caught.exception, failure)
 
+    @ordinary_current_database
     def test_common_read_connection_is_query_only_and_transactional(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
 
             with closing(connect_readonly(target.db_path)) as connection:
                 self.assertTrue(connection.in_transaction)
@@ -151,9 +154,10 @@ class LiveReadConsistencyTests(unittest.TestCase):
             self.assertFalse(Path(str(target.db_path) + "-wal").exists())
             self.assertFalse(Path(str(target.db_path) + "-shm").exists())
 
+    @ordinary_current_database
     def test_rollback_journal_sidecar_is_not_rejected_by_preflight(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
             journal = Path(str(target.db_path) + "-journal")
             journal.write_bytes(b"synthetic non-hot rollback journal")
 
@@ -167,7 +171,7 @@ class LiveReadConsistencyTests(unittest.TestCase):
 
     def test_wal_and_shm_sidecars_are_each_rejected_before_sqlite_open(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
             database_before = target.db_path.read_bytes()
 
             for suffix in ("-wal", "-shm"):
@@ -265,7 +269,7 @@ class LiveReadConsistencyTests(unittest.TestCase):
     def test_cache_spill_never_exposes_uncommitted_or_partial_state(self):
         task_count = 400
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
             with closing(connect(target.db_path)) as seed:
                 insert_spill_tasks(seed, target, task_count)
                 seed.commit()
@@ -311,7 +315,7 @@ class LiveReadConsistencyTests(unittest.TestCase):
 
     def test_persistent_wal_header_rejects_read_and_write_without_mutation(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
             with closing(sqlite3.connect(target.db_path)) as connection:
                 self.assertEqual(
                     connection.execute("PRAGMA journal_mode=WAL").fetchone()[0],

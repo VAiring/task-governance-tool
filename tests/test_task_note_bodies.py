@@ -1,3 +1,4 @@
+from tests.current_database_fixture_support import ordinary_current_database, initialize_case_database
 """Full Task note retention, atomic edits and schema-28 preservation."""
 
 from contextlib import closing
@@ -8,7 +9,7 @@ import tempfile
 import unittest
 
 from tests.verification_receipt_test_support import (
-    initialize, add_task, run_taskgov, payload, target_for,
+    initialize, initialize_case, add_task, run_taskgov, payload, target_for,
     seed_current_review_evidence, completion,
 )
 from tests.test_review_session_migration import candidate_runtime
@@ -33,7 +34,7 @@ class TaskNoteBodyTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
-        self.repo, self.db = initialize(Path(temporary.name))
+        self.repo, self.db = initialize_case(Path(temporary.name), self)
         self.task = add_task(self.db, self.repo)
         self.task_id = self.task["task_id"]
 
@@ -49,6 +50,7 @@ class TaskNoteBodyTests(unittest.TestCase):
         with closing(storage.connect(self.db)) as connection:
             return _logical_snapshot(connection)
 
+    @ordinary_current_database
     def test_length_boundaries_keep_exact_body_after_reopen_and_in_context(self):
         for length in (988, 989, 1500, 2000):
             priority = "low" if length in (988, 1500) else "high"
@@ -70,6 +72,7 @@ class TaskNoteBodyTests(unittest.TestCase):
         with closing(storage.connect(self.db)) as connection:
             storage.validate_current_database(connection, target_for(self.db, self.repo))
 
+    @ordinary_current_database
     def test_accepted_normalization_is_retained_without_reprocessing(self):
         raw = "  日本語\r\nsecond line\t "
         event = self.success("task", "edit", self.task_id, "--add-note", raw)["event"]
@@ -78,6 +81,7 @@ class TaskNoteBodyTests(unittest.TestCase):
             self.assertEqual(connection.execute("SELECT note_body FROM task_events WHERE task_event_id=?",
                 (event["task_event_id"],)).fetchone()[0], raw.strip())
 
+    @ordinary_current_database
     def test_note_and_status_transition_are_one_event_with_full_body(self):
         note = "続き" * 999 + "末尾"
         event = self.success("task", "edit", self.task_id, "--status", "paused",
@@ -89,6 +93,7 @@ class TaskNoteBodyTests(unittest.TestCase):
         self.assertEqual(shown["task"]["status"], "paused")
         self.assertEqual(shown["events"][0]["note_body"], note)
 
+    @ordinary_current_database
     def test_normal_history_retains_old_body_without_widening_audit_window(self):
         event = self.success("task", "edit", self.task_id, "--add-note", "a" * 1999 + "末")["event"]
         with closing(storage.connect(self.db)) as connection:
@@ -106,6 +111,7 @@ class TaskNoteBodyTests(unittest.TestCase):
         self.assertTrue(all(row["note_body"] is None for row in audit))
         self.assertEqual(before, self.snapshot())
 
+    @ordinary_current_database
     def test_over_limit_and_private_tail_are_rejected_before_any_edit(self):
         for note, code in (("a" * 2001, "invalid_argument"),
                            ("a" * 1500 + " token=private-value", "privacy_rejected")):
@@ -234,6 +240,7 @@ class TaskNoteBodyTests(unittest.TestCase):
             rejected = _run_cli(install, "task", "edit", task_id, "--add-note", note + "x")
             self.assertFalse(payload(rejected)["ok"])
 
+    @ordinary_current_database
     def test_normal_and_write_projection_keep_facts_and_audit_storage(self):
         cases = (
             ("短文; Recorded: これは本文", (), "Note added"),
@@ -268,6 +275,7 @@ class TaskNoteBodyTests(unittest.TestCase):
                     # a note must not expand that permission boundary.
                     self.success("task", "edit", self.task_id, "--status", "in_progress")
 
+    @ordinary_current_database
     def test_mismatched_and_null_note_summaries_preserve_original(self):
         with closing(storage.connect(self.db)) as connection:
             for body in (None, "別の本文"):
@@ -283,6 +291,7 @@ class TaskNoteBodyTests(unittest.TestCase):
         self.assertEqual({row["note_body"] for row in notes}, {None, "別の本文"})
         self.assertEqual(before, self.snapshot())
 
+    @ordinary_current_database
     def test_human_text_keeps_its_bounded_note_summary(self):
         note = "日本語本文" * 300 + "末尾"
         edited = run_taskgov("task", "edit", self.task_id, "--add-note", note,

@@ -1,3 +1,5 @@
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
+from tests.current_database_fixture_support import initialize_feature_test_target
 import sys
 import tempfile
 import unittest
@@ -32,11 +34,11 @@ from tests.review_test_helpers import seed_review_evidence_connection  # noqa: E
 SCRIPT_PATH = SCRIPTS_ROOT / "taskgov.py"
 
 
-def initialized_target(tmp: str):
+def initialized_target(tmp: str, *, real_initialization=True):
     db = Path(tmp) / "taskgov.sqlite"
     repo = Path(tmp) / "repo"
     target = resolve_database_target(repo=repo, db=db, script_path=SCRIPT_PATH)
-    initialize_database(target)
+    initialize_feature_test_target(target, real_initialization=real_initialization)
     return target
 
 
@@ -167,7 +169,7 @@ class SelectionTests(unittest.TestCase):
     def test_malformed_identifiers_reach_validation_with_real_schema_and_triggers(self):
         for malformed in (None, '', 42, b'tg_task_0000000000000abc'):
             with self.subTest(identifier=malformed), tempfile.TemporaryDirectory() as tmp:
-                target = initialized_target(tmp)
+                target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
                 with closing(connect(target.db_path)) as connection:
                     with connection:
                         original = add(connection, target.project, 'Fixture source', status='cancelled')
@@ -181,7 +183,7 @@ class SelectionTests(unittest.TestCase):
 
     def test_null_identifier_neighbors_preserve_scalar_collision_and_predecessor_semantics(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
             with closing(connect(target.db_path)) as connection:
                 with connection:
                     valid = add(connection, target.project, 'Valid candidate', kind='sequential', lane='ID', lane_order=10)
@@ -208,7 +210,7 @@ class SelectionTests(unittest.TestCase):
 
     def test_malformed_kind_is_not_hidden_by_sequential_eligibility_set(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
             with closing(connect(target.db_path)) as connection:
                 with connection:
                     task = add(connection, target.project, "Malformed selected kind")
@@ -218,9 +220,10 @@ class SelectionTests(unittest.TestCase):
                     select_next_tasks(connection, target.project)
                 self.assertEqual(raised.exception.code, 'project_state_unreadable')
 
+    @ordinary_current_database
     def test_ready_optional_tasks_remain_selectable_when_one_sequential_lane_is_blocked(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
             with closing(connect(target.db_path)) as connection:
                 with connection:
                     add(
@@ -260,9 +263,10 @@ class SelectionTests(unittest.TestCase):
             self.assertEqual(result.limit, 10)
             self.assertEqual(result.selection_rules["status"], "ready")
 
+    @ordinary_current_database
     def test_later_sequential_tasks_are_hidden_until_earlier_tasks_are_done_or_cancelled(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
             with closing(connect(target.db_path)) as connection:
                 with connection:
                     first = add(
@@ -322,9 +326,10 @@ class SelectionTests(unittest.TestCase):
             self.assertEqual(titles(before_done), ["After cancelled", "First sequential"])
             self.assertEqual(titles(after_done), ["After cancelled", "Second sequential"])
 
+    @ordinary_current_database
     def test_selection_sorting_and_filters_are_deterministic(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
             with closing(connect(target.db_path)) as connection:
                 with connection:
                     add(connection, target.project, "Low optional", priority="low", lane="Z")
@@ -382,9 +387,10 @@ class SelectionTests(unittest.TestCase):
             self.assertEqual(limited.count, 2)
             self.assertEqual(limited.limit, 2)
 
+    @ordinary_current_database
     def test_selection_tie_breakers_are_deterministic(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
             with closing(connect(target.db_path)) as connection:
                 with connection:
                     insert_task(

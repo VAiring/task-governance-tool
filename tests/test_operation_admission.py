@@ -1,4 +1,5 @@
 """Ordinary Task admission consumes selected data rather than global histories."""
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
 
 import io
 import hashlib
@@ -26,7 +27,7 @@ class OperationAdmissionTests(unittest.TestCase):
         from task_governance_tool.project_binding_repository import read_project_binding_state
 
         with tempfile.TemporaryDirectory() as directory:
-            target = initialized_target(directory)
+            target = initialized_target(directory, real_initialization=not uses_current_database_fixture(self))
             cases = [
                 ("project_meta", "legacy_cleanup_pending", value)
                 for value in (0.5, 1.5, -1, 2, b"0")
@@ -144,7 +145,7 @@ class OperationAdmissionTests(unittest.TestCase):
                         self.assertEqual((state.backup_interval_minutes, state.backup_generations), (interval, generations))
                         self.assertFalse(read_project_binding_state(connection).legacy_cleanup_pending)
         with tempfile.TemporaryDirectory() as directory:
-            target = initialized_target(directory)
+            target = initialized_target(directory, real_initialization=not uses_current_database_fixture(self))
             for local in (True, False):
                 with closing(storage.connect_initialized_readonly(target, operation_local=local)) as connection:
                     self.assertFalse(metadata.read_project_maintenance(connection, target.project.project_id).enabled)
@@ -350,6 +351,7 @@ class OperationAdmissionTests(unittest.TestCase):
 
 
 class EffortOperationAdmissionTests(unittest.TestCase):
+    @ordinary_current_database
     def test_enabled_existing_basis_keeps_fresh_generation_read_local(self):
         from tests.test_effort_advisory import initialize_db, initialize_git_repo, write_profile
         from task_governance_tool.effort import build_effort_advisory
@@ -361,7 +363,7 @@ class EffortOperationAdmissionTests(unittest.TestCase):
             repo = root / "repo"
             initialize_git_repo(repo)
             profile = write_profile(root / "skill")
-            target = initialize_db(root / "taskgov.sqlite", repo)
+            target = initialize_db(root / "taskgov.sqlite", repo, real_initialization=not uses_current_database_fixture(self))
             with closing(storage.connect_initialized(target)) as connection:
                 with connection:
                     added = add_task(connection, target.project, title="Enabled effort",

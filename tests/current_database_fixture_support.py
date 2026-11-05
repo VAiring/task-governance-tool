@@ -6,6 +6,7 @@ helper instance, normally once per test process, and never persisted for reuse.
 """
 from __future__ import annotations
 
+import ast
 import tempfile
 import threading
 from contextlib import closing
@@ -15,14 +16,40 @@ from tests.m14_test_support import SOURCE_SKILL_ROOT
 from task_governance_tool import storage
 
 
+def _declared_schema_version():
+    # Runtime globals may already be pinned when a single test imports us.
+    # The physical candidate's declaration, not that mutable global, owns the
+    # current image. Read it once; never cache a path/mtime observation.
+    tree = ast.parse(Path(storage.__file__).read_text(encoding="utf-8"))
+    values = [node.value.value for node in tree.body
+              if isinstance(node, ast.Assign)
+              and any(isinstance(target, ast.Name) and target.id == "SCHEMA_VERSION"
+                      for target in node.targets)
+              and isinstance(node.value, ast.Constant)
+              and type(node.value.value) is int]
+    if len(values) != 1:
+        raise AssertionError("current schema declaration must be unambiguous")
+    return values[0]
+
+
+CURRENT_TEMPLATE_SCHEMA_VERSION = _declared_schema_version()
+
+
 class EmptyDatabaseTemplate:
     def __init__(self):
         self._lock = threading.Lock()
         self._image = None
 
-    def initialize(self, *, repo, db):
+    def initialize(self, db, repo):
         target = storage.resolve_database_target(
             repo=repo, db=db, script_path=SOURCE_SKILL_ROOT / "scripts/taskgov.py")
+        result = self.initialize_target(target)
+        return {"project_id": target.project.project_id, "created": True,
+                "schema_version": result.schema_version}
+
+    def initialize_target(self, target):
+        if storage.SCHEMA_VERSION != CURRENT_TEMPLATE_SCHEMA_VERSION:
+            raise AssertionError("current template cannot initialize a pinned runtime")
         with self._lock:
             if self._image is None:
                 with tempfile.TemporaryDirectory(prefix="taskgov-empty-schema-") as tmp:
@@ -38,9 +65,37 @@ class EmptyDatabaseTemplate:
         # Production initialization now sees current DDL and no project rows.
         # It still owns identity, defaults, binding and database validation.
         result = storage.initialize_database(target)
-        return {"project_id": target.project.project_id, "created": True,
-                "schema_version": result.schema_version}
+        return result
 
 
 _TEMPLATE = EmptyDatabaseTemplate()
 initialize_current_test_database = _TEMPLATE.initialize
+initialize_current_test_target = _TEMPLATE.initialize_target
+
+
+def ordinary_current_database(method):
+    """Opt in one reviewed ordinary case, including inherited test methods."""
+    method._taskgov_current_database_fixture = True
+    return method
+
+
+def uses_current_database_fixture(testcase):
+    name = getattr(testcase, "_testMethodName", None)
+    method = getattr(testcase, name, None) if isinstance(name, str) else None
+    return (getattr(method, "_taskgov_current_database_fixture", False)
+            and storage.SCHEMA_VERSION == CURRENT_TEMPLATE_SCHEMA_VERSION)
+
+
+def initialize_case_database(testcase, *, repo, db):
+    """Shared setUp defaults to real creation; only explicit cases clone."""
+    from tests.m14_test_support import initialize_taskgov_internal
+    initializer = (initialize_current_test_database if uses_current_database_fixture(testcase)
+                   else initialize_taskgov_internal)
+    return initializer(repo=repo, db=db)
+
+
+def initialize_feature_test_target(target, *, real_initialization=True):
+    """Mixed feature helpers retain real creation for a pinned predecessor."""
+    if not real_initialization and storage.SCHEMA_VERSION == CURRENT_TEMPLATE_SCHEMA_VERSION:
+        return initialize_current_test_target(target)
+    return storage.initialize_database(target)

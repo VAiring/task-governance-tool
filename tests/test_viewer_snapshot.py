@@ -1,3 +1,5 @@
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
+from tests.current_database_fixture_support import initialize_feature_test_target
 import json
 import sqlite3
 import sys
@@ -81,11 +83,14 @@ from tests.test_m242_r3b_schema20_activation import (  # noqa: E402
 SCRIPT_PATH = SCRIPTS_ROOT / "taskgov.py"
 
 
-def initialized_target(tmp: str):
+def initialized_target(tmp: str, *, current=True, real_initialization=True):
     db = Path(tmp) / "taskgov.sqlite"
     repo = Path(tmp) / "repo"
     target = resolve_database_target(repo=repo, db=db, script_path=SCRIPT_PATH)
-    initialize_database(target)
+    if current:
+        initialize_feature_test_target(target, real_initialization=real_initialization)
+    else:
+        initialize_database(target)
     return target
 
 
@@ -183,9 +188,10 @@ class ViewerSnapshotTests(unittest.TestCase):
                     )
                     self.assertNotIn("Authorization", str(failure.exception))
 
+    @ordinary_current_database
     def test_v18_snapshot_reuses_exact_ledger_validated_task_batch(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
             with closing(connect(target.db_path)) as connection:
                 with connection:
                     add_task(
@@ -257,7 +263,7 @@ class ViewerSnapshotTests(unittest.TestCase):
 
     def test_v18_validated_viewer_task_batch_rejects_wrong_bindings(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
             with closing(connect(target.db_path)) as connection:
                 with connection:
                     add_task(
@@ -385,7 +391,7 @@ class ViewerSnapshotTests(unittest.TestCase):
                 project_task.assert_not_called()
 
             with tempfile.TemporaryDirectory() as invalid_tmp:
-                invalid_target = initialized_target(invalid_tmp)
+                invalid_target = initialized_target(invalid_tmp, real_initialization=not uses_current_database_fixture(self))
                 with (
                     closing(
                         connect_snapshot_readonly(invalid_target.db_path)
@@ -410,7 +416,7 @@ class ViewerSnapshotTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             _start_schema20_runtime_oracle()
             try:
-                target = initialized_target(tmp)
+                target = initialized_target(tmp, current=False, real_initialization=not uses_current_database_fixture(self))
                 with closing(connect(target.db_path)) as connection:
                     with connection:
                         task = add_task(
@@ -786,9 +792,10 @@ class ViewerSnapshotTests(unittest.TestCase):
             self.assertNotIn("project_id", serialized)
             self.assertNotIn("task_id", serialized)
 
+    @ordinary_current_database
     def test_snapshot_v4_uses_one_bounded_batch_history_read(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
             with closing(connect(target.db_path)) as connection:
                 with connection:
                     first = add_task(
@@ -853,9 +860,10 @@ class ViewerSnapshotTests(unittest.TestCase):
             [500, 1],
         )
 
+    @ordinary_current_database
     def test_snapshot_projects_all_statuses_show_fields_and_bounded_events(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
             tasks = {}
             callers = {
                 status: CallerIdentity(f"00000000-0000-4000-8000-{index + 1:012x}")
@@ -1105,7 +1113,7 @@ class ViewerSnapshotTests(unittest.TestCase):
 
     def test_snapshot_connection_is_query_only_and_revalidates_project(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
             with closing(connect_snapshot_readonly(target.db_path)) as connection:
                 self.assertTrue(connection.in_transaction)
                 self.assertEqual(connection.execute("PRAGMA query_only").fetchone()[0], 1)
@@ -1126,7 +1134,7 @@ class ViewerSnapshotTests(unittest.TestCase):
 
     def test_snapshot_rejects_migration_mismatch_inside_transaction(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
             with closing(connect(target.db_path)) as connection:
                 with connection:
                     connection.execute("DELETE FROM schema_migrations WHERE version = 6")
@@ -1167,7 +1175,7 @@ class ViewerSnapshotTests(unittest.TestCase):
 
     def test_snapshot_maps_sqlite_read_failure_to_storage_error(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
             connection = connect_snapshot_readonly(target.db_path)
             connection.close()
 
@@ -1179,7 +1187,7 @@ class ViewerSnapshotTests(unittest.TestCase):
 
     def test_active_wal_is_rejected_before_snapshot_read(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
             with closing(connect(target.db_path)) as writer:
                 writer.execute("PRAGMA journal_mode = WAL")
                 writer.execute("BEGIN IMMEDIATE")
@@ -1199,7 +1207,7 @@ class ViewerSnapshotTests(unittest.TestCase):
 
     def test_open_snapshot_stays_consistent_when_writer_cannot_commit(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
             with closing(connect(target.db_path)) as connection:
                 with connection:
                     task = add_task(connection, target.project, title="Before writer").task

@@ -1,3 +1,4 @@
+from tests.current_database_fixture_support import initialize_current_test_database
 import json
 from tests.registration_output_support import registration_task
 import subprocess
@@ -722,7 +723,7 @@ class CompactTaskCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             for index in range(7):
                 add_task(db, repo, f"Ready {index}")
             add_task(
@@ -795,7 +796,7 @@ class CompactTaskCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             for index in range(20):
                 extra = ["--tags", "g" * 500]
                 if index == 14:

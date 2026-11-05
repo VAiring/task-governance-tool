@@ -1,3 +1,5 @@
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
+from tests.current_database_fixture_support import initialize_feature_test_target
 import sys
 import tempfile
 import unittest
@@ -23,18 +25,19 @@ from task_governance_tool.viewer_projection_repository import initialize_locked
 SCRIPT_PATH = SCRIPTS_ROOT / "taskgov.py"
 
 
-def initialized_target(tmp: str):
+def initialized_target(tmp: str, *, real_initialization=True):
     db = Path(tmp) / "taskgov.sqlite"
     repo = Path(tmp) / "repo"
     target = resolve_database_target(repo=repo, db=db, script_path=SCRIPT_PATH)
-    initialize_database(target)
+    initialize_feature_test_target(target, real_initialization=real_initialization)
     return target
 
 
 class CompletionCommitSchemaTests(unittest.TestCase):
+    @ordinary_current_database
     def test_added_task_gets_completion_commit_defaults_without_public_json_exposure(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
             with closing(connect(target.db_path)) as connection:
                 with connection:
                     task = add_task(connection, target.project, title="Completion schema task").task
@@ -52,9 +55,10 @@ class CompletionCommitSchemaTests(unittest.TestCase):
             self.assertEqual(raw["completion_commit_required"], 1)
             self.assertEqual(raw["completion_commit_hash"], "")
 
+    @ordinary_current_database
     def test_find_task_ids_by_non_empty_completion_commit_hash(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
             with closing(connect(target.db_path)) as connection:
                 with connection:
                     first = add_task(connection, target.project, title="First committed task").task
@@ -83,9 +87,10 @@ class CompletionCommitSchemaTests(unittest.TestCase):
             self.assertEqual(matches, sorted([first["task_id"], second["task_id"]]))
             self.assertEqual(no_matches, [])
 
+    @ordinary_current_database
     def test_completion_commit_hash_lookup_is_project_scoped(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
             with closing(connect(target.db_path)) as connection:
                 with connection:
                     other_project_id = "other-project-123456789abc"
@@ -140,9 +145,10 @@ class CompletionCommitSchemaTests(unittest.TestCase):
 
             self.assertEqual(matches, [visible["task_id"]])
 
+    @ordinary_current_database
     def test_completion_commit_hash_lookup_rejects_invalid_input(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
             with closing(connect(target.db_path)) as connection:
                 with self.assertRaises(TaskValidationError) as empty:
                     find_task_ids_by_completion_commit_hash(connection, target.project, "")

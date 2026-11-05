@@ -1,3 +1,4 @@
+from tests.current_database_fixture_support import initialize_current_test_database
 import json
 import shlex
 import sqlite3
@@ -265,7 +266,7 @@ class TaskContractCliTests(unittest.TestCase):
             root = Path(tmp)
             db = root / "taskgov.sqlite"
             repo = root / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
 
             result, added = add_task(db, repo, "Ordinary task")
 
@@ -319,7 +320,7 @@ class TaskContractCliTests(unittest.TestCase):
             root = Path(tmp)
             db = root / "taskgov.sqlite"
             repo = root / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             allowed = ("ready", "in_progress", "blocked")
             for status in allowed:
                 extra = [
@@ -382,7 +383,7 @@ class TaskContractCliTests(unittest.TestCase):
             root = Path(tmp)
             db = root / "taskgov.sqlite"
             repo = root / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             cases = (
                 (
                     ["--contract-scope", "Only one field"],
@@ -457,7 +458,7 @@ class TaskContractCliTests(unittest.TestCase):
             root = Path(tmp)
             db = root / "taskgov.sqlite"
             repo = root / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             legacy_constraints = (
                 "Required user approval:\n"
                 "- The initial approval names `dispatch_authorization=1`; "
@@ -534,7 +535,7 @@ class TaskContractCliTests(unittest.TestCase):
             root = Path(tmp)
             db = root / "taskgov.sqlite"
             repo = root / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             for status in ("ready", "blocked"):
                 extra = ["--status", status]
                 if status == "blocked":
@@ -593,7 +594,7 @@ class TaskContractCliTests(unittest.TestCase):
             root = Path(tmp)
             db = root / "taskgov.sqlite"
             repo = root / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             add_task(
                 db,
                 repo,
@@ -644,7 +645,7 @@ class TaskContractCliTests(unittest.TestCase):
             root = Path(tmp)
             db = root / "taskgov.sqlite"
             repo = root / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             _, added = add_task(
                 db,
                 repo,
@@ -767,7 +768,7 @@ class TaskContractCliTests(unittest.TestCase):
             root = Path(tmp)
             db = root / "taskgov.sqlite"
             repo = root / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             _, added = add_task(
                 db,
                 repo,
@@ -898,7 +899,7 @@ class TaskContractCliTests(unittest.TestCase):
             root = Path(tmp)
             db = root / "taskgov.sqlite"
             repo = root / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task_ids = {}
             for status in ("done", "cancelled"):
                 _, added = add_task(
@@ -974,7 +975,7 @@ class TaskContractCliTests(unittest.TestCase):
             root = Path(tmp)
             db = root / "taskgov.sqlite"
             repo = root / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             _, added = add_task(
                 db,
                 repo,
@@ -1041,7 +1042,7 @@ class TaskContractCliTests(unittest.TestCase):
             root = Path(tmp)
             db = root / "taskgov.sqlite"
             repo = root / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             _, added = add_task(
                 db,
                 repo,
@@ -1126,7 +1127,7 @@ class TaskContractCliTests(unittest.TestCase):
             root = Path(tmp)
             db = root / "taskgov.sqlite"
             repo = root / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             _, added = add_task(
                 db,
                 repo,
@@ -1178,7 +1179,7 @@ class TaskContractCliTests(unittest.TestCase):
             root = Path(tmp)
             db = root / "taskgov.sqlite"
             repo = root / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             _, added = add_task(
                 db,
                 repo,

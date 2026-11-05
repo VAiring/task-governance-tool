@@ -1,3 +1,4 @@
+from tests.current_database_fixture_support import initialize_current_test_database
 import json
 from tests.registration_output_support import registration_task
 import sqlite3
@@ -134,7 +135,7 @@ class CheckpointCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_active_task(db, repo)
             before = db.read_bytes()
 
@@ -170,7 +171,7 @@ class CheckpointCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_active_task(db, repo)
             args = checkpoint_args(db, repo, task["task_id"])
 
@@ -259,7 +260,7 @@ class CheckpointCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_active_task(db, repo)
             checkpoint_result = run_taskgov(
                 *checkpoint_args(db, repo, task["task_id"]),

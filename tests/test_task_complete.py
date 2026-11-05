@@ -1,3 +1,4 @@
+from tests.current_database_fixture_support import initialize_current_test_database
 import json
 from tests.registration_output_support import registration_task
 import sqlite3
@@ -146,7 +147,7 @@ class TaskCompleteCliTests(unittest.TestCase):
     def test_write_sequence_reduces_utf8_without_losing_operation_results(self):
         with tempfile.TemporaryDirectory() as tmp:
             db, repo = Path(tmp) / "taskgov.sqlite", Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo, "Write sequence", "--description", "説明" * 100)
             original_projection = cli_module.write_task_projection
             observed = []
@@ -205,7 +206,7 @@ class TaskCompleteCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(
                 db,
                 repo,
@@ -434,7 +435,7 @@ class TaskCompleteCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo, "Not ready", "--status", "in_progress")
 
             verification = run_taskgov(
@@ -505,7 +506,7 @@ class TaskCompleteCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(
                 db,
                 repo,
@@ -567,7 +568,7 @@ class TaskCompleteCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(
                 db,
                 repo,
@@ -637,7 +638,7 @@ class TaskCompleteCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(
                 db,
                 repo,
@@ -687,7 +688,7 @@ class TaskCompleteCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(
                 db,
                 repo,
@@ -734,7 +735,7 @@ class TaskCompleteCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(
                 db,
                 repo,
@@ -785,7 +786,7 @@ class TaskCompleteCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             first = add_task(
                 db,
                 repo,
@@ -857,7 +858,7 @@ class TaskCompleteCliTests(unittest.TestCase):
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
             revision = init_git_repo(repo)
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(
                 db,
                 repo,
@@ -926,7 +927,7 @@ class TaskCompleteCliTests(unittest.TestCase):
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
             revision = init_git_repo(repo)
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(
                 db,
                 repo,
@@ -1232,7 +1233,7 @@ class CompletionCheckErrorPriorityTests(unittest.TestCase):
     def test_public_check_preserves_command_error_with_drift_in_json_and_text(self):
         with tempfile.TemporaryDirectory() as tmp:
             db, repo = Path(tmp) / "taskgov.sqlite", Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo, "Error priority", "--status", "in_progress")
             seed_review_evidence(db, task["task_id"])
             capture = completion_workflow._capture_preselector_basis

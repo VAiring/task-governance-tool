@@ -1,3 +1,4 @@
+from tests.current_database_fixture_support import initialize_current_test_database
 import json
 from tests.registration_output_support import registration_task
 import os
@@ -115,7 +116,7 @@ class TaskCurrentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             seed_current_states(db, repo)
 
             result = current(db, repo)
@@ -144,7 +145,7 @@ class TaskCurrentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             seed_current_states(db, repo)
 
             for status in ("in_progress", "review_pending", "paused", "blocked"):
@@ -173,7 +174,7 @@ class TaskCurrentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
 
             for status in ("ready", "done", "cancelled", "paused' OR 1=1 --"):
                 with self.subTest(status=status):
@@ -202,7 +203,7 @@ class TaskCurrentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             with closing(sqlite3.connect(db)) as connection:
                 project_id = connection.execute("SELECT project_id FROM project_meta").fetchone()[0]
                 insert_current_row(
@@ -246,7 +247,7 @@ class TaskCurrentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
 
             empty = current(db, repo)
             self.assertEqual(
@@ -280,7 +281,7 @@ class TaskCurrentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo, "Event task", "--status", "in_progress")
             with mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "22222222-2222-4222-8222-222222222222"}):
                 eventless = add_task(db, repo, "Eventless task", "--status", "in_progress")
@@ -315,7 +316,7 @@ class TaskCurrentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             add_task(db, repo, "Continue this", "--status", "in_progress")
 
             result = run_taskgov("task", "current", "--repo", str(repo), "--db", str(db))
@@ -330,7 +331,7 @@ class TaskCurrentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo-not-created"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             add_task(db, repo, "Read only current", "--status", "in_progress")
             before = db.read_bytes()
 

@@ -3,6 +3,7 @@
 Timings are inclusive stage observations, never an additive wall-time estimate.
 Logger OFF and ON are measured independently using its real disposable sink.
 """
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
 from collections import Counter
 from contextlib import closing, contextmanager
 import json
@@ -53,9 +54,10 @@ class ViewerIncrementalScaleTests(unittest.TestCase):
     setUp = diagnostics_fixture.SQLiteDiagnosticsTests.setUp
     enable = diagnostics_fixture.SQLiteDiagnosticsTests.enable
 
+    @ordinary_current_database
     def test_one_changed_task_100_and_1000_with_unchanged_history_and_logger_modes(self):
         self.marker.unlink()
-        target = make_target(self.root, enabled=True)
+        target = make_target(self.root, enabled=True, real_initialization=not uses_current_database_fixture(self))
         selected, historical, _ = seed_reviews(target)
         caller = CallerIdentity("00000000-0000-4000-8000-000000000001")
         history_caller = CallerIdentity("00000000-0000-4000-8000-000000000004")

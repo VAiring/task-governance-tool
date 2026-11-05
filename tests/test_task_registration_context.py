@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
+
+from tests.current_database_fixture_support import ordinary_current_database, initialize_case_database
+
+from tests.current_database_fixture_support import initialize_current_test_database
+
 import json
 import copy
 import sqlite3
@@ -39,7 +45,7 @@ class RegistrationContextTests(unittest.TestCase):
         self.repo = self.root / "repo"
         self.repo.mkdir()
         self.db = self.root / "state.sqlite"
-        initialize_taskgov_internal(repo=self.repo, db=self.db)
+        initialize_case_database(self, repo=self.repo, db=self.db)
 
     def invoke(self, *args):
         result = run(self.db, self.repo, *args)
@@ -69,6 +75,7 @@ class RegistrationContextTests(unittest.TestCase):
             self.assertEqual(prepared["context"]["selected"]["task"]["task_id"], selected_id)
         return prepared["context"]
 
+    @ordinary_current_database
     def test_single_complete_contract_and_gates_equal_standalone_without_start(self):
         added = self.add("Scoped work", "--contract-scope", "One outcome",
                          "--contract-acceptance", "Focused checks pass",
@@ -91,6 +98,7 @@ class RegistrationContextTests(unittest.TestCase):
         self.assertEqual(registration_body(data, data, "event")["event_type"], "task_added")
         self.assertEqual(data["contract_write"], {"recorded": True, "revision": 1})
 
+    @ordinary_current_database
     def test_parallel_change_preserves_registered_snapshot_and_independent_event_match(self):
         original = cli.prepare_registered_task_context
 
@@ -114,6 +122,7 @@ class RegistrationContextTests(unittest.TestCase):
         self.assertEqual(data["event"]["event_type"], "task_added")
         self.assertNotIn("event_ref", data["event"])
 
+    @ordinary_current_database
     def test_batch_references_only_selected_item_and_retains_mapping(self):
         payload = self.batch()
         data = payload["data"]
@@ -124,6 +133,7 @@ class RegistrationContextTests(unittest.TestCase):
             self.assertEqual(registration_body(data, entry, "task")["title"], f"Batch {'AB'[index]}")
             self.assertEqual(registration_body(data, entry, "event")["task_id"], entry["task"]["task_id"])
 
+    @ordinary_current_database
     def test_identical_registration_output_is_smaller_without_changing_service_bodies(self):
         original_add = cli.add_task
         saved = []
@@ -144,6 +154,7 @@ class RegistrationContextTests(unittest.TestCase):
         self.assertEqual(registration_body(payload["data"], payload["data"], "task"), result.task)
         self.assertEqual(registration_body(payload["data"], payload["data"], "event"), result.event)
 
+    @ordinary_current_database
     def test_text_identical_details_appear_once_and_other_selection_stays_explicit(self):
         result = run_taskgov_internal("task", "add", "--title", "First text title", "--priority", "urgent", "--repo", str(self.repo),
                                      "--db", str(self.db), maintenance_enabled=False)
@@ -156,11 +167,13 @@ class RegistrationContextTests(unittest.TestCase):
         self.assertIn("Title: Later text title", later.stdout)
         self.assertNotIn("Registered Task fields match", later.stdout)
 
+    @ordinary_current_database
     def test_single_and_batch_keep_existing_active_selection(self):
         active = self.add("Existing active", "--status", "in_progress")["data"]["task"]
         for payload in (self.add(), self.batch()):
             self.assert_context(payload, active["task_id"])
 
+    @ordinary_current_database
     def test_batch_prepares_once_and_does_not_duplicate_context_per_item(self):
         with mock.patch.object(cli, "handle_task_context", wraps=cli.handle_task_context) as prepare:
             payload = self.batch()
@@ -170,6 +183,7 @@ class RegistrationContextTests(unittest.TestCase):
             self.assertNotIn("context_preparation", item)
         self.assert_context(payload)
 
+    @ordinary_current_database
     def test_earlier_ready_and_held_work_selection_and_warnings_preserved(self):
         held = self.add("Held", "--status", "in_progress")["data"]["task"]["task_id"]
         self.invoke("task", "edit", held, "--status", "paused", "--pause-reason", "Waiting")
@@ -179,12 +193,14 @@ class RegistrationContextTests(unittest.TestCase):
         self.assertEqual(context["selection"], "next")
         self.assertTrue(any(w["code"] == "paused_tasks_present" for w in payload["warnings"]))
 
+    @ordinary_current_database
     def test_successful_absence_is_ready_not_failed(self):
         added = self.add("Blocked", "--status", "blocked", "--blocked-reason", "Waiting")
         context = self.assert_context(added)
         self.assertEqual(context["selection"], "none")
         self.assertIsNone(context["selected"])
 
+    @ordinary_current_database
     def test_context_read_starts_after_writer_commit_and_close(self):
         original = cli.handle_task_context
 
@@ -242,6 +258,7 @@ class RegistrationContextTests(unittest.TestCase):
         ])
         self.assertEqual(self.invoke("task", "list")["data"]["count"], 1)
 
+    @ordinary_current_database
     def test_failed_registration_does_not_read_context_or_write(self):
         before = file_snapshot(self.root)
         with mock.patch.object(cli, "prepare_registered_task_context") as prepare:
@@ -262,6 +279,7 @@ class RegistrationContextTests(unittest.TestCase):
         self.assertIn("Retry task context, not task add", result.stdout)
         self.assertNotIn("private failure", result.stdout)
 
+    @ordinary_current_database
     def test_lost_response_recovery_inspects_ids_without_replaying_add(self):
         with mock.patch.object(cli, "add_task", wraps=cli.add_task) as write:
             self.add("Unique accepted outcome")  # Deliberately discard response.
@@ -271,6 +289,7 @@ class RegistrationContextTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(context["selected"]["task"]["task_id"], rows[0]["task_id"])
 
+    @ordinary_current_database
     def test_combined_output_is_smaller_than_replaced_add_and_context_envelopes(self):
         for payload in (self.add(), self.batch()):
             with self.subTest(batch="tasks" in payload["data"]):
@@ -322,6 +341,7 @@ class RegistrationRunnerContextTests(unittest.TestCase):
             observed = self.enterContext(mock.patch.object(owner, name, side_effect=AssertionError("unexpected numerical display read")))
             self.addCleanup(observed.assert_not_called)
 
+    @ordinary_current_database
     def test_existing_marker_two_uses_same_show_route_after_registration(self):
         from tests.test_m242_runner_service import RunnerServiceFixture
         from tests.test_m243c_runner_gate import _launch, _persist_terminal
@@ -329,7 +349,7 @@ class RegistrationRunnerContextTests(unittest.TestCase):
 
         for branch in ("pass", "blocking", "fallback"):
             with self.subTest(branch=branch), tempfile.TemporaryDirectory() as temporary:
-                fixture = RunnerServiceFixture(Path(temporary))
+                fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
                 _prepared, intent = _launch(fixture)
                 _persist_terminal(fixture, intent, branch=branch)
                 with mock.patch.object(selection, "_stored_runner_physical_basis_matches", return_value=True):
@@ -347,7 +367,7 @@ class RegistrationRunnerContextTests(unittest.TestCase):
         from tests.test_m243c_runner_gate import _launch, _persist_terminal, _corrupt_runner_observation_digest
 
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             _prepared, intent = _launch(fixture)
             _persist_terminal(fixture, intent, branch="pass")
             original = cli.connect_initialized_readonly
@@ -371,7 +391,7 @@ class RegistrationRunnerContextTests(unittest.TestCase):
         from tests.test_m243c_runner_gate import _launch, _persist_terminal, _corrupt_runner_observation_digest
 
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             _prepared, intent = _launch(fixture)
             _persist_terminal(fixture, intent, branch="pass")
             released = run(fixture.db, fixture.repo, "task", "edit", fixture.task_id, "--status", "ready")

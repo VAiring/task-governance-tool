@@ -1,4 +1,5 @@
 """Metadata-only live DB admission and stale-write rejection."""
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
 
 from contextlib import closing
 from dataclasses import replace
@@ -16,8 +17,9 @@ from task_governance_tool import storage, tasks
 
 class AsyncBackupRepositoryTests(unittest.TestCase):
     def fixture(self):
-        return make_target(Path(self.enterContext(tempfile.TemporaryDirectory())))
+        return make_target(Path(self.enterContext(tempfile.TemporaryDirectory())), real_initialization=not uses_current_database_fixture(self))
 
+    @ordinary_current_database
     def test_control_and_writer_never_audit_task_history_or_physical_integrity(self):
         target = self.fixture()
         statements = []
@@ -38,6 +40,7 @@ class AsyncBackupRepositoryTests(unittest.TestCase):
                              or "from tasks" in query.lower() or "from task_events" in query.lower()
                              for query in statements))
 
+    @ordinary_current_database
     def test_task_and_viewer_updates_do_not_make_control_stale(self):
         target = self.fixture()
         before = repository.read_control(target)
@@ -121,6 +124,7 @@ class AsyncBackupRepositoryTests(unittest.TestCase):
         with self.assertRaises(storage.StorageError):
             repository.read_control(target)
 
+    @ordinary_current_database
     def test_control_query_count_is_independent_of_task_history_size(self):
         from tests.test_backup_performance import large_task_specs, small_task_specs, seed_fixture
         counts = []

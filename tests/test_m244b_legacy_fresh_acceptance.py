@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
+
 import json
 import sys
 import tempfile
@@ -352,12 +354,13 @@ class M244BLegacyFreshAcceptanceTests(unittest.TestCase):
             self.assertEqual(payload["verification_basis"]["kind"], "caller_attestation")
             self.assertIsNone(payload["runner_observation"])
 
+    @ordinary_current_database
     def test_fresh_runner_completion_reaches_independent_reader(self) -> None:
         with tempfile.TemporaryDirectory(
             prefix=".tmp-m244b-runner-reader-",
             dir=ROOT,
         ) as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             # The existing fixture completes against a test-only physical-basis mock.
             _complete_runner_pass(fixture)
             storage.configure_project_maintenance(

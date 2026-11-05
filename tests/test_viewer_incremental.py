@@ -1,4 +1,5 @@
 """Delta parity and recoverable two-artifact publication on disposable state."""
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
 from contextlib import closing
 from copy import deepcopy
 import json
@@ -20,7 +21,7 @@ from task_governance_tool import tasks
 class ViewerIncrementalTests(unittest.TestCase):
     def setUp(self):
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        self.target = make_target(self.root, enabled=True)
+        self.target = make_target(self.root, enabled=True, real_initialization=not uses_current_database_fixture(self))
 
     def publish(self, *, force=False):
         function = service.publish_setup_viewer if force else service.run_routine_viewer_refresh
@@ -48,6 +49,7 @@ class ViewerIncrementalTests(unittest.TestCase):
         self.assertEqual(delta, full)
         self.assertEqual(viewer.render_viewer_html(delta.snapshot), viewer.render_viewer_html(full.snapshot))
 
+    @ordinary_current_database
     def test_first_empty_add_edit_and_reuse_match_full_snapshot(self):
         self.assertEqual(self.publish().code, "succeeded")
         self.assert_full_parity()
@@ -67,6 +69,7 @@ class ViewerIncrementalTests(unittest.TestCase):
         self.assertEqual(selected, [(subject,)])
         self.assert_full_parity()
 
+    @ordinary_current_database
     def test_current_reads_no_cache_body_or_task_history(self):
         add_viewer_event(self.target, "Current display")
         self.assertEqual(self.publish().code, "succeeded")
@@ -74,6 +77,7 @@ class ViewerIncrementalTests(unittest.TestCase):
               mock.patch.object(service, "read_task_projections", side_effect=AssertionError("history"))):
             self.assertEqual(self.publish().code, "current")
 
+    @ordinary_current_database
     def test_committed_content_reuse_checks_only_changed_rows_at_each_scale(self):
         from task_governance_tool import viewer_display_validation as validation
         for total in (4, 40):
@@ -201,6 +205,7 @@ class ViewerIncrementalTests(unittest.TestCase):
             service._capture(self.target, candidate, FIXED_TIME)
         self.assertIsNone(reader.call_args.kwargs["task_ids"])
 
+    @ordinary_current_database
     def test_basis_does_not_select_opt_in_again_after_validated_maintenance_read(self):
         with metadata.projection_snapshot(self.target) as (connection, basis):
             statements = []
@@ -210,6 +215,7 @@ class ViewerIncrementalTests(unittest.TestCase):
         reads = [s for s in statements if "from project_maintenance" in " ".join(s.lower().split())]
         self.assertEqual(len(reads), 1, reads)
 
+    @ordinary_current_database
     def test_field_specific_titles_and_manual_diagnostics_match_full_capture(self):
         add_viewer_event(self.target, "Initial title")
         self.assertEqual(self.publish().code, "succeeded")
@@ -383,6 +389,7 @@ class ViewerIncrementalTests(unittest.TestCase):
         self.assertEqual(self.publish(force=True).code, "failed")
         self.assertEqual(self.target.resolved_viewer_path.read_bytes(), last_good)
 
+    @ordinary_current_database
     def test_checkpoint_review_completion_and_reopen_publish_only_the_changed_task(self):
         from task_governance_tool import reviews, checkpoints
         from task_governance_tool.session_identity import CallerIdentity
@@ -521,6 +528,7 @@ class ViewerIncrementalTests(unittest.TestCase):
                 with self.assertRaises(viewer.ViewerError):
                     cache.encode_cache(candidate.header, changed, validation=validation)
 
+    @ordinary_current_database
     def test_successive_refreshes_do_not_share_display_validation_state(self):
         from task_governance_tool.viewer_display_validation import DisplayValidation
         seen = []
@@ -605,6 +613,7 @@ class ViewerIncrementalTests(unittest.TestCase):
         self.assertEqual(self.target.resolved_viewer_path.read_bytes(), old)
         self.assertEqual(self.publish().code, "succeeded")
 
+    @ordinary_current_database
     def test_new_revision_after_cache_acceptance_is_not_lost(self):
         add_viewer_event(self.target, "Concurrent display")
         self.assertEqual(self.publish().code, "succeeded")
@@ -787,7 +796,7 @@ class ViewerIncrementalReviewTests(unittest.TestCase):
         for column, value in (("status", "unknown"), ("severity", "unknown"),
                               ("summary", b"undecodable stored text")):
             with self.subTest(column=column), tempfile.TemporaryDirectory() as tmp:
-                target = make_target(Path(tmp), enabled=True)
+                target = make_target(Path(tmp), enabled=True, real_initialization=not uses_current_database_fixture(self))
                 selected = seed_reviews(target)[0]
                 self.assertEqual(service.publish_setup_viewer(target, observed_at=FIXED_TIME).code, "succeeded")
                 old = target.resolved_viewer_path.read_bytes()

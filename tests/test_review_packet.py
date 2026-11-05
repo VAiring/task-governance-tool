@@ -1,3 +1,5 @@
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
+from tests.current_database_fixture_support import initialize_current_test_database
 import json
 import os
 import subprocess
@@ -184,7 +186,7 @@ class ReviewPacketTests(unittest.TestCase):
             root = Path(tmp)
             repo, db = root / "repo", root / "state.sqlite"
             initialize_repo(repo)
-            initialize_taskgov_internal(repo=repo, db=db)
+            initialize_current_test_database(repo=repo, db=db)
             task = add_task(db, repo)
             old_ids = []
             for generation, (result, coverage) in enumerate(
@@ -231,13 +233,14 @@ class ReviewPacketTests(unittest.TestCase):
             self.assertFalse(summary["gate"]["satisfied"])
             self.assertIsNone(summary["current_receipt"])
 
+    @ordinary_current_database
     def test_runner_summary_uses_selected_observation_and_rejects_stale_basis(self):
         from tests.test_m242_runner_service import RunnerServiceFixture, passing_process_result
         from task_governance_tool import verification_runner_service as service
         from task_governance_tool import verification_runner_selection as selection
         from task_governance_tool.review_verification import validate_review_verification
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             prepared = fixture.prepared()
             paths = service._runner_paths(fixture.target)
             with service.zero_wait_runner_lock(paths):
@@ -268,7 +271,7 @@ class ReviewPacketTests(unittest.TestCase):
             repo = root / "repo"
             db = root / "taskgov.sqlite"
             commit = initialize_repo(repo)
-            initialize_taskgov_internal(repo=repo, db=db)
+            initialize_current_test_database(repo=repo, db=db)
             task_id = add_task(db, repo)
 
             set_target(
@@ -518,7 +521,7 @@ class ReviewPacketTests(unittest.TestCase):
             root = Path(tmp)
             repo, db = root / "repo", root / "taskgov.sqlite"
             initialize_repo(repo)
-            initialize_taskgov_internal(repo=repo, db=db)
+            initialize_current_test_database(repo=repo, db=db)
             for reference in ("", "docs/missing.md#根拠@abc123",
                               "conversation:example:approved", "external-id:review-42"):
                 with self.subTest(reference=reference):
@@ -549,7 +552,7 @@ class ReviewPacketTests(unittest.TestCase):
             repo = root / "repo"
             db = root / "taskgov.sqlite"
             initialize_repo(repo)
-            initialize_taskgov_internal(repo=repo, db=db)
+            initialize_current_test_database(repo=repo, db=db)
             task_id = add_task(
                 db,
                 repo,
@@ -582,7 +585,7 @@ class ReviewPacketTests(unittest.TestCase):
             repo = root / "repo"
             db = root / "taskgov.sqlite"
             root_commit = initialize_repo(repo)
-            initialize_taskgov_internal(repo=repo, db=db)
+            initialize_current_test_database(repo=repo, db=db)
             task_id = add_task(db, repo)
 
             set_target(
@@ -692,7 +695,7 @@ class ReviewPacketTests(unittest.TestCase):
             repo = root / "repo"
             db = root / "taskgov.sqlite"
             initialize_repo(repo)
-            initialize_taskgov_internal(repo=repo, db=db)
+            initialize_current_test_database(repo=repo, db=db)
             task_id = add_task(db, repo)
             set_target(
                 db,
@@ -730,7 +733,7 @@ class ReviewPacketTests(unittest.TestCase):
             repo = root / "repo"
             db = root / "taskgov.sqlite"
             initialize_repo(repo)
-            initialize_taskgov_internal(repo=repo, db=db)
+            initialize_current_test_database(repo=repo, db=db)
             result = run_taskgov_internal(
                 "task",
                 "add",
@@ -794,7 +797,7 @@ class ReviewPacketTests(unittest.TestCase):
             repo = root / "repo"
             db = root / "taskgov.sqlite"
             initialize_repo(repo)
-            initialize_taskgov_internal(repo=repo, db=db)
+            initialize_current_test_database(repo=repo, db=db)
             task_id = add_task(db, repo)
             set_target(db, repo, task_id, kind="external_revision", revision="size-bound")
             before = file_snapshot(root)
@@ -815,7 +818,7 @@ class ReviewPacketTests(unittest.TestCase):
             repo = root / "repo"
             db = root / "taskgov.sqlite"
             initialize_repo(repo)
-            initialize_taskgov_internal(repo=repo, db=db)
+            initialize_current_test_database(repo=repo, db=db)
             task_id = add_task(db, repo)
             set_target(
                 db,
@@ -869,7 +872,7 @@ class ReviewPacketTests(unittest.TestCase):
             repo = root / "repo"
             db = root / "taskgov.sqlite"
             initialize_repo(repo)
-            initialize_taskgov_internal(repo=repo, db=db)
+            initialize_current_test_database(repo=repo, db=db)
             task_id = add_task(db, repo)
             set_target(
                 db,
@@ -943,7 +946,7 @@ class ReviewPacketTests(unittest.TestCase):
             db = root / "taskgov.sqlite"
             initialize_repo(repo)
             foreign.mkdir()
-            initialize_taskgov_internal(repo=repo, db=db)
+            initialize_current_test_database(repo=repo, db=db)
             task_id = add_task(
                 db,
                 repo,
@@ -1031,7 +1034,7 @@ class ReviewPacketTests(unittest.TestCase):
             repo = root / "repo"
             db = root / "taskgov.sqlite"
             initialize_repo(repo)
-            initialize_taskgov_internal(repo=repo, db=db)
+            initialize_current_test_database(repo=repo, db=db)
             task_id = add_task(db, repo)
             (repo / "first.txt").write_text("first\n", encoding="utf-8")
             git(repo, "add", "first.txt")

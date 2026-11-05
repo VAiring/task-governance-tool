@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from tests.current_database_fixture_support import ordinary_current_database, initialize_case_database
+
+from tests.current_database_fixture_support import initialize_current_test_database
+
 import io
 import json
 import sqlite3
@@ -142,7 +146,7 @@ class TaskBatchCliTests(unittest.TestCase):
         self.repo = self.root / "repo"
         self.repo.mkdir()
         self.db = self.root / "taskgov.sqlite"
-        initialize_taskgov_internal(repo=self.repo, db=self.db)
+        initialize_case_database(self, repo=self.repo, db=self.db)
         self.target = resolve_database_target(repo=self.repo, db=self.db, script_path=SCRIPT)
 
     def success(self, *arguments):
@@ -174,6 +178,7 @@ class TaskBatchCliTests(unittest.TestCase):
         self.assertEqual(envelope["errors"][0]["code"], error)
         self.assertEqual(envelope["warnings"], [])
 
+    @ordinary_current_database
     def test_batch_matches_single_defaults_and_explicit_contract_semantics(self):
         candidate = document(common={
             "review_tier": 2, "description": "Shared description", "verification": "Focused verification",
@@ -202,6 +207,7 @@ class TaskBatchCliTests(unittest.TestCase):
             self.assertEqual(row["event"]["task_id"], row["task"]["task_id"])
             self.assertEqual(row["event"]["event_type"], "task_added")
 
+    @ordinary_current_database
     def test_shared_partial_fields_merge_before_cross_field_validation(self):
         candidate = document(common={"review_tier": 2, "kind": "sequential", "lane": " Shared lane ", "status": "blocked"}, tasks=[
             {"title": "First", "blocked_reason": "First dependency", "contract": None},
@@ -213,6 +219,7 @@ class TaskBatchCliTests(unittest.TestCase):
         self.assertEqual([row["task"]["lane_order"] for row in rows], [1, 2])
         self.assertEqual([row["task"]["lane"] for row in rows], ["Shared lane", "Shared lane"])
 
+    @ordinary_current_database
     def test_blocked_reason_preserves_single_registration_capacity_and_bytes(self):
         reason = "  Awaiting the existing dependency. " * 80
         single = self.success("task", "add", "--title", "Single blocked Task", "--status", "blocked", "--blocked-reason", reason)["task"]
@@ -253,6 +260,7 @@ class TaskBatchCliTests(unittest.TestCase):
         self.assert_failure(self.invoke(candidate), "sequential_predecessor_incomplete")
         self.assertEqual(file_snapshot(self.root), before)
 
+    @ordinary_current_database
     def test_invalid_later_item_and_overridden_common_are_rejected_before_writer(self):
         candidates = [
             (document(tasks=[{"title": "Good", "contract": None}, {"title": "bad" * 100, "contract": None}]), "invalid_argument"),
@@ -294,6 +302,7 @@ class TaskBatchCliTests(unittest.TestCase):
         maintenance.assert_not_called()
         self.assertEqual(file_snapshot(self.root), before)
 
+    @ordinary_current_database
     def test_effort_observation_finishes_for_every_active_item_before_writer(self):
         profile = effort_service.EffortProfile(True, True, True, effort_service.PROFILE_ID, 1, "a" * 64, {})
         endpoint = effort_service.GitEndpoint(True, "a" * 40, True, b"")
@@ -332,6 +341,7 @@ class TaskBatchCliTests(unittest.TestCase):
         self.assertEqual({row[0] for row in rows}, {row["task"]["task_id"] for row in json.loads(stdout)["data"]["tasks"]})
         self.assertEqual({row[1] for row in rows}, {"a" * 40})
 
+    @ordinary_current_database
     def test_parse_and_read_only_reject_before_stdin_and_invalid_json_before_connection(self):
         for flag, value in (("--title", "Single"), ("--review-tier", "1"), ("--contract-scope", "Scope"), ("--verification", "")):
             with self.subTest(flag=flag), mock.patch.object(cli_service, "resolve_context_target", side_effect=AssertionError("parse before state")):
@@ -352,6 +362,7 @@ class TaskBatchCliTests(unittest.TestCase):
         maintenance.assert_not_called()
         self.assertEqual(file_snapshot(self.root), before)
 
+    @ordinary_current_database
     def test_one_post_commit_maintenance_after_all_items_and_connection_close(self):
         opened, observed = [], []
         actual_connect = cli_service.connect_initialized

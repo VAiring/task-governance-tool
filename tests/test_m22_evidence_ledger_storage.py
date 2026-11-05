@@ -14,6 +14,7 @@ from tests.m14_test_support import (
 )
 from tests.review_test_helpers import seed_review_evidence_connection
 from tests.verification_receipt_test_support import (
+    initialize_current,
     DEFAULT_VERIFICATION,
     FINGERPRINT_A,
     add_receipt,
@@ -631,8 +632,8 @@ def tamper_historical_authority_text(
         raise
 
 
-def seed_historical_authority_receipt(root: Path):
-    repo, db = initialize(root)
+def seed_historical_authority_receipt(root: Path, *, current=False):
+    repo, db = (initialize_current if current else initialize)(root)
     added = run_taskgov(
         "task",
         "add",
@@ -1892,7 +1893,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
 
     def test_authority_privacy_scans_share_one_success_cache(self):
         with tempfile.TemporaryDirectory() as temp:
-            db, _, _ = seed_historical_authority_receipt(Path(temp))
+            db, _, _ = seed_historical_authority_receipt(Path(temp), current=True)
             real_detector = values_module.reject_private_or_raw_content
             real_legacy_detector = values_module.validate_legacy_m19_7_stored_text
             with closing(connect(db)) as connection:
@@ -1969,7 +1970,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
 
     def test_full_validator_reuses_authority_privacy_only_within_each_call(self):
         with tempfile.TemporaryDirectory() as temp:
-            repo, db = initialize(Path(temp))
+            repo, db = initialize_current(Path(temp))
             task = add_task(
                 db,
                 repo,
@@ -4330,7 +4331,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
 
     def test_selected_reference_inventory_is_one_owner_indexed_batch(self):
         with tempfile.TemporaryDirectory() as temp:
-            repo, db = initialize(Path(temp))
+            repo, db = initialize_current(Path(temp))
             tasks = [
                 add_task(db, repo, title=f"Reference batch {index}",
                          verification="", status="ready")
@@ -4513,7 +4514,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
 
     def test_historical_fallback_uses_manifest_snapshot_tier_not_current_tier(self):
         with tempfile.TemporaryDirectory() as temp:
-            repo, db = initialize(Path(temp))
+            repo, db = initialize_current(Path(temp))
             task = add_task(db, repo, review_tier=1)
             generation = set_target(db, repo, task["task_id"])
             reviewed = run_taskgov(
@@ -4758,7 +4759,7 @@ class EvidenceLedgerStorageTests(unittest.TestCase):
             for case, task_count in (("small", 1), ("larger", 4)):
                 root = Path(temp) / case
                 root.mkdir()
-                repo, db = initialize(root)
+                repo, db = initialize_current(root)
                 for index in range(task_count):
                     task = add_task(
                         db,

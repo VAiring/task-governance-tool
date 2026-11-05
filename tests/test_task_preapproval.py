@@ -1,6 +1,8 @@
 """Host approval fixtures are not proof of a live Guardian reduction."""
 from __future__ import annotations
 
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
+
 import copy
 import importlib.machinery
 import json
@@ -465,10 +467,11 @@ class RecordFlowTests(PreparationFixture):
 
 
 class RunnerSeparationTests(unittest.TestCase):
+    @ordinary_current_database
     def test_runner_eligible_target_stops_before_any_write_lock_cleanup_or_launch(self):
         from tests.test_m242_runner_service import RunnerServiceFixture, service
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             prepared = fixture.prepared()
             before = file_snapshot(Path(temporary))
             with mock.patch.object(service, "_prepare_runner", return_value=prepared), \

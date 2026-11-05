@@ -1,6 +1,8 @@
 """Whole-source publication capture: reuse, rejection and resource lifetimes."""
 from __future__ import annotations
 
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
+
 import gc
 import json
 import shutil
@@ -13,6 +15,7 @@ from pathlib import Path
 from unittest import mock
 
 from tests.verification_receipt_test_support import (
+    initialize_current,
     add_task, completion, initialize, run_taskgov, seed_current_review_evidence,
     target_for,
 )
@@ -292,7 +295,7 @@ class EvidenceRunnerCaptureReuseTests(unittest.TestCase):
         from task_governance_tool.session_identity import capture_caller_identity
         cls.directory = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.directory.cleanup)
-        fixture = RunnerServiceFixture(Path(cls.directory.name))
+        fixture = RunnerServiceFixture(Path(cls.directory.name), real_initialization=True)
         # Retain a superseded generation as well as two native Runner Bundles.
         _, intent = _launch(fixture)
         _persist_terminal(fixture, intent, branch="pass")
@@ -367,7 +370,7 @@ class EvidenceRunnerCaptureReuseTests(unittest.TestCase):
 
     def test_empty_graph_and_no_bundles_is_validated_once(self):
         root = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        repo, db = initialize(root)
+        repo, db = initialize_current(root)
         target = target_for(db, repo)
         configure_project_maintenance(target, requested_interval_minutes=None,
             requested_generations=None, enabled_at="2026-10-28T00:00:00Z")

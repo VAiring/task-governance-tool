@@ -1,3 +1,4 @@
+from tests.current_database_fixture_support import initialize_current_test_database
 import json
 from tests.registration_output_support import registration_task
 import os
@@ -136,7 +137,7 @@ class TaskNextTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             for index in range(6):
                 add_task(db, repo, f"Ready task {index}")
 
@@ -160,7 +161,7 @@ class TaskNextTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             add_task(db, repo, "Optional high", "--priority", "high")
             add_task(
                 db,
@@ -202,7 +203,7 @@ class TaskNextTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             add_task(
                 db,
                 repo,
@@ -254,7 +255,7 @@ class TaskNextTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             add_task(db, repo, "Optional ready")
             with mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "22222222-2222-4222-8222-222222222222"}):
                 add_task(db, repo, "In progress earlier", "--kind", "sequential",
@@ -416,7 +417,7 @@ class TaskNextTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             first = add_task(
                 db,
                 repo,
@@ -462,7 +463,7 @@ class TaskNextTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             add_task(db, repo, "Ready optional")
             before_counts = {
                 table: table_count(db, table)
@@ -484,7 +485,7 @@ class TaskNextTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             add_task(db, repo, "Ready optional", "--priority", "high")
             before_pause = next_tasks(db, repo, "--limit", "10")
             for index in range(3):
@@ -535,7 +536,7 @@ class TaskNextTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
 
             cases = (
                 (("--kind", "dependency"), "invalid_kind"),
@@ -567,7 +568,7 @@ class TaskNextTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             add_task(db, repo, "Ready optional")
 
             result = run_taskgov("task", "next", "--repo", str(repo), "--db", str(db))
@@ -584,7 +585,7 @@ class TaskNextTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             add_task(db, repo, "Ready optional")
             paused = add_task(db, repo, "Paused work", "--status", "in_progress")
             edit_task(

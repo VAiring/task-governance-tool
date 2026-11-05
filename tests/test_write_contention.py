@@ -1,3 +1,4 @@
+from tests.current_database_fixture_support import initialize_current_test_database
 import json
 from tests.registration_output_support import registration_task
 import sqlite3
@@ -247,7 +248,7 @@ class WriteContentionTests(unittest.TestCase):
             root = Path(tmp)
             repo = root / "repo"
             db = root / "taskgov.sqlite"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             before = database_rows(db)
             wrappers = []
 
@@ -332,7 +333,7 @@ class WriteContentionTests(unittest.TestCase):
             root = Path(tmp)
             repo = root / "repo"
             db = root / "taskgov.sqlite"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo, title="Review contention task")
             task_id = task["task_id"]
             successful_json("task", "edit", task_id, "--status", "in_progress",

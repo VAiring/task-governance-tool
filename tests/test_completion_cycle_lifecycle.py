@@ -1,3 +1,4 @@
+from tests.current_database_fixture_support import initialize_current_test_database
 import hashlib
 import json
 import sqlite3
@@ -223,7 +224,7 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
             root = Path(temp)
             repo, db = root / "repo", root / "taskgov.sqlite"
             repo.mkdir()
-            initialize_taskgov_internal(repo=repo, db=db)
+            initialize_current_test_database(repo=repo, db=db)
 
             thin = add_task(db, repo, "Thin completion", tier=0)
             seed_review_evidence(db, thin["task_id"])
@@ -378,7 +379,7 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
             root = Path(temp)
             repo, db = root / "repo", root / "taskgov.sqlite"
             repo.mkdir()
-            initialize_taskgov_internal(repo=repo, db=db)
+            initialize_current_test_database(repo=repo, db=db)
             task = add_task(db, repo, "Priority and completion", tier=0)
             seed_review_evidence(db, task["task_id"])
             args = completion_args(
@@ -438,7 +439,7 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
             root = Path(temp)
             repo, db = root / "repo", root / "taskgov.sqlite"
             repo.mkdir()
-            initialize_taskgov_internal(repo=repo, db=db)
+            initialize_current_test_database(repo=repo, db=db)
 
             independent = add_task(db, repo, "External independent", tier=1)
             seed_review_evidence(
@@ -514,7 +515,7 @@ class CompletionCycleLifecycleTests(unittest.TestCase):
             root = Path(temp)
             repo, db = root / "repo", root / "taskgov.sqlite"
             repo.mkdir()
-            initialize_taskgov_internal(repo=repo, db=db)
+            initialize_current_test_database(repo=repo, db=db)
             same_second = "2026-07-30T08:30:00Z"
             with mock.patch(
                 "task_governance_tool.tasks.utc_now",

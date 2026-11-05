@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from tests.current_database_fixture_support import ordinary_current_database, initialize_case_database
+
+from tests.current_database_fixture_support import initialize_current_test_database
+
 import io
 import json
 import os
@@ -151,7 +155,7 @@ class FindingResolutionCliTests(unittest.TestCase):
         self.repo = self.root / "repo"
         self.repo.mkdir()
         self.db = self.root / "taskgov.sqlite"
-        initialize_taskgov_internal(repo=self.repo, db=self.db)
+        initialize_case_database(self, repo=self.repo, db=self.db)
         self.target = review_fixtures.database_target(self.db, self.repo)
         self.task_id = self.success("task", "add", "--title", "Selected Finding resolution", "--status", "in_progress", "--review-tier", "2", "--verification-not-required", "Finding-resolution fixture")["task"]["task_id"]
         self.set_target()
@@ -202,6 +206,7 @@ class FindingResolutionCliTests(unittest.TestCase):
                 for table in ("review_findings", "review_receipts", "task_events", "evidence_references")
             }
 
+    @ordinary_current_database
     def test_shared_and_individual_resolutions_preserve_mapping_unselected_findings_and_originals(self):
         first = self.finding("First selected issue")
         second = self.finding("Second selected issue")
@@ -232,6 +237,7 @@ class FindingResolutionCliTests(unittest.TestCase):
         self.assertEqual(shown["counts"]["open_high"], 1)
         self.assertFalse(shown["gate"]["satisfied"])
 
+    @ordinary_current_database
     def test_blocking_resolution_requires_new_target_and_fresh_review_receipts(self):
         high = self.finding("Blocking correction", severity="high")
         code, stdout, _ = self.invoke([{"finding_ids": [high["review_finding_id"]], "resolution": "Corrected and verified"}])
@@ -248,6 +254,7 @@ class FindingResolutionCliTests(unittest.TestCase):
         finished = review_fixtures.done(self.db, self.repo, self.task_id)
         self.assertEqual(finished.returncode, 0, finished.stdout)
 
+    @ordinary_current_database
     def test_old_generation_finding_resolution_does_not_reset_current_target_or_receipts(self):
         old = self.finding("Old generation blocker", severity="medium")
         self.set_target()
@@ -261,6 +268,7 @@ class FindingResolutionCliTests(unittest.TestCase):
         self.assertEqual(after["review_evidence"]["current_receipts"], before["review_evidence"]["current_receipts"])
         self.assertTrue(after["review_evidence"]["gate"]["satisfied"])
 
+    @ordinary_current_database
     def test_resolved_replay_rejects_without_overwrite_or_new_events_and_single_mode_survives(self):
         first = self.finding("Previously resolved")
         second = self.finding("Still open")
@@ -278,6 +286,7 @@ class FindingResolutionCliTests(unittest.TestCase):
         self.assert_failure(self.invoke([{"finding_ids": [second["review_finding_id"]], "resolution": "Corrected after retry"}]), "invalid_review_evidence")
         self.assertEqual(file_snapshot(self.root), before)
 
+    @ordinary_current_database
     def test_missing_and_wrong_task_finding_leave_all_selected_rows_unchanged(self):
         selected = self.finding("Selected local issue")
         with mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "22222222-2222-4222-8222-222222222222"}):
@@ -292,6 +301,7 @@ class FindingResolutionCliTests(unittest.TestCase):
             self.assert_failure(self.invoke(groups), error)
             self.assertEqual(file_snapshot(self.root), before)
 
+    @ordinary_current_database
     def test_done_task_is_write_locked_even_for_nonblocking_findings(self):
         finding = self.finding("Low finding on done Task")
         done = review_fixtures.done(self.db, self.repo, self.task_id)
@@ -355,6 +365,7 @@ class FindingResolutionCliTests(unittest.TestCase):
         self.assertEqual(next(row for row in rows["review_findings"] if row["review_finding_id"] == selected["review_finding_id"]), selected)
         self.assertEqual([row["task_event_id"] for row in rows["task_events"] if row["event_type"] == "review_finding_resolved"], [earlier.event["task_event_id"]])
 
+    @ordinary_current_database
     def test_writer_reread_rejects_concurrent_resolution_and_done(self):
         for change in ("resolution", "done"):
             with self.subTest(change=change):
@@ -404,6 +415,7 @@ class FindingResolutionCliTests(unittest.TestCase):
             self.assertEqual(after_capture, before_capture)
             self.assertEqual(json.loads(stdout)["data"]["findings"][0]["finding"]["status"], "resolved")
 
+    @ordinary_current_database
     def test_read_only_invalid_json_and_parse_conflicts_do_not_consume_or_write(self):
         for arguments in ((FINDING_A,), ("--resolution", "Single value"), (FINDING_A, "--resolution", "Single value")):
             with self.subTest(arguments=arguments), mock.patch.object(cli_service, "resolve_context_target", side_effect=AssertionError("parse precedes state")):
@@ -434,6 +446,7 @@ class FindingResolutionCliTests(unittest.TestCase):
         maintenance.assert_not_called()
         self.assertEqual(file_snapshot(self.root), before)
 
+    @ordinary_current_database
     def test_one_maintenance_call_after_all_committed_resolutions_and_close(self):
         first, second = self.finding("First"), self.finding("Second")
         opened, observed = [], []

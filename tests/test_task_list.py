@@ -1,3 +1,4 @@
+from tests.current_database_fixture_support import initialize_current_test_database
 import json
 from tests.registration_output_support import registration_task
 import sqlite3
@@ -27,7 +28,7 @@ def run_taskgov(*args):
 
 def add_task(db, repo, title, *extra):
     if not db.exists():
-        init_db(db, repo)
+        initialize_current_test_database(db, repo)
     result = run_taskgov(
         "task",
         "add",

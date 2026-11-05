@@ -1,3 +1,5 @@
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
+from tests.current_database_fixture_support import initialize_current_test_database
 """Target-bound read-only preparation after a committed target operation."""
 
 import json
@@ -23,7 +25,7 @@ class TargetReviewPreparationTests(unittest.TestCase):
 
     def create(self, root, verification=""):
         db, repo = root / "state.sqlite", root / "repo"
-        initialize_taskgov_internal(repo=repo, db=db)
+        initialize_current_test_database(repo=repo, db=db)
         declaration = (["--verification", verification] if verification else
                        ["--verification-not-required", "Isolated Packet fixture without executable changes"])
         result, payload = self.invoke(db, repo, "task", "add", "--title", "Packet connection",
@@ -84,13 +86,14 @@ class TargetReviewPreparationTests(unittest.TestCase):
             self.assertEqual(payload["data"]["review_preparation"],
                              {"status": "not_applicable", "binding": None, "packet": None, "errors": []})
 
+    @ordinary_current_database
     def test_persisted_runner_pass_and_blocked_routes(self):
         from tests.test_m242_runner_service import RunnerServiceFixture
         from tests.test_m243c_runner_gate import _launch, _persist_terminal
 
         for branch in ("pass", "blocking"):
             with self.subTest(branch=branch), tempfile.TemporaryDirectory() as tmp:
-                fixture = RunnerServiceFixture(Path(tmp))
+                fixture = RunnerServiceFixture(Path(tmp), real_initialization=not uses_current_database_fixture(self))
                 prepared, intent = _launch(fixture)
                 observation = _persist_terminal(fixture, intent, branch=branch)
                 routed = service._routed_runner_target(intent.review, intent.resolution, observation)

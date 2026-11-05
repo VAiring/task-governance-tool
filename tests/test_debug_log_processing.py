@@ -1,4 +1,5 @@
 """Real processing counts, bounded output and OFF/ON semantic equivalence."""
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
 from contextlib import closing
 from pathlib import Path
 from types import SimpleNamespace
@@ -84,9 +85,10 @@ class ProcessingLogTests(unittest.TestCase):
         self.assertLessEqual(len(self.records()), 8)
         self.assertNotIn('private-', json.dumps(self.records()))
 
+    @ordinary_current_database
     def test_task_rows_and_sql_are_identical_at_multiple_sizes(self):
         with tempfile.TemporaryDirectory() as directory:
-            target = viewer_fixture.make_target(Path(directory), enabled=False)
+            target = viewer_fixture.make_target(Path(directory), enabled=False, real_initialization=not uses_current_database_fixture(self))
             populated = 0
             for size in (1, 30, 300):
                 with closing(connect_initialized(target)) as connection:
@@ -180,7 +182,7 @@ class ProcessingLogTests(unittest.TestCase):
 
     def test_publication_current_and_lock_contention_keep_primary_outcomes(self):
         with tempfile.TemporaryDirectory() as directory:
-            target = viewer_fixture.make_target(Path(directory), enabled=True)
+            target = viewer_fixture.make_target(Path(directory), enabled=True, real_initialization=not uses_current_database_fixture(self))
             self.configure()
             with self.scope():
                 first = viewer_maintenance.publish_setup_viewer(target)

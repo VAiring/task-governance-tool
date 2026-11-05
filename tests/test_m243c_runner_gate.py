@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
+
 import ast
 import json
 import os
@@ -363,6 +365,7 @@ def _show_task_through_task_local_connection(
 
 
 class M243CRunnerGateTests(unittest.TestCase):
+    @ordinary_current_database
     def test_target_set_route_reuses_the_closed_runner_terminal_classification(self):
         cases = (
             ("pass", "runner_pass", None),
@@ -371,7 +374,7 @@ class M243CRunnerGateTests(unittest.TestCase):
         )
         for branch, expected_route, expected_code in cases:
             with self.subTest(branch=branch), tempfile.TemporaryDirectory() as temporary:
-                fixture = RunnerServiceFixture(Path(temporary))
+                fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
                 _prepared, intent = _launch(fixture)
                 observation = _persist_terminal(fixture, intent, branch=branch)
                 result = service._routed_runner_target(
@@ -382,10 +385,11 @@ class M243CRunnerGateTests(unittest.TestCase):
                 self.assertEqual(result.verification_route, expected_route)
                 self.assertEqual(result.blocking_code, expected_code)
 
+    @ordinary_current_database
     def test_public_runner_routes_release_sqlite_before_physical_selection(self):
         for route in ("show", "receipt", "complete", "complete_check"):
             with self.subTest(route=route), tempfile.TemporaryDirectory() as temporary:
-                fixture = RunnerServiceFixture(Path(temporary))
+                fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
                 _prepared, intent = _launch(fixture)
                 if route == "receipt":
                     _persist_terminal(fixture, intent, branch="fallback")
@@ -438,9 +442,10 @@ class M243CRunnerGateTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stdout)
                 self.assertGreater(physical_checks, 0)
 
+    @ordinary_current_database
     def test_task_show_builds_one_projection_without_global_runner_scan(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             _prepared, intent = _launch(fixture)
             _persist_terminal(fixture, intent, branch="pass")
 
@@ -484,7 +489,7 @@ class M243CRunnerGateTests(unittest.TestCase):
         self,
     ):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             selected_task_id = fixture.task_id
             _prepared, intent = _launch(fixture)
             _persist_terminal(fixture, intent, branch="pass")
@@ -522,7 +527,7 @@ class M243CRunnerGateTests(unittest.TestCase):
 
     def test_task_local_runner_read_rejects_selected_graph_corruption(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             _prepared, intent = _launch(fixture)
             _persist_terminal(fixture, intent, branch="pass")
             _corrupt_runner_observation_digest(
@@ -554,9 +559,10 @@ class M243CRunnerGateTests(unittest.TestCase):
                 "project_state_unreadable",
             )
 
+    @ordinary_current_database
     def test_done_runner_history_uses_only_its_exact_generation(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             _complete_runner_pass(fixture)
             with closing(sqlite3.connect(fixture.db)) as connection:
                 cycle_generation = int(
@@ -605,9 +611,10 @@ class M243CRunnerGateTests(unittest.TestCase):
             self.assertEqual(shown.completion_history["total"], 1)
             self.assertEqual(selected_generations, [cycle_generation])
 
+    @ordinary_current_database
     def test_done_manual_history_does_not_invoke_runner_validation(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             started = run_taskgov_internal(
                 "task",
                 "edit",
@@ -671,9 +678,10 @@ class M243CRunnerGateTests(unittest.TestCase):
 
             self.assertEqual(shown.completion_history["total"], 1)
 
+    @ordinary_current_database
     def test_reopened_history_uses_stored_generation_not_current_generation(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             _complete_runner_pass(fixture)
             reopened = run_taskgov_internal(
                 "task",
@@ -766,7 +774,7 @@ class M243CRunnerGateTests(unittest.TestCase):
             with self.subTest(corruption=name):
                 temporary_context = tempfile.TemporaryDirectory()
                 self.addCleanup(temporary_context.cleanup)
-                fixture = RunnerServiceFixture(Path(temporary_context.name))
+                fixture = RunnerServiceFixture(Path(temporary_context.name), real_initialization=not uses_current_database_fixture(self))
                 selected_task_id = fixture.task_id
                 _complete_runner_pass(fixture)
                 unrelated_task_id = _add_runner_task(
@@ -833,7 +841,7 @@ class M243CRunnerGateTests(unittest.TestCase):
 
     def test_selected_history_maps_malformed_finding_to_closed_error(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             _prepared, intent = _launch(fixture)
             _persist_terminal(fixture, intent, branch="pass")
             _seed_review_receipts(fixture)
@@ -886,13 +894,14 @@ class M243CRunnerGateTests(unittest.TestCase):
                 "completion_history_inconsistent",
             )
 
+    @ordinary_current_database
     def test_actual_review_commit_preserves_runner_pass_and_closed_fallback(self):
         for branch, expected_basis in (
             ("pass", "runner_observation"),
             ("fallback", "caller_attestation"),
         ):
             with self.subTest(branch=branch), tempfile.TemporaryDirectory() as temporary:
-                fixture = RunnerServiceFixture(Path(temporary))
+                fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
                 prepared, intent = _launch(fixture)
                 skill_parent = fixture.repo / ".agents" / "skills"
                 skill_parent.mkdir(parents=True)
@@ -997,7 +1006,7 @@ class M243CRunnerGateTests(unittest.TestCase):
 
     def test_valid_package_identity_change_makes_live_runner_basis_stale(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             skill_parent = fixture.repo / ".agents" / "skills"
             skill_parent.mkdir(parents=True)
             installed_skill_root = _copy_skill(skill_parent)
@@ -1125,9 +1134,10 @@ class M243CRunnerGateTests(unittest.TestCase):
 
         self.assertEqual(forbidden_imports, [])
 
+    @ordinary_current_database
     def test_concurrent_target_invalidation_precedes_runner_package_selection(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             _launch(fixture)
             original_prepare = completion_workflow.prepare_completion_plan
 
@@ -1166,9 +1176,10 @@ class M243CRunnerGateTests(unittest.TestCase):
             )
             selector.assert_not_called()
 
+    @ordinary_current_database
     def test_completion_argument_error_precedes_runner_package_selection(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             _launch(fixture)
 
             with mock.patch.object(
@@ -1196,9 +1207,10 @@ class M243CRunnerGateTests(unittest.TestCase):
             )
             selector.assert_not_called()
 
+    @ordinary_current_database
     def test_runner_pass_is_receiptless_and_seals_existing_runner_evidence(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             _prepared, intent = _launch(fixture)
 
             with mock.patch.object(
@@ -1335,6 +1347,7 @@ class M243CRunnerGateTests(unittest.TestCase):
             self.assertEqual(replay.returncode, 0, replay.stdout)
             self.assertNotIn(observation_id, replay.stdout)
 
+    @ordinary_current_database
     def test_closed_fallback_uses_m21_receipt_and_caller_attestation_bundle(self):
         for policy, reason in (
             (RUNNER_POLICY_DIGEST, "runtime_unavailable"),
@@ -1342,7 +1355,7 @@ class M243CRunnerGateTests(unittest.TestCase):
             (RUNNER_POSIX_POLICY_DIGEST, "process_setup_failed"),
         ):
             with self.subTest(policy=policy, reason=reason), tempfile.TemporaryDirectory() as temporary:
-                fixture = RunnerServiceFixture(Path(temporary))
+                fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
                 _prepared, intent = _launch(fixture, policy=policy)
                 observation = _persist_terminal(
                     fixture, intent, branch="fallback", fallback_reason=reason,
@@ -1422,10 +1435,11 @@ class M243CRunnerGateTests(unittest.TestCase):
                     cycle["verification_runner_observation_id"],
                 )
 
+    @ordinary_current_database
     def test_compatibility_edit_uses_the_same_runner_pass_and_fallback_selector(self):
         for branch in ("pass", "fallback"):
             with self.subTest(branch=branch), tempfile.TemporaryDirectory() as temporary:
-                fixture = RunnerServiceFixture(Path(temporary))
+                fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
                 _prepared, intent = _launch(fixture)
                 observation = _persist_terminal(fixture, intent, branch=branch)
 
@@ -1479,9 +1493,10 @@ class M243CRunnerGateTests(unittest.TestCase):
                     ),
                 )
 
+    @ordinary_current_database
     def test_compatibility_edit_rejects_concurrent_target_before_runner_selection(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             _prepared, intent = _launch(fixture)
             _persist_terminal(fixture, intent, branch="pass")
             _seed_review_receipts(fixture)
@@ -1530,9 +1545,10 @@ class M243CRunnerGateTests(unittest.TestCase):
             )
             selector.assert_not_called()
 
+    @ordinary_current_database
     def test_compatibility_edit_rejects_retarget_after_first_basis_capture(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             _prepared, intent = _launch(fixture)
             _persist_terminal(fixture, intent, branch="pass")
             _seed_review_receipts(fixture)
@@ -1592,9 +1608,10 @@ class M243CRunnerGateTests(unittest.TestCase):
             self.assertEqual(status, "in_progress")
             self.assertEqual(cycle_count, 0)
 
+    @ordinary_current_database
     def test_compatibility_edit_checks_proposed_lane_before_runner_selection(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             predecessor = run_taskgov_internal(
                 "task",
                 "add",
@@ -1646,10 +1663,11 @@ class M243CRunnerGateTests(unittest.TestCase):
             )
             selector.assert_not_called()
 
+    @ordinary_current_database
     def test_posix_pending_cleanup_only_and_stale_target_refuse_completion(self):
         for state in ("pending", "restart_cleaned", "stale_target"):
             with self.subTest(state=state), tempfile.TemporaryDirectory() as temporary:
-                fixture = RunnerServiceFixture(Path(temporary))
+                fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
                 _prepared, intent = _launch(fixture, policy=RUNNER_POSIX_POLICY_DIGEST)
                 if state == "restart_cleaned":
                     service._persist_cleanup_only(fixture.target, intent.attempt)
@@ -1688,6 +1706,7 @@ class M243CRunnerGateTests(unittest.TestCase):
                 )
                 self.assertEqual(tree_snapshot(fixture.db.parent), before)
 
+    @ordinary_current_database
     def test_other_terminal_is_blocking_and_receipt_cannot_override_it(self):
         for policy, branch, reason in (
             (RUNNER_POLICY_DIGEST, "blocking", "runtime_unavailable"),
@@ -1695,7 +1714,7 @@ class M243CRunnerGateTests(unittest.TestCase):
             (RUNNER_POSIX_POLICY_DIGEST, "fallback", "process_boundary_unproved"),
         ):
             with self.subTest(policy=policy, branch=branch), tempfile.TemporaryDirectory() as temporary:
-                fixture = RunnerServiceFixture(Path(temporary))
+                fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
                 _prepared, intent = _launch(fixture, policy=policy)
                 _persist_terminal(fixture, intent, branch=branch, fallback_reason=reason)
 

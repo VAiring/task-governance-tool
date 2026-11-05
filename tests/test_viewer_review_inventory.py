@@ -1,4 +1,5 @@
 """Viewer Finding scan sharing preserves the scalar review evidence boundary."""
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
 
 import gc
 import sqlite3
@@ -71,9 +72,10 @@ def seed_reviews(target):
 
 
 class ViewerReviewInventoryTests(unittest.TestCase):
+    @ordinary_current_database
     def test_shared_inventory_does_not_cap_task_selection_at_500(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
             with closing(connect(target.db_path)) as connection:
                 for index in range(501):
                     add_task(connection, target.project, title=f"Task {index}")
@@ -95,7 +97,7 @@ class ViewerReviewInventoryTests(unittest.TestCase):
 
     def test_invalid_finding_preserves_last_good_viewer_and_due_state(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp), enabled=True)
+            target = make_target(Path(tmp), enabled=True, real_initialization=not uses_current_database_fixture(self))
             selected = seed_reviews(target)[0]
             viewer_maintenance.publish_setup_viewer(target, observed_at=FIXED_TIME)
             output = resolve_canonical_viewer_output_target(target)
@@ -131,7 +133,7 @@ class ViewerReviewInventoryTests(unittest.TestCase):
             "parent_alias_collision", "historical_severity", "reference", "provenance",
         )
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
             task_ids = seed_reviews(target)
             for case in cases:
                 with self.subTest(case=case):
@@ -232,7 +234,7 @@ class ViewerReviewInventoryTests(unittest.TestCase):
 
     def test_legacy_snapshot_retains_shared_scan_and_scalar_output(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
             with closing(connect(target.db_path)) as connection:
                 # Downgrade the empty fixture, never discard current ownership
                 # history to manufacture a legacy database.
@@ -279,9 +281,10 @@ class ViewerReviewInventoryTests(unittest.TestCase):
                     for sql in statements
                 ), 1)
 
+    @ordinary_current_database
     def test_nontransactional_repository_reader_keeps_scalar_observations(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
             with closing(connect(target.db_path)) as connection:
                 add_task(connection, target.project, title="Ordinary reader")
                 connection.commit()
@@ -294,9 +297,10 @@ class ViewerReviewInventoryTests(unittest.TestCase):
                 scalar.assert_called_once()
                 self.assertFalse(connection.in_transaction)
 
+    @ordinary_current_database
     def test_shared_scan_matches_scalar_evidence_and_validates_every_finding(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
             task_ids = seed_reviews(target)
             before = target.db_path.read_bytes()
             with closing(connect_snapshot_readonly(target.db_path)) as connection:
@@ -383,9 +387,10 @@ class ViewerReviewInventoryTests(unittest.TestCase):
             self.assertEqual(shared_snapshot, scalar_snapshot)
             self.assertEqual(target.db_path.read_bytes(), before)
 
+    @ordinary_current_database
     def test_empty_task_batch_opens_no_finding_inventory(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = initialized_target(tmp)
+            target = initialized_target(tmp, real_initialization=not uses_current_database_fixture(self))
             statements = []
             with closing(connect_snapshot_readonly(target.db_path)) as connection:
                 connection.set_trace_callback(statements.append)

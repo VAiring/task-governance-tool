@@ -1,3 +1,6 @@
+from tests.current_database_fixture_support import (
+    initialize_current_test_database, ordinary_current_database, uses_current_database_fixture,
+)
 import json
 from tests.registration_output_support import registration_task
 import sqlite3
@@ -55,11 +58,14 @@ def init_db(db, repo):
     return initialize_taskgov_internal(repo=repo, db=db)
 
 
-def add_task(db, repo, title, *extra):
+def add_task(db, repo, title, *extra, testcase=None):
     if "--verification" not in extra and "--verification-not-required" not in extra:
         extra = (*extra, "--verification-not-required", "Commit-evidence fixture")
     if not db.exists():
-        init_db(db, repo)
+        if uses_current_database_fixture(testcase):
+            initialize_current_test_database(db, repo)
+        else:
+            init_db(db, repo)
     result = run_taskgov(
         "task",
         "add",
@@ -190,12 +196,13 @@ def table_count(db, table):
 
 
 class CompletionCommitCliTests(unittest.TestCase):
+    @ordinary_current_database
     def test_task_edit_completion_commit_hash_records_hash(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
             revision = init_git_repo(repo)
-            task = add_task(db, repo, "Commit hash task")
+            task = add_task(db, repo, "Commit hash task", testcase=self)
 
             payload = edit_task(
                 db,
@@ -221,12 +228,13 @@ class CompletionCommitCliTests(unittest.TestCase):
                 },
             )
 
+    @ordinary_current_database
     def test_task_edit_completion_commit_hash_text_output_says_what_was_recorded(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
             revision = init_git_repo(repo)
-            task = add_task(db, repo, "Commit hash text task")
+            task = add_task(db, repo, "Commit hash text task", testcase=self)
 
             result = run_taskgov(
                 "task",
@@ -243,12 +251,13 @@ class CompletionCommitCliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("Event: task_updated - Recorded: Git completion commit verified", result.stdout)
 
+    @ordinary_current_database
     def test_task_edit_commit_not_required_clears_hash(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
             revision = init_git_repo(repo)
-            task = add_task(db, repo, "No material task")
+            task = add_task(db, repo, "No material task", testcase=self)
             edit_task(db, repo, task["task_id"], "--completion-commit-hash", revision)
 
             payload = edit_task(db, repo, task["task_id"], "--commit-not-required")
@@ -264,11 +273,12 @@ class CompletionCommitCliTests(unittest.TestCase):
                 },
             )
 
+    @ordinary_current_database
     def test_task_edit_rejects_commit_hash_conflict_without_storage(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            task = add_task(db, repo, "Conflict task")
+            task = add_task(db, repo, "Conflict task", testcase=self)
 
             result = run_taskgov(
                 "task",
@@ -296,11 +306,12 @@ class CompletionCommitCliTests(unittest.TestCase):
             )
             self.assertEqual(table_count(db, "task_events"), 1)
 
+    @ordinary_current_database
     def test_task_edit_rejects_private_completion_commit_hash(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            task = add_task(db, repo, "Privacy task")
+            task = add_task(db, repo, "Privacy task", testcase=self)
 
             result = run_taskgov(
                 "task",
@@ -320,11 +331,12 @@ class CompletionCommitCliTests(unittest.TestCase):
             self.assertEqual(payload["errors"][0]["code"], "privacy_rejected")
             self.assertEqual(table_count(db, "task_events"), 1)
 
+    @ordinary_current_database
     def test_task_edit_records_verification_and_review_confirmations(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            task = add_task(db, repo, "Confirmation task")
+            task = add_task(db, repo, "Confirmation task", testcase=self)
 
             payload = edit_task(
                 db,
@@ -341,11 +353,12 @@ class CompletionCommitCliTests(unittest.TestCase):
             )
             self.assertEqual(table_count(db, "task_events"), 2)
 
+    @ordinary_current_database
     def test_task_edit_records_confirmations_when_note_is_added(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            task = add_task(db, repo, "Confirmation note task")
+            task = add_task(db, repo, "Confirmation note task", testcase=self)
 
             payload = edit_task(
                 db,
@@ -365,11 +378,12 @@ class CompletionCommitCliTests(unittest.TestCase):
             )
             self.assertEqual(payload["data"]["event"]["note_body"], "Checked required gates")
 
+    @ordinary_current_database
     def test_task_edit_long_note_with_confirmation_keeps_marker_within_summary_limit(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            task = add_task(db, repo, "Long confirmation note task")
+            task = add_task(db, repo, "Long confirmation note task", testcase=self)
 
             payload = edit_task(
                 db,
@@ -396,12 +410,13 @@ class CompletionCommitCliTests(unittest.TestCase):
             self.assertTrue(stored["summary"].endswith("; Recorded: verification complete"))
             self.assertEqual(stored["note_body"], "x" * 1500)
 
+    @ordinary_current_database
     def test_task_edit_done_rejects_missing_verification_confirmation_without_storage(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
             revision = init_git_repo(repo)
-            task = add_task(db, repo, "Missing verification confirmation")
+            task = add_task(db, repo, "Missing verification confirmation", testcase=self)
 
             result = run_taskgov(
                 "task",
@@ -426,12 +441,13 @@ class CompletionCommitCliTests(unittest.TestCase):
             self.assertEqual(fetch_task_state(db, task["task_id"])["completion_commit_hash"], "")
             self.assertEqual(table_count(db, "task_events"), 1)
 
+    @ordinary_current_database
     def test_task_edit_done_rejects_missing_review_confirmation_without_storage(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
             revision = init_git_repo(repo)
-            task = add_task(db, repo, "Missing review confirmation")
+            task = add_task(db, repo, "Missing review confirmation", testcase=self)
 
             result = run_taskgov(
                 "task",
@@ -456,11 +472,12 @@ class CompletionCommitCliTests(unittest.TestCase):
             self.assertEqual(fetch_task_state(db, task["task_id"])["completion_commit_hash"], "")
             self.assertEqual(table_count(db, "task_events"), 1)
 
+    @ordinary_current_database
     def test_task_edit_done_rejects_missing_required_commit_hash_without_storage(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            task = add_task(db, repo, "Missing completion commit")
+            task = add_task(db, repo, "Missing completion commit", testcase=self)
 
             result = run_taskgov(
                 "task",
@@ -488,7 +505,7 @@ class CompletionCommitCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            task = add_task(db, repo, "Inconsistent commit state")
+            task = add_task(db, repo, "Inconsistent commit state", testcase=self)
             with closing(sqlite3.connect(db)) as connection:
                 connection.execute(
                     """
@@ -522,12 +539,13 @@ class CompletionCommitCliTests(unittest.TestCase):
             self.assertEqual(fetch_task_state(db, task["task_id"])["status"], "ready")
             self.assertEqual(table_count(db, "task_events"), 1)
 
+    @ordinary_current_database
     def test_task_edit_done_accepts_confirmations_and_commit_hash(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
             revision = init_git_repo(repo)
-            task = add_task(db, repo, "Done with completion metadata")
+            task = add_task(db, repo, "Done with completion metadata", testcase=self)
 
             payload = edit_task(
                 db,
@@ -551,12 +569,13 @@ class CompletionCommitCliTests(unittest.TestCase):
                 revision,
             )
 
+    @ordinary_current_database
     def test_task_edit_done_accepts_previously_recorded_commit_hash(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
             revision = init_git_repo(repo)
-            task = add_task(db, repo, "Done with earlier commit metadata")
+            task = add_task(db, repo, "Done with earlier commit metadata", testcase=self)
             edit_task(db, repo, task["task_id"], "--completion-commit-hash", revision)
 
             payload = edit_task(
@@ -576,11 +595,12 @@ class CompletionCommitCliTests(unittest.TestCase):
                 revision,
             )
 
+    @ordinary_current_database
     def test_task_edit_done_accepts_commit_not_required_with_confirmations(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            task = add_task(db, repo, "Done without managed material")
+            task = add_task(db, repo, "Done without managed material", testcase=self)
 
             payload = edit_task(
                 db,
@@ -603,11 +623,12 @@ class CompletionCommitCliTests(unittest.TestCase):
                 },
             )
 
+    @ordinary_current_database
     def test_task_edit_done_accepts_previously_recorded_commit_not_required(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            task = add_task(db, repo, "Done with earlier no-commit decision")
+            task = add_task(db, repo, "Done with earlier no-commit decision", testcase=self)
             edit_task(db, repo, task["task_id"], "--commit-not-required")
 
             payload = edit_task(
@@ -630,12 +651,13 @@ class CompletionCommitCliTests(unittest.TestCase):
                 },
             )
 
+    @ordinary_current_database
     def test_task_show_exposes_completion_commit_fields_but_list_and_next_do_not(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
             revision = init_git_repo(repo)
-            task = add_task(db, repo, "Completion metadata visibility")
+            task = add_task(db, repo, "Completion metadata visibility", testcase=self)
             edit_task(db, repo, task["task_id"], "--completion-commit-hash", revision)
 
             shown = task_payload("show", db, repo, task["task_id"])["data"]["task"]

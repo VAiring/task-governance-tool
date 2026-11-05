@@ -1,3 +1,4 @@
+from tests.current_database_fixture_support import initialize_current_test_database
 import json
 import sqlite3
 import subprocess
@@ -37,7 +38,7 @@ class TaskAddTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
 
             result = run_taskgov(
                 "task",
@@ -80,7 +81,7 @@ class TaskAddTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
 
             first = run_taskgov(
                 "task",
@@ -127,7 +128,7 @@ class TaskAddTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
 
             result = run_taskgov(
                 "task",
@@ -150,7 +151,7 @@ class TaskAddTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
 
             result = run_taskgov(
                 "task",
@@ -200,7 +201,7 @@ class TaskAddTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "db" / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
 
             result = run_taskgov(
                 "task",
@@ -227,7 +228,7 @@ class TaskAddTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
 
             first = run_taskgov(
                 "task",
@@ -278,7 +279,7 @@ class TaskAddTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             maximum = str((1 << 63) - 1)
             seeded = run_taskgov(
                 "task", "add", "--repo", str(repo), "--db", str(db),
@@ -317,7 +318,7 @@ class TaskAddTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
 
             result = run_taskgov(
                 "task",
@@ -364,7 +365,7 @@ class TaskAddTests(unittest.TestCase):
             self.assertEqual(payload["errors"][0]["code"], "invalid_argument")
 
             existing_db = Path(tmp) / "taskgov.sqlite"
-            init_db(existing_db, repo)
+            initialize_current_test_database(existing_db, repo)
             existing = run_taskgov(
                 "task",
                 "add",
@@ -386,7 +387,7 @@ class TaskAddTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
 
             result = run_taskgov(
                 "task",
@@ -464,7 +465,7 @@ class TaskAddTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             before_tasks = table_count(db, "tasks")
             before_events = table_count(db, "task_events")
 
@@ -492,7 +493,7 @@ class TaskAddTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
 
             result = run_taskgov(
                 "task",

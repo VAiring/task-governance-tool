@@ -1,4 +1,5 @@
 """Short outcome writes retain primary results and reject stale publications."""
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
 from contextlib import closing
 from dataclasses import replace
 from pathlib import Path
@@ -14,7 +15,7 @@ from task_governance_tool import backup, backup_metadata_repository as repositor
 class BackupOutcomeTests(unittest.TestCase):
     def fixture(self):
         directory = self.enterContext(tempfile.TemporaryDirectory())
-        return make_target(Path(directory))
+        return make_target(Path(directory), real_initialization=not uses_current_database_fixture(self))
 
     def state(self, target):
         return self.observe(target).maintenance
@@ -27,6 +28,7 @@ class BackupOutcomeTests(unittest.TestCase):
             target, code=code, occurred_at=timestamp(0), observed=observed,
         )
 
+    @ordinary_current_database
     def test_delayed_outcome_cannot_overwrite_new_generation_at_same_timestamp(self):
         for code in ("failed", "deferred"):
             with self.subTest(code=code):
@@ -69,7 +71,7 @@ class BackupOutcomeTests(unittest.TestCase):
             for code in ("failed", "deferred"):
                 with self.subTest(canonical=canonical, code=code):
                     root = Path(self.enterContext(tempfile.TemporaryDirectory()))
-                    target = _setup_current(root)[1] if canonical else make_target(root)
+                    target = _setup_current(root)[1] if canonical else make_target(root, real_initialization=not uses_current_database_fixture(self))
                     # Real published files and rows, as after a row-commit crash
                     # before retention pruning. Recovery needs no new copy.
                     for index in range(1, 5):
@@ -115,6 +117,7 @@ class BackupOutcomeTests(unittest.TestCase):
                     self.assertEqual(len(current.generations), len(observed.generations))
                     self.assertNotEqual(current.generations, observed.generations)
 
+    @ordinary_current_database
     def test_outcome_does_not_walk_history_but_keeps_locked_structural_admission(self):
         target = self.fixture()
         observed = self.observe(target)

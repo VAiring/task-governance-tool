@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
+
+from tests.current_database_fixture_support import initialize_feature_test_target
+
 import io
 import json
 import sqlite3
@@ -36,7 +40,7 @@ from task_governance_tool.viewer_maintenance import ViewerRefreshResult
 SCRIPT_PATH = SOURCE_SKILL_ROOT / "scripts" / "taskgov.py"
 
 
-def make_target(root: Path):
+def make_target(root: Path, *, real_initialization=True):
     repo = root / "project"
     repo.mkdir()
     target = resolve_database_target(
@@ -44,7 +48,7 @@ def make_target(root: Path):
         db=root / "state" / "taskgov.sqlite",
         script_path=SCRIPT_PATH,
     )
-    initialize_database(target)
+    initialize_feature_test_target(target, real_initialization=real_initialization)
     return target
 
 
@@ -94,7 +98,7 @@ class MaintenanceAdmissionTests(unittest.TestCase):
         from task_governance_tool import backup, evidence_publication as evidence
 
         directory = self.enterContext(tempfile.TemporaryDirectory())
-        target = make_target(Path(directory), enabled=enabled)
+        target = make_target(Path(directory), enabled=enabled, real_initialization=not uses_current_database_fixture(self))
         add_viewer_event(target, "Unrelated retained history")
         if current:
             self.assertEqual(evidence.publish_setup_evidence_projection(target).code, "succeeded")
@@ -265,6 +269,7 @@ class MaintenanceAdmissionTests(unittest.TestCase):
                 self.assertEqual(read.call_count, 0 if disabled else 1)
                 self.assert_global_rejects(target)
 
+    @ordinary_current_database
     def test_viewer_capture_validates_selected_rows_in_one_read_snapshot(self):
         target = self.make_fixture()
         service = viewer_maintenance_service
@@ -286,6 +291,7 @@ class MaintenanceAdmissionTests(unittest.TestCase):
         with self.assertRaises(sqlite3.ProgrammingError):
             readers[0].execute("SELECT 1")
 
+    @ordinary_current_database
     def test_evidence_full_capture_audits_the_same_snapshot_before_building(self):
         from task_governance_tool import storage, evidence_publication as evidence
         target = self.make_fixture()
@@ -362,9 +368,10 @@ class PostCommitMaintenanceTests(unittest.TestCase):
                 ),
             },
         )
+    @ordinary_current_database
     def test_false_outcome_skips_viewer_and_backup(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp))
+            target = make_target(Path(tmp), real_initialization=not uses_current_database_fixture(self))
             with (
                 mock.patch.object(
                     maintenance_service,
@@ -387,9 +394,10 @@ class PostCommitMaintenanceTests(unittest.TestCase):
             viewer.assert_not_called()
             backup.assert_not_called()
 
+    @ordinary_current_database
     def test_viewer_warning_does_not_start_backup(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp))
+            target = make_target(Path(tmp), real_initialization=not uses_current_database_fixture(self))
             calls: list[str] = []
 
             def viewer_refresh(*args, **kwargs):
@@ -431,7 +439,7 @@ class PostCommitMaintenanceTests(unittest.TestCase):
 
     def test_viewer_failure_does_not_start_backup(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp))
+            target = make_target(Path(tmp), real_initialization=not uses_current_database_fixture(self))
             with (
                 mock.patch.object(
                     maintenance_service,
@@ -524,9 +532,10 @@ class PostCommitMaintenanceTests(unittest.TestCase):
             self.assertTrue(viewer["due"])
             self.assertEqual(viewer["last_outcome"]["code"], "failed")
 
+    @ordinary_current_database
     def test_due_backup_policy_does_not_change_viewer_warning(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp))
+            target = make_target(Path(tmp), real_initialization=not uses_current_database_fixture(self))
             with (
                 mock.patch.object(
                     maintenance_service,
@@ -562,9 +571,10 @@ class PostCommitMaintenanceTests(unittest.TestCase):
                 ],
             )
 
+    @ordinary_current_database
     def test_handoff_outcome_skips_viewer_and_backup(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp))
+            target = make_target(Path(tmp), real_initialization=not uses_current_database_fixture(self))
             with (
                 mock.patch.object(
                     maintenance_service,
@@ -588,9 +598,10 @@ class PostCommitMaintenanceTests(unittest.TestCase):
             viewer.assert_not_called()
             backup.assert_not_called()
 
+    @ordinary_current_database
     def test_pre_opt_in_viewer_path_does_not_lock_render_or_write(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp))
+            target = make_target(Path(tmp), real_initialization=not uses_current_database_fixture(self))
             viewer_directory = target.db_path.parent / "viewer"
             with (
                 mock.patch.object(
@@ -630,9 +641,10 @@ class PostCommitMaintenanceTests(unittest.TestCase):
             write.assert_not_called()
             self.assertFalse(viewer_directory.exists())
 
+    @ordinary_current_database
     def test_cli_commits_and_closes_the_business_connection_before_coordinator(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp))
+            target = make_target(Path(tmp), real_initialization=not uses_current_database_fixture(self))
             opened_connections: list[sqlite3.Connection] = []
             real_connect = cli_service.connect_initialized
 
@@ -692,6 +704,7 @@ class PostCommitMaintenanceTests(unittest.TestCase):
             self.assertEqual(code, 0, stderr or stdout)
             coordinator.assert_called_once()
 
+    @ordinary_current_database
     def test_json_and_text_warnings_are_fixed_and_primary_success_is_unchanged(self):
         cases = (
             (
@@ -715,7 +728,7 @@ class PostCommitMaintenanceTests(unittest.TestCase):
         )
         for index, (warnings, json_output) in enumerate(cases):
             with self.subTest(warnings=warnings), tempfile.TemporaryDirectory() as tmp:
-                target = make_target(Path(tmp))
+                target = make_target(Path(tmp), real_initialization=not uses_current_database_fixture(self))
                 args = [
                     "task",
                     "add",
@@ -753,9 +766,10 @@ class PostCommitMaintenanceTests(unittest.TestCase):
                     self.assertIn(warnings[0]["message"], stdout)
                     self.assertNotIn("Traceback", stdout)
 
+    @ordinary_current_database
     def test_read_failure_and_contract_replay_never_call_coordinator(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp))
+            target = make_target(Path(tmp), real_initialization=not uses_current_database_fixture(self))
             task = add_contract_task(target)
 
             commands = (
@@ -814,9 +828,10 @@ class PostCommitMaintenanceTests(unittest.TestCase):
                         {"recorded": False, "revision": 1},
                     )
 
+    @ordinary_current_database
     def test_handoff_record_withdraw_trigger_but_exact_record_replay_does_not(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp))
+            target = make_target(Path(tmp), real_initialization=not uses_current_database_fixture(self))
             task = add_contract_task(target, "Handoff maintenance source")
             record_args = (
                 "handoff",

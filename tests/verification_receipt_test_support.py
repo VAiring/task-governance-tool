@@ -51,6 +51,21 @@ def initialize(root: Path) -> tuple[Path, Path]:
     return repo, db
 
 
+def initialize_current(root: Path) -> tuple[Path, Path]:
+    """Explicit opt-in; predecessor and migration callers keep initialize."""
+    from tests.current_database_fixture_support import initialize_current_test_database
+    repo = root / "repo"
+    db = root / "state" / "taskgov.sqlite"
+    repo.mkdir()
+    initialize_current_test_database(repo=repo, db=db)
+    return repo, db
+
+
+def initialize_case(root: Path, testcase) -> tuple[Path, Path]:
+    from tests.current_database_fixture_support import uses_current_database_fixture
+    return (initialize_current if uses_current_database_fixture(testcase) else initialize)(root)
+
+
 def add_task(
     db: Path,
     repo: Path,

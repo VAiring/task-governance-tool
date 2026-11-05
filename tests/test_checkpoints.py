@@ -1,3 +1,4 @@
+from tests.current_database_fixture_support import initialize_feature_test_target
 import sqlite3
 import sys
 import tempfile
@@ -523,7 +524,7 @@ class CheckpointRepositoryTests(unittest.TestCase):
             db_path=db_path,
             explicit_db=True,
         )
-        initialize_database(target)
+        initialize_feature_test_target(target)
         connection = connect_initialized(target)
         self.addCleanup(connection.close)
         task = add_task(connection, self.project, title="Boundary task").task

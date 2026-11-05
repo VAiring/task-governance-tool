@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
+
 import json
 import os
 import subprocess
@@ -370,10 +372,11 @@ class M244ARunnerAcceptanceTests(unittest.TestCase):
             for payload in retained:
                 self.assertNotIn(raw_output_secret.encode("utf-8"), payload)
 
+    @ordinary_current_database
     def test_clean_repository_without_plan_uses_public_m21_fallback(self):
         with tempfile.TemporaryDirectory() as temporary:
             temporary_root = Path(temporary)
-            fixture = RunnerServiceFixture(temporary_root)
+            fixture = RunnerServiceFixture(temporary_root, real_initialization=not uses_current_database_fixture(self))
             skill_root = _copy_skill(fixture.repo / ".agents" / "skills")
             plan_path = skill_root / "config" / "verification-runner.json"
             self.assertFalse(plan_path.exists())
@@ -450,9 +453,10 @@ class M244ARunnerAcceptanceTests(unittest.TestCase):
             self.assertIsNone(selection.select_current_verification_runner_basis(
                 target, task=task))
 
+    @ordinary_current_database
     def test_process_create_failure_is_terminal_and_parent_blocking(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             prepared = fixture.prepared()
 
             def process_create_failed(request):
@@ -478,6 +482,7 @@ class M244ARunnerAcceptanceTests(unittest.TestCase):
             self.assertEqual((routed.verification_route, routed.blocking_code),
                              ("blocked", "verification_receipt_blocking"))
 
+    @ordinary_current_database
     def test_real_windows_job_output_cap_cleanup_and_complete_retention_deny(self):
         # This is intentionally non-SKIP: another OS cannot manufacture PASS.
         self.assertEqual(os.name, "nt", "TG-M24.4A requires a real Windows Job")
@@ -488,7 +493,7 @@ class M244ARunnerAcceptanceTests(unittest.TestCase):
         exception_body = "M244A_EXCEPTION_BODY_a641"
 
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             source = "\n".join(
                 (
                     "import os, subprocess, sys, traceback",

@@ -1,3 +1,4 @@
+from tests.current_database_fixture_support import initialize_current_test_database
 import json
 import sqlite3
 import subprocess
@@ -88,7 +89,7 @@ class HandoffCommandTests(unittest.TestCase):
             root = Path(tmp)
             db = root / "taskgov.sqlite"
             repo = root / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
             with closing(sqlite3.connect(db)) as connection:
                 task_before = connection.execute(
@@ -181,7 +182,7 @@ class HandoffCommandTests(unittest.TestCase):
             root = Path(tmp)
             db = root / "taskgov.sqlite"
             repo = root / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
 
             _, first = record(db, repo, task["task_id"])
@@ -223,7 +224,7 @@ class HandoffCommandTests(unittest.TestCase):
             root = Path(tmp)
             db = root / "taskgov.sqlite"
             repo = root / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
             handoff_ids = []
             for index in range(3):
@@ -317,7 +318,7 @@ class HandoffCommandTests(unittest.TestCase):
             root = Path(tmp)
             db = root / "taskgov.sqlite"
             repo = root / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
             for invalid in ("   ", "x" * 201):
                 with self.subTest(length=len(invalid)):
@@ -365,7 +366,7 @@ class HandoffCommandTests(unittest.TestCase):
             root = Path(tmp)
             db = root / "taskgov.sqlite"
             repo = root / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
             _, created = record(db, repo, task["task_id"])
             handoff_id = created["data"]["handoff"]["handoff_id"]
@@ -567,7 +568,7 @@ class HandoffCommandTests(unittest.TestCase):
             root = Path(tmp)
             db = root / "taskgov.sqlite"
             repo = root / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
             cases = (
                 ("--summary", "Authorization: Bearer secret-value"),
@@ -629,7 +630,7 @@ class HandoffCommandTests(unittest.TestCase):
             root = Path(tmp)
             db = root / "taskgov.sqlite"
             repo = root / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
             rejected_value = "Authorization: Bearer raw-m13-secret-value"
 
@@ -706,7 +707,7 @@ class HandoffCommandTests(unittest.TestCase):
             self.assertFalse(missing.parent.exists())
 
             db = root / "taskgov.sqlite"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
             record_result, record_payload = json_command(
                 "handoff",
@@ -753,7 +754,7 @@ class HandoffCommandTests(unittest.TestCase):
             root = Path(tmp)
             db = root / "taskgov.sqlite"
             repo = root / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
 
             def worker():
@@ -783,7 +784,7 @@ class HandoffCommandTests(unittest.TestCase):
             root = Path(tmp)
             db = root / "taskgov.sqlite"
             repo = root / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
             _, created = record(db, repo, task["task_id"])
             handoff_id = created["data"]["handoff"]["handoff_id"]
@@ -847,7 +848,7 @@ class HandoffCommandTests(unittest.TestCase):
             root = Path(tmp)
             db = root / "taskgov.sqlite"
             repo = root / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             add_result, add_payload = json_command(
                 "task",
                 "add",

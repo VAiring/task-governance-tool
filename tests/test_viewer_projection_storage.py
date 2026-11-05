@@ -1,4 +1,5 @@
 """Viewer tracking: actual mutations, preservation, rollback and indexed deltas."""
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
 from contextlib import closing
 from dataclasses import replace
 from concurrent.futures import ThreadPoolExecutor
@@ -14,7 +15,7 @@ from unittest import mock
 from tests.test_viewer_maintenance import make_target, add_viewer_event
 from tests.test_review_session_migration import candidate_runtime
 from tests.test_m23s_schema22_migration import _logical_snapshot
-from tests.verification_receipt_test_support import initialize, add_task, seed_current_review_evidence, add_receipt, completion, run_taskgov
+from tests.verification_receipt_test_support import initialize_current, initialize, add_task, seed_current_review_evidence, add_receipt, completion, run_taskgov
 from task_governance_tool import storage, schema_viewer_projection as schema
 from task_governance_tool import viewer_projection_repository as projection
 from task_governance_tool.tasks import TaskRepositoryError
@@ -23,7 +24,7 @@ from task_governance_tool.tasks import TaskRepositoryError
 class ViewerProjectionStorageTests(unittest.TestCase):
     def setUp(self):
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        self.target = make_target(self.root, enabled=False)
+        self.target = make_target(self.root, enabled=False, real_initialization=not uses_current_database_fixture(self))
         self.project = self.target.project.project_id
 
     def snapshot(self):
@@ -41,6 +42,7 @@ class ViewerProjectionStorageTests(unittest.TestCase):
             self.assertEqual(storage.apply_migrations(c)[0], [])
         self.assertEqual(before, self.target.db_path.read_bytes())
 
+    @ordinary_current_database
     def test_events_coalesce_and_delta_is_indexed_without_consuming_new_changes(self):
         add_viewer_event(self.target, "First display")
         add_viewer_event(self.target, "Second display")
@@ -99,7 +101,7 @@ class ViewerProjectionStorageTests(unittest.TestCase):
         for version in (34, 35):
             with self.subTest(version=version), tempfile.TemporaryDirectory() as directory:
                 with candidate_runtime(version):
-                    target = backup_target(Path(directory))
+                    target = backup_target(Path(directory), real_initialization=not uses_current_database_fixture(self))
                     backup._copy(target, metadata(1, 0, 3))
                 with closing(storage.connect_readonly(target.db_path)) as connection:
                     before = projection.read_state(connection, target.project.project_id)
@@ -123,7 +125,7 @@ class ViewerProjectionStorageTests(unittest.TestCase):
         from tests.test_routine_backup import make_target as backup_target
         with tempfile.TemporaryDirectory() as directory:
             with candidate_runtime(34):
-                target = backup_target(Path(directory))
+                target = backup_target(Path(directory), real_initialization=not uses_current_database_fixture(self))
             before = target.db_path.read_bytes()
             for version in (None, 33, 35, 37, True):
                 with self.subTest(version=version), self.assertRaises(storage.StorageError):
@@ -169,6 +171,7 @@ class ViewerProjectionStorageTests(unittest.TestCase):
         with closing(storage.connect(self.target.db_path)) as c:
             self.assertEqual(c.execute("SELECT count(*) FROM tasks").fetchone()[0], 0)
 
+    @ordinary_current_database
     def test_concurrent_writers_serialize_and_both_changes_remain(self):
         add_viewer_event(self.target, "Concurrent first")
         add_viewer_event(self.target, "Concurrent second")
@@ -189,6 +192,7 @@ class ViewerProjectionStorageTests(unittest.TestCase):
         self.assertEqual({row[0] for row in changes}, {row[1] for row in rows})
         self.assertEqual(len({row[1] for row in changes}), 2)
 
+    @ordinary_current_database
     def test_changed_id_query_does_not_grow_with_event_history(self):
         add_viewer_event(self.target, "History scale subject")
         task = self.snapshot()[1][0][1]
@@ -241,7 +245,7 @@ class ViewerProjectionMigrationTests(unittest.TestCase):
 
     def test_populated33_migration_preserves_old_rows_and_failure_rolls_back(self):
         with tempfile.TemporaryDirectory() as tmp, candidate_runtime(33):
-            target = make_target(Path(tmp), enabled=False)
+            target = make_target(Path(tmp), enabled=False, real_initialization=not uses_current_database_fixture(self))
             add_viewer_event(target, "Source 33 display")
             with closing(storage.connect(target.db_path)) as c:
                 before = _logical_snapshot(c)
@@ -271,7 +275,7 @@ class ViewerProjectionMutationTests(unittest.TestCase):
     def test_checkpoint_contract_and_exact_replay_cover_non_task_timestamps(self):
         from tests.test_checkpoint_cli import checkpoint_args
         with tempfile.TemporaryDirectory() as tmp:
-            repo, db = initialize(Path(tmp))
+            repo, db = initialize_current(Path(tmp))
             task = add_task(db, repo, status="ready")["task_id"]
             activated = run_taskgov("task", "edit", task, "--status", "in_progress", "--contract-scope",
                 "Track display changes", "--contract-acceptance", "Initial committed revisions",
@@ -335,7 +339,7 @@ class ViewerProjectionMutationTests(unittest.TestCase):
     def test_actual_rebind_invalidates_only_project_and_rolls_back_on_failure(self):
         from tests.test_project_identity_bindings import rebound_target, apply_rebind
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp), enabled=False)
+            target = make_target(Path(tmp), enabled=False, real_initialization=not uses_current_database_fixture(self))
             add_viewer_event(target, "Binding subject")
             with closing(storage.connect_readonly(target.db_path)) as c:
                 before = projection.read_state(c, target.project.project_id)

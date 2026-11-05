@@ -1,4 +1,5 @@
 """Content proofs never replace current physical/inventory/recovery authority."""
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
 from contextlib import closing
 from dataclasses import replace
 import hashlib
@@ -26,7 +27,7 @@ class BackupValidationReuseTests(unittest.TestCase):
         if canonical:
             install, target, _ = _setup_current(root)
         else:
-            install, target = None, make_target(root)
+            install, target = None, make_target(root, real_initialization=not uses_current_database_fixture(self))
         item = metadata(1, 0, 3)
         with backup.managed_backup_lock(target):
             backup._copy(target, item)
@@ -38,6 +39,7 @@ class BackupValidationReuseTests(unittest.TestCase):
     def inspect(self, target, path, item):
         return validation.inspect_artifact(path, item, project_id=target.project.project_id)
 
+    @ordinary_current_database
     def test_record_binds_closed_copy_and_reuse_skips_internal_audit(self):
         target, path, item, record_path, _ = self.fixture()
         before = record_path.read_bytes()
@@ -89,6 +91,7 @@ class BackupValidationReuseTests(unittest.TestCase):
             self.inspect(target, path, item)
         self.assertEqual(record_path.read_bytes(), record_bytes)
 
+    @ordinary_current_database
     def test_hash_descriptor_keeps_sqlite_lock_until_reader_closes(self):
         writer = """import sqlite3,sys
 c=sqlite3.connect(sys.argv[1], timeout=0.05)
@@ -124,6 +127,7 @@ finally:
                 self.assertEqual(subprocess.run([sys.executable, '-I', '-S', '-c', writer, str(path)],
                     capture_output=True, timeout=5).returncode, 0)
 
+    @ordinary_current_database
     def test_certified_snapshot_source_reuses_audit_and_copy_is_independently_checked(self):
         target, path, item, _, _ = self.fixture()
         observed = self.inspect(target, path, item)
@@ -397,7 +401,7 @@ finally:
         from tests.test_m214b_recovery_boundaries import _downgrade_candidate_to_v17
         from tests.m214b_test_support import replace_verification
         root = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        target = make_target(root)
+        target = make_target(root, real_initialization=not uses_current_database_fixture(self))
         title = 'Retained fallback'
         with closing(storage.connect_existing(target.db_path)) as connection:
             tasks.add_task(connection, target.project, title=title, kind='optional')
@@ -469,7 +473,7 @@ finally:
         from tests.test_m214b_recovery_boundaries import _downgrade_candidate_to_v17
         from tests.m214b_test_support import replace_verification
         root = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        target = make_target(root)
+        target = make_target(root, real_initialization=not uses_current_database_fixture(self))
         title = "Reconciliation fallback"
         with closing(storage.connect_existing(target.db_path)) as connection:
             tasks.add_task(connection, target.project, title=title, kind="optional")

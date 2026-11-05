@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
+
+from tests.current_database_fixture_support import ordinary_current_database, initialize_case_database
+
 import argparse
 import json
 import copy
@@ -41,6 +45,7 @@ def run(db: Path, repo: Path, *arguments: str):
 
 
 class TaskContextTests(unittest.TestCase):
+    @ordinary_current_database
     def test_detail_rejects_validated_row_from_other_task_or_connection(self):
         from task_governance_tool import stored_task_validation, task_show_projection
         from task_governance_tool.tasks import TaskRepositoryError
@@ -89,6 +94,7 @@ class TaskContextTests(unittest.TestCase):
             self.assertFalse(stale_result.ok)
             self.assertEqual(stale_result.errors[0]["code"], "internal_error")
 
+    @ordinary_current_database
     def test_separate_read_checkpoint_is_not_reused(self):
         from task_governance_tool import checkpoints
         task = self.add("Checkpoint reuse", "--status", "in_progress")
@@ -114,7 +120,7 @@ class TaskContextTests(unittest.TestCase):
         self.repo = self.root / "repo"
         self.repo.mkdir()
         self.db = self.root / "taskgov.sqlite"
-        initialize_current_test_database(repo=self.repo, db=self.db)
+        initialize_case_database(self, repo=self.repo, db=self.db)
 
     def success(self, *arguments):
         result = run(self.db, self.repo, *arguments)
@@ -201,6 +207,7 @@ class TaskContextTests(unittest.TestCase):
         self.assertEqual(file_snapshot(self.root), before)
         return actual
 
+    @ordinary_current_database
     def test_ready_selection_preserves_next_order_limit_and_does_not_start(self):
         for index in range(7):
             self.add(f"Ready {index}", "--priority", "low")
@@ -217,6 +224,7 @@ class TaskContextTests(unittest.TestCase):
         self.assertEqual(set(payload["data"]["selected"]["completion_history"]), {"total", "legacy_history_incomplete"})
         self.assertEqual(set(payload["data"]["selected"]["review_evidence"]), {"gate", "counts", "current_receipts", "current_findings"})
 
+    @ordinary_current_database
     def test_authorized_registration_uses_prepared_context_and_existing_start_decision(self):
         outcomes = []
         call_counts = []
@@ -226,7 +234,7 @@ class TaskContextTests(unittest.TestCase):
                 repo = root / "repo"
                 repo.mkdir()
                 db = root / "taskgov.sqlite"
-                initialize_taskgov_internal(repo=repo, db=db)
+                initialize_current_test_database(repo=repo, db=db)
                 calls = []
 
                 def invoke(*args):
@@ -270,6 +278,7 @@ class TaskContextTests(unittest.TestCase):
         self.assertEqual(call_counts, [2, 1])
         self.assertEqual(outcomes[0], outcomes[1])
 
+    @ordinary_current_database
     def test_initial_start_remains_available_with_unrelated_held_work(self):
         paused = self.add("Held work", "--status", "in_progress")
         self.success("task", "edit", paused["task_id"], "--status", "paused",
@@ -280,6 +289,7 @@ class TaskContextTests(unittest.TestCase):
         self.assertEqual(context["data"]["selected"]["task"]["task_id"], active["task_id"])
         self.assertEqual(context["data"]["selection"], "current")
 
+    @ordinary_current_database
     def test_registration_only_does_not_displace_an_earlier_candidate(self):
         earlier = self.add("Earlier authorized work", "--priority", "urgent")
         registered = self.add("Register only, do not implement")
@@ -288,6 +298,7 @@ class TaskContextTests(unittest.TestCase):
         shown = self.success("task", "show", registered["task_id"])
         self.assertEqual(shown["data"]["task"]["status"], "ready")
 
+    @ordinary_current_database
     def test_current_resumption_uses_first_active_status_and_skips_next(self):
         review = self.add("Review pending", "--status", "in_progress", "--priority", "urgent")
         self.success("task", "edit", review["task_id"], "--status", "review_pending")
@@ -311,6 +322,7 @@ class TaskContextTests(unittest.TestCase):
                 self.assertIsNone(actual["data"]["next"])
                 self.assertEqual(show.call_count, 1)
 
+    @ordinary_current_database
     def test_held_work_keeps_recall_warning_and_allows_another_ready_lane(self):
         paused = self.add("Paused work", "--status", "in_progress")
         self.success("task", "edit", paused["task_id"], "--status", "paused", "--pause-reason", "Waiting for input")
@@ -327,6 +339,7 @@ class TaskContextTests(unittest.TestCase):
         self.assertEqual([row["status"] for row in self.success("task", "current")["data"]["tasks"]], ["paused", "blocked"])
         self.assertEqual([warning["code"] for warning in payload["warnings"]], ["paused_tasks_present"])
 
+    @ordinary_current_database
     def test_no_tasks_and_only_held_work_are_successful_no_selection(self):
         for held in (False, True):
             with self.subTest(held=held):
@@ -339,6 +352,7 @@ class TaskContextTests(unittest.TestCase):
                 self.assertEqual(payload["data"]["next"]["tasks"], [])
                 self.assertIsNotNone(payload["data"]["current"])
 
+    @ordinary_current_database
     def test_complete_contract_checkpoint_and_current_gates_match_show(self):
         scope = "Full scope 日本語. " * 100
         acceptance = "All acceptance conditions retained. " * 70
@@ -373,6 +387,7 @@ class TaskContextTests(unittest.TestCase):
         self.assertIsNotNone(selected["verification_evidence"]["gate"]["blocking_code"])
         self.assertEqual(selected["review_evidence"]["gate"]["required_independent_passes"], 2)
 
+    @ordinary_current_database
     def test_same_id_observation_change_retains_candidate_value_and_action(self):
         task = self.add("Candidate observation", "--status", "in_progress")
         original_show = cli_service.handle_task_show
@@ -397,6 +412,7 @@ class TaskContextTests(unittest.TestCase):
         self.assertNotIn("status", candidate)
         self.assertEqual(data["selected"]["task"]["title"], "Later detail observation")
 
+    @ordinary_current_database
     def test_context_shares_only_selected_candidate_and_reduces_response_bytes(self):
         selected = self.add("Selected 日本語", "--priority", "urgent")
         other = self.add("Other candidate", "--priority", "low")
@@ -422,6 +438,7 @@ class TaskContextTests(unittest.TestCase):
         size = lambda value: len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
         self.assertLess(size(payload), size(baseline))
 
+    @ordinary_current_database
     def test_invalid_profile_warning_is_carried_once_without_enabling_advisory(self):
         self.add("Ready work")
         with mock.patch.object(
@@ -436,6 +453,7 @@ class TaskContextTests(unittest.TestCase):
             "suggested_action": "continue",
         }])
 
+    @ordinary_current_database
     def test_each_failed_phase_discards_partial_data_and_warnings_without_retry(self):
         first = self.add("First candidate", "--priority", "urgent")
         self.add("Second candidate")
@@ -506,6 +524,7 @@ class TaskContextTests(unittest.TestCase):
         self.assertEqual(data["next"]["total_matching"], 2)
         self.assertTrue(data["next"]["truncated"])
 
+    @ordinary_current_database
     def test_context_rejects_all_leaf_options_before_state_access(self):
         with mock.patch.object(cli_service, "handle_command", side_effect=AssertionError("parse must fail first")):
             for arguments in (("--compact",), ("--audit",), ("--limit", "1"), ("--status", "paused"), ("--kind", "optional"), ("--lane", "lane"), ("--priority", "urgent"), ("tg_task_missing",)):
@@ -729,6 +748,7 @@ class TaskContextCompactSelectionTests(unittest.TestCase):
 
 
 class TaskContextRunnerTests(unittest.TestCase):
+    @ordinary_current_database
     def test_marker_two_discards_retained_checkpoint_before_fresh_detail(self):
         import argparse
         from task_governance_tool import checkpoints
@@ -738,7 +758,7 @@ class TaskContextRunnerTests(unittest.TestCase):
         from task_governance_tool import verification_runner_selection as selection
 
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             _prepared, intent = _launch(fixture)
             _persist_terminal(fixture, intent, branch="pass")
             pending = run(fixture.db, fixture.repo, "task", "edit", fixture.task_id, "--status", "review_pending")
@@ -785,6 +805,7 @@ class TaskContextRunnerTests(unittest.TestCase):
                 self.assertEqual(reads[1][1], fresh[0])
                 self.assertEqual(result.data["selected"]["latest_checkpoint"], fresh[0])
 
+    @ordinary_current_database
     def test_marker_two_selected_detail_reuses_the_exact_show_runner_route(self):
         from tests.test_m242_runner_service import RunnerServiceFixture
         from tests.test_m243c_runner_gate import _launch, _persist_terminal
@@ -792,7 +813,7 @@ class TaskContextRunnerTests(unittest.TestCase):
 
         for branch in ("pass", "blocking", "fallback"):
             with self.subTest(branch=branch), tempfile.TemporaryDirectory() as temporary:
-                fixture = RunnerServiceFixture(Path(temporary))
+                fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
                 _prepared, intent = _launch(fixture)
                 _persist_terminal(fixture, intent, branch=branch)
                 pending = run(fixture.db, fixture.repo, "task", "edit", fixture.task_id, "--status", "review_pending")
@@ -826,7 +847,7 @@ class TaskContextRunnerTests(unittest.TestCase):
         )
 
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             selected_id = fixture.task_id
             _prepared, intent = _launch(fixture)
             _persist_terminal(fixture, intent, branch="pass")

@@ -1,3 +1,4 @@
+from tests.current_database_fixture_support import initialize_current_test_database
 import hashlib
 import json
 from tests.registration_output_support import registration_task
@@ -165,7 +166,7 @@ class CompletionEvidenceTests(unittest.TestCase):
             repo = Path(tmp) / "repo"
             db = Path(tmp) / "taskgov.sqlite"
             revision = init_git_repo(repo)
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
             before = git_state(repo)
 
@@ -210,7 +211,7 @@ class CompletionEvidenceTests(unittest.TestCase):
                 "-m",
                 "release",
             )
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
 
             result = edit(
@@ -229,7 +230,7 @@ class CompletionEvidenceTests(unittest.TestCase):
             repo = Path(tmp) / "repo"
             db = Path(tmp) / "taskgov.sqlite"
             init_git_repo(repo)
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
             before = db.read_bytes()
 
@@ -270,7 +271,7 @@ class CompletionEvidenceTests(unittest.TestCase):
             init_git_repo(repo)
             blob = git(repo, "hash-object", "-w", "--stdin", input_text="blob\n").stdout.strip()
             ambiguous = write_ambiguous_commit_objects(repo)
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
             with closing(sqlite3.connect(db)) as connection:
                 baseline_events = connection.execute("SELECT COUNT(*) FROM task_events").fetchone()[0]
@@ -315,7 +316,7 @@ class CompletionEvidenceTests(unittest.TestCase):
             repo = Path(tmp) / "repo"
             db = Path(tmp) / "taskgov.sqlite"
             init_git_repo(repo)
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
 
             missing_approval = edit(
@@ -382,7 +383,7 @@ class CompletionEvidenceTests(unittest.TestCase):
             repo = Path(tmp) / "repo"
             db = Path(tmp) / "taskgov.sqlite"
             init_git_repo(repo)
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
 
             rejected = edit(
@@ -426,7 +427,7 @@ class CompletionEvidenceTests(unittest.TestCase):
             repo = Path(tmp) / "repo"
             db = Path(tmp) / "taskgov.sqlite"
             init_git_repo(repo)
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
 
             paused = edit(
@@ -456,7 +457,7 @@ class CompletionEvidenceTests(unittest.TestCase):
             repo = Path(tmp) / "repo"
             db = Path(tmp) / "taskgov.sqlite"
             init_git_repo(repo)
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
             first = edit(
                 db,
@@ -499,7 +500,7 @@ class CompletionEvidenceTests(unittest.TestCase):
             repo = Path(tmp) / "repo"
             db = Path(tmp) / "taskgov.sqlite"
             init_git_repo(repo)
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
             before_db = db.read_bytes()
             before_git = git_state(repo)
@@ -538,7 +539,7 @@ class CompletionEvidenceTests(unittest.TestCase):
             repo = Path(tmp) / "repo"
             db = Path(tmp) / "taskgov.sqlite"
             init_git_repo(repo)
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
             before = db.read_bytes()
             cases = (
@@ -715,7 +716,7 @@ class CompletionEvidenceTests(unittest.TestCase):
                 root = Path(temp)
                 repo, db = root / "repo", root / "tasks.sqlite"
                 init_git_repo(repo)
-                init_db(db, repo)
+                initialize_current_test_database(db, repo)
                 task = add_task(db, repo)
                 seed_review_evidence(db, task["task_id"])
                 with closing(sqlite3.connect(db)) as connection:

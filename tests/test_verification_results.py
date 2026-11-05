@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.current_database_fixture_support import ordinary_current_database, initialize_case_database, uses_current_database_fixture
+
 import io
 import json
 import sqlite3
@@ -15,7 +17,8 @@ from tests.m14_test_support import file_snapshot, make_physical_install, run_tas
 from tests.test_m243c_runner_gate import RunnerServiceFixture, _launch, _persist_terminal
 from tests.verification_receipt_test_support import (
     FINGERPRINT_A, FINGERPRINT_B, add_receipt, add_task, completion,
-    initialize, payload, seed_current_review_evidence, set_target,
+    initialize,
+    initialize_case, payload, seed_current_review_evidence, set_target,
     table_count, target_for,
 )
 
@@ -138,7 +141,7 @@ class VerificationResultCliTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
-        self.repo, self.db = initialize(self.root)
+        self.repo, self.db = initialize_case(self.root, self)
         self.target = target_for(self.db, self.repo)
         self.task_id = self.success(
             "task", "add", "--title", "Fixed external verification result",
@@ -184,6 +187,7 @@ class VerificationResultCliTests(unittest.TestCase):
         self.assertEqual(envelope["warnings"], [])
         return envelope
 
+    @ordinary_current_database
     def test_fixed_external_producer_stdout_is_consumed_verbatim_with_existing_receipt_shape(self):
         producer = subprocess.run(
             [sys.executable, "-c", (
@@ -217,6 +221,7 @@ class VerificationResultCliTests(unittest.TestCase):
         self.assertNotIn(producer.stderr.decode().strip(), stdout)
         self.assertNotIn(producer.stdout, self.db.read_bytes())
 
+    @ordinary_current_database
     def test_all_result_coverage_pairs_retain_gate_meaning_without_inference(self):
         for result in ("pass", "fail", "timeout"):
             for coverage in ("full", "partial"):
@@ -265,10 +270,11 @@ class VerificationResultCliTests(unittest.TestCase):
             self.assertEqual(file_snapshot(install.project_root, exclude_state=True), before)
             self.assertFalse((install.skill_root / "config" / "verification-runner.json").exists())
 
+    @ordinary_current_database
     def test_existing_runner_fallback_allows_receipt_but_pass_and_blocking_refuse(self):
         for branch in ("fallback", "pass", "blocking"):
             with self.subTest(branch=branch), tempfile.TemporaryDirectory() as temporary:
-                fixture = RunnerServiceFixture(Path(temporary))
+                fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
                 _prepared, intent = _launch(fixture)
                 _persist_terminal(fixture, intent, branch=branch)
                 self.repo, self.db, self.target = fixture.repo, fixture.db, fixture.target
@@ -285,6 +291,7 @@ class VerificationResultCliTests(unittest.TestCase):
                     self.assertEqual(table_count(self.db, "verification_receipts"), 0)
                     self.assertEqual(file_snapshot(Path(temporary)), before)
 
+    @ordinary_current_database
     def test_immutable_replay_and_single_item_interoperation_require_new_target(self):
         self.assertEqual(self.invoke(self.document(result="fail", coverage="partial"))[0], 0)
         before = file_snapshot(self.root)
@@ -304,6 +311,7 @@ class VerificationResultCliTests(unittest.TestCase):
             rows = connection.execute("SELECT result,scope_coverage FROM verification_receipts ORDER BY target_generation").fetchall()
         self.assertEqual(rows, [("fail", "partial"), ("pass", "full")])
 
+    @ordinary_current_database
     def test_wrong_task_and_changed_contract_or_verification_never_rebind_old_result(self):
         before = file_snapshot(self.root)
         self.assert_failure(self.invoke({**self.document(), "task_id": "tg_task_ffffffffffffffff"}), "verification_basis_stale")
@@ -328,6 +336,7 @@ class VerificationResultCliTests(unittest.TestCase):
         self.assert_failure(self.invoke(old_result), "verification_basis_stale")
         self.assertEqual(file_snapshot(self.root), before)
 
+    @ordinary_current_database
     def test_forbidden_statuses_empty_expectation_and_missing_target_do_not_write(self):
         self.success("task", "edit", self.task_id, "--status", "review_pending")
         self.assertEqual(self.invoke()[0], 0)
@@ -359,6 +368,7 @@ class VerificationResultCliTests(unittest.TestCase):
                 if options.get("status") != "ready":
                     self.success("task", "edit", self.task_id, "--status", "ready")
 
+    @ordinary_current_database
     def test_done_requires_reopen_and_historical_receipts_cannot_satisfy_it(self):
         self.generation = seed_current_review_evidence(self.db, self.repo, self.task_id)
         self.assertEqual(self.invoke()[0], 0)
@@ -373,6 +383,7 @@ class VerificationResultCliTests(unittest.TestCase):
         self.assert_failure(self.invoke(old_result), "verification_basis_stale")
         self.assertEqual(self.success("task", "show", self.task_id)["verification_evidence"]["gate"]["blocking_code"], "verification_receipt_required")
 
+    @ordinary_current_database
     def test_writer_reread_rejects_concurrent_target_and_status_changes(self):
         actual_begin = receipt_service.begin_initialized_write
         for change, expected in (("target", "verification_basis_stale"), ("status", "task_ownership_changed")):
@@ -420,6 +431,7 @@ class VerificationResultCliTests(unittest.TestCase):
         self.assertEqual(file_snapshot(self.root), before)
         maintenance.assert_not_called()
 
+    @ordinary_current_database
     def test_read_only_and_invalid_input_do_not_consume_or_open_writer(self):
         before = file_snapshot(self.root)
         with mock.patch.object(cli_service, "connect_initialized", side_effect=AssertionError("must not open writer")), mock.patch.object(cli_service, "run_post_commit_maintenance") as maintenance:
@@ -435,6 +447,7 @@ class VerificationResultCliTests(unittest.TestCase):
         maintenance.assert_not_called()
         self.assertEqual(file_snapshot(self.root), before)
 
+    @ordinary_current_database
     def test_input_mode_parse_errors_precede_state_and_stdin(self):
         single_options = (
             ("--result", "pass"), ("--duration-ms", "17"),
@@ -458,6 +471,7 @@ class VerificationResultCliTests(unittest.TestCase):
                 self.assertEqual(response.returncode, 1, response.stdout)
                 self.assertEqual(payload(response)["command"], "parse")
 
+    @ordinary_current_database
     def test_success_keeps_text_and_backup_only_maintenance_after_close(self):
         opened, observed = [], []
         original_connect = cli_service.connect_initialized

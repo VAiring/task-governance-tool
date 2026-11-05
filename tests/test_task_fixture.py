@@ -76,6 +76,143 @@ def add_fixture_task(db, repo, task):
 
 
 class TaskStatusFixtureTests(unittest.TestCase):
+    def test_shared_setup_clones_only_explicit_ordinary_cases(self):
+        from tests.current_database_fixture_support import initialize_case_database, ordinary_current_database
+        from tests import m14_test_support
+        from tests import current_database_fixture_support as fixture
+        class Cases:
+            @ordinary_current_database
+            def ordinary(self):
+                pass
+            def protected_or_new(self):
+                pass
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            case = Cases()
+            with mock.patch.object(m14_test_support, "initialize_taskgov_internal",
+                                   wraps=m14_test_support.initialize_taskgov_internal) as real, \
+                 mock.patch.object(fixture, "initialize_current_test_database",
+                                   wraps=fixture.initialize_current_test_database) as copied:
+                results = []
+                for name in ("ordinary", "protected_or_new"):
+                    case._testMethodName = name
+                    results.append(initialize_case_database(case, repo=root / name,
+                        db=root / name / "case.sqlite"))
+                self.assertEqual(copied.call_count, 1)
+                self.assertEqual(real.call_count, 1)
+            self.assertNotEqual(results[0]["project_id"], results[1]["project_id"])
+            self.assertTrue(all(row["schema_version"] == storage.SCHEMA_VERSION for row in results))
+
+    def test_first_import_under_predecessor_pin_does_not_define_current_image(self):
+        import importlib.util
+        from tests.test_review_session_migration import candidate_runtime
+        path = ROOT / "tests/current_database_fixture_support.py"
+        current = storage.SCHEMA_VERSION
+        with tempfile.TemporaryDirectory() as tmp, candidate_runtime(34):
+            spec = importlib.util.spec_from_file_location("isolated_current_fixture", path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            self.assertEqual(module.CURRENT_TEMPLATE_SCHEMA_VERSION, current)
+            root = Path(tmp)
+            with self.assertRaisesRegex(AssertionError, "pinned runtime"):
+                module.EmptyDatabaseTemplate().initialize(db=root / "absent/db.sqlite", repo=root / "repo")
+            self.assertFalse((root / "absent").exists())
+            target = storage.resolve_database_target(repo=root / "repo", db=root / "old.sqlite",
+                script_path=SKILL_ROOT / "scripts/taskgov.py")
+            self.assertEqual(module.initialize_feature_test_target(target).schema_version, 34)
+
+    def test_fixture_inventory_resolves_aliases_helpers_and_inheritance(self):
+        from tests.database_fixture_inventory_support import inventory
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tests = root / "tests"
+            tests.mkdir()
+            (tests / "base.py").write_text(
+                "from tests.m14_test_support import initialize_taskgov_internal as create\n"
+                "from tests import current_database_fixture_support as fixture\n"
+                "def prepare(repo, db): create(repo=repo, db=db)\n"
+                "class Seed:\n"
+                "    def __init__(self): create(repo='repo', db='db')\n"
+                "def template_guard(repo, db): fixture.EmptyDatabaseTemplate().initialize(db=db, repo=repo)\n", encoding="utf-8")
+            (tests / "consumer.py").write_text(
+                "from tests.base import prepare as seed, template_guard as check, Seed as Factory\n"
+                "import unittest\n"
+                "class Base(unittest.TestCase):\n"
+                "    def setUp(self): seed('repo', 'db')\n"
+                "class Derived(Base):\n"
+                "    def test_case(self): check('repo', 'db'); Factory()\n", encoding="utf-8")
+            result = inventory(root)
+            self.assertEqual([(r["file"], r["function"], r["operation"])
+                              for r in result["direct"]],
+                             [("tests/base.py", "Seed.__init__", "initialize_taskgov_internal"),
+                              ("tests/base.py", "prepare", "initialize_taskgov_internal"),
+                              ("tests/base.py", "template_guard", "initialize")])
+            self.assertIn("tests.consumer.Base.setUp", result["indirect"])
+            self.assertEqual(result["indirect_routes"]["tests.consumer.Base.setUp"],
+                             ["tests.base.prepare"])
+            self.assertEqual(result["indirect_routes"]["tests.consumer.Derived.test_case"],
+                             ["tests.base.Seed.__init__", "tests.base.template_guard"])
+            self.assertEqual(result["inherited_classes"]["tests.consumer.Derived"], ["Base"])
+            self.assertEqual(result["import_candidates"], ["tests/base.py", "tests/consumer.py"])
+
+
+    def test_inventory_keeps_module_and_nested_import_scopes_separate(self):
+        from tests.database_fixture_inventory_support import inventory
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tests = root / "tests"
+            tests.mkdir()
+            for name in ("base", "other"):
+                (tests / (name + ".py")).write_text(
+                    "from tests.m14_test_support import initialize_taskgov_internal\n"
+                    "def prepare(): initialize_taskgov_internal(repo='repo', db='db')\n", encoding="utf-8")
+            (tests / "consumer.py").write_text(
+                "from tests.base import prepare as seed\n"
+                "def global_case(): seed()\n"
+                "def local_case():\n"
+                "    from tests.other import prepare as seed\n"
+                "    seed()\n"
+                "def nested_case():\n"
+                "    seed()\n"
+                "    def nested():\n"
+                "        from tests.other import prepare as seed\n"
+                "        seed()\n"
+                "    nested()\n", encoding="utf-8")
+            with (tests / "consumer.py").open("a", encoding="utf-8") as stream:
+                stream.write("def lambda_case(): return lambda: seed()\n")
+            routes = inventory(root)["indirect_routes"]
+            self.assertEqual(routes["tests.consumer.global_case"], ["tests.base.prepare"])
+            self.assertEqual(routes["tests.consumer.local_case"], ["tests.other.prepare"])
+            self.assertEqual(routes["tests.consumer.nested_case"], ["tests.base.prepare", "tests.other.prepare"])
+            self.assertEqual(routes["tests.consumer.lambda_case"], ["tests.base.prepare"])
+
+    def test_current_template_rejects_pinned_runtime_before_any_write(self):
+        template = EmptyDatabaseTemplate()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for version in (29, 36):
+                with self.subTest(version=version), mock.patch.object(storage, "SCHEMA_VERSION", version):
+                    with self.assertRaisesRegex(AssertionError, "pinned runtime"):
+                        template.initialize(db=root / "absent" / "case.sqlite", repo=root / "repo")
+                    self.assertFalse((root / "absent").exists())
+
+    def test_mixed_feature_target_preserves_real_predecessor_initialization(self):
+        from tests.current_database_fixture_support import initialize_feature_test_target
+        from tests.test_review_session_migration import candidate_runtime
+        with tempfile.TemporaryDirectory() as tmp, candidate_runtime(34):
+            root = Path(tmp)
+            target = storage.resolve_database_target(repo=root / "repo", db=root / "old.sqlite",
+                script_path=SKILL_ROOT / "scripts/taskgov.py")
+            with mock.patch("tests.current_database_fixture_support.initialize_current_test_target",
+                            side_effect=AssertionError("predecessor must not be cloned")):
+                result = initialize_feature_test_target(target, real_initialization=False)
+            self.assertTrue(result.created)
+            self.assertEqual(result.schema_version, 34)
+            self.assertEqual(result.migrations_applied, list(range(1, 35)))
+            with closing(storage.connect(target.db_path)) as connection:
+                self.assertEqual([row[0] for row in connection.execute(
+                    "SELECT version FROM schema_migrations ORDER BY version")], list(range(1, 35)))
+
     def test_current_template_matches_real_initialization(self):
         def snapshot(path):
             with closing(storage.connect(path)) as connection:
@@ -178,7 +315,7 @@ class TaskStatusFixtureTests(unittest.TestCase):
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "synthetic-repo"
 
-            initialize_taskgov_internal(repo=repo, db=db)
+            EmptyDatabaseTemplate().initialize(repo=repo, db=db)
 
             seeded = []
             for task in fixture["tasks"]:

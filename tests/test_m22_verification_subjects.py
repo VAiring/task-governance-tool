@@ -16,6 +16,7 @@ from tests.verification_receipt_test_support import (
     add_task,
     completion,
     initialize,
+    initialize_current,
     initialize_v16_fixture,
     payload,
     run_taskgov,
@@ -55,7 +56,7 @@ from task_governance_tool.viewer import build_viewer_snapshot
 class M22VerificationSubjectTests(unittest.TestCase):
     def test_service_records_one_public_receipt_without_mutating_task_or_events(self):
         with tempfile.TemporaryDirectory() as temp:
-            repo, db = initialize(Path(temp))
+            repo, db = initialize_current(Path(temp))
             task = add_task(db, repo)
             generation = set_target(db, repo, task["task_id"])
             target = target_for(db, repo)
@@ -143,7 +144,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
 
     def test_expected_generation_and_duplicate_fail_closed_then_fresh_target_recovers(self):
         with tempfile.TemporaryDirectory() as temp:
-            repo, db = initialize(Path(temp))
+            repo, db = initialize_current(Path(temp))
             task = add_task(db, repo)
             task_id = task["task_id"]
             first_generation = set_target(db, repo, task_id)
@@ -191,7 +192,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
 
     def test_cli_read_only_privacy_text_and_backup_only_outcome(self):
         with tempfile.TemporaryDirectory() as temp:
-            repo, db = initialize(Path(temp))
+            repo, db = initialize_current(Path(temp))
             task = add_task(db, repo)
             task_id = task["task_id"]
             generation = set_target(db, repo, task_id)
@@ -262,7 +263,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
 
     def test_task_show_audit_adds_exact_json_projection_and_keeps_text_unchanged(self):
         with tempfile.TemporaryDirectory() as temp:
-            repo, db = initialize(Path(temp))
+            repo, db = initialize_current(Path(temp))
             task = add_task(db, repo)
             task_id = task["task_id"]
             generation = set_target(db, repo, task_id)
@@ -727,7 +728,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
 
     def test_writer_lock_reread_rejects_concurrent_target_drift_without_row(self):
         with tempfile.TemporaryDirectory() as temp:
-            repo, db = initialize(Path(temp))
+            repo, db = initialize_current(Path(temp))
             task = add_task(db, repo)
             task_id = task["task_id"]
             generation = set_target(db, repo, task_id)
@@ -1201,7 +1202,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
 
     def test_empty_verification_native_cycle_uses_v1_digest_and_null_link(self):
         with tempfile.TemporaryDirectory() as temp:
-            repo, db = initialize(Path(temp))
+            repo, db = initialize_current(Path(temp))
             task = add_task(
                 db,
                 repo,
@@ -1249,7 +1250,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
 
     def test_whitespace_only_verification_binds_exact_digest_without_receipt(self):
         with tempfile.TemporaryDirectory() as temp:
-            repo, db = initialize(Path(temp))
+            repo, db = initialize_current(Path(temp))
             exact_verification = " \t "
             task = add_task(
                 db,
@@ -1435,7 +1436,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
 
     def test_contract_revision_retires_receipt_and_advances_target_generation(self):
         with tempfile.TemporaryDirectory() as temp:
-            repo, db = initialize(Path(temp))
+            repo, db = initialize_current(Path(temp))
             added = run_taskgov(
                 "task",
                 "add",
@@ -1564,7 +1565,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
 
     def test_semantic_verification_edit_invalidates_target_and_keeps_receipts(self):
         with tempfile.TemporaryDirectory() as temp:
-            repo, db = initialize(Path(temp))
+            repo, db = initialize_current(Path(temp))
             task = add_task(db, repo)
             task_id = task["task_id"]
             generation = seed_current_review_evidence(db, repo, task_id)
@@ -1663,7 +1664,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
                 self.subTest(status=requested_status),
                 tempfile.TemporaryDirectory() as temp,
             ):
-                repo, db = initialize(Path(temp))
+                repo, db = initialize_current(Path(temp))
                 task = add_task(db, repo)
                 task_id = task["task_id"]
                 seed_current_review_evidence(db, repo, task_id)
@@ -1759,7 +1760,7 @@ class M22VerificationSubjectTests(unittest.TestCase):
                 self.subTest(code=expected_code),
                 tempfile.TemporaryDirectory() as temp,
             ):
-                repo, db = initialize(Path(temp))
+                repo, db = initialize_current(Path(temp))
                 task = add_task(db, repo)
                 task_id = task["task_id"]
                 generation = seed_current_review_evidence(db, repo, task_id)

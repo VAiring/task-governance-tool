@@ -1,4 +1,5 @@
 """Transactional dirty work and setup-only migration, with real numerical stores."""
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
 
 import unittest
 from contextlib import closing
@@ -389,7 +390,7 @@ class CoreReconciliationPageTests(unittest.TestCase):
         from tests.test_viewer_maintenance import make_target, add_viewer_event
         from task_governance_tool import storage
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        self.target = make_target(self.root, enabled=False)
+        self.target = make_target(self.root, enabled=False, real_initialization=not uses_current_database_fixture(self))
         for number in range(3):
             add_viewer_event(self.target, f"Core input {number}")
         self.project = self.target.project.project_id
@@ -414,6 +415,7 @@ class CoreReconciliationPageTests(unittest.TestCase):
             return {row["task_id"]: json.loads(row["document"]) for row in
                     connection.execute("SELECT task_id,document FROM usage_reconcile_core_inputs")}
 
+    @ordinary_current_database
     def test_page_restart_and_coalesced_change_above_fence_are_not_lost(self):
         with mock.patch.object(core_inputs, "PAGE", 2):
             first = self.repository.reconcile_core_page(self.reader)
@@ -428,6 +430,7 @@ class CoreReconciliationPageTests(unittest.TestCase):
         with self.reader() as core:
             self.assertEqual(self.cached(), core_inputs.read_task_inputs(core, self.project, set(self.tasks)))
 
+    @ordinary_current_database
     def test_unchanged_core_never_reads_task_histories_and_nonsemantic_mark_changes_no_inputs(self):
         self.repository.reconcile_core_page(self.reader)
         with mock.patch.object(core_inputs, "read_task_inputs", side_effect=AssertionError("whole history reread")):
@@ -445,6 +448,7 @@ class CoreReconciliationPageTests(unittest.TestCase):
         with self.repository.connection() as connection:
             self.assertEqual([row[0] for row in connection.execute("SELECT task_id FROM usage_reconcile_core_work")], [self.tasks[1]])
 
+    @ordinary_current_database
     def test_participant_discovery_reuses_exact_admitted_core_pages(self):
         from task_governance_tool.usage_attribution_repository import registered_participants
         from task_governance_tool import usage_locator_collection as collection
@@ -456,6 +460,7 @@ class CoreReconciliationPageTests(unittest.TestCase):
                 mock.patch.object(collection, "validate_usage_ownership", side_effect=AssertionError("whole state validation")):
             self.assertEqual(collection._participants(self.target, None, repository=self.repository), expected)
 
+    @ordinary_current_database
     def test_incomplete_discovery_baseline_commits_progress_before_reporting_pending(self):
         with mock.patch.object(core_inputs, "PAGE", 2):
             with self.assertRaisesRegex(UsageError, "usage_pending"):

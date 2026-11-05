@@ -1,3 +1,4 @@
+from tests.current_database_fixture_support import initialize_current_test_database
 import json
 from tests.registration_output_support import registration_task
 import os
@@ -75,7 +76,7 @@ class SequentialTransitionTests(unittest.TestCase):
             with self.subTest(status=status), tempfile.TemporaryDirectory() as tmp:
                 db = Path(tmp) / "taskgov.sqlite"
                 repo = Path(tmp) / "repo"
-                init_db(db, repo)
+                initialize_current_test_database(db, repo)
                 add_task(db, repo, "Earlier", "--kind", "sequential", "--lane", "ADD", "--order", "10")
 
                 result = run_taskgov(
@@ -136,7 +137,7 @@ class SequentialTransitionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             first = add_task(
                 db, repo, "First", "--kind", "sequential", "--lane", "CORE", "--order", "10",
                 "--status", "in_progress",
@@ -176,7 +177,7 @@ class SequentialTransitionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             active = add_task(
                 db, repo, "Active", "--kind", "sequential", "--lane", "ADD", "--order", "20",
                 "--status", "in_progress",
@@ -210,7 +211,7 @@ class SequentialTransitionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             first = add_task(db, repo, "First", "--kind", "sequential", "--lane", "RACE", "--order", "10")
             second = add_task(db, repo, "Second", "--kind", "sequential", "--lane", "RACE", "--order", "20")
             target = resolve_database_target(
@@ -249,7 +250,7 @@ class SequentialTransitionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             first = add_task(
                 db, repo, "First", "--kind", "sequential", "--lane", "REOPEN",
                 "--order", "10",
@@ -321,7 +322,7 @@ class SequentialTransitionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "taskgov.sqlite"
             repo = Path(tmp) / "repo"
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo, "Concurrent reopen")
             start_ready_review_fixture(db, repo, task["task_id"])
             seed_review_evidence(db, task["task_id"])

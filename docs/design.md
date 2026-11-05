@@ -1309,7 +1309,8 @@ a real consuming project or Git state. Tests cover:
   legacy upgrade/paired rollback, exact workflow identity, and sanitized
   release evidence.
 
-Ordinary Task context, edit and show tests
+Ordinary Task registration, batch, selection, lifecycle, Packet, verification,
+Runner service and maintenance tests, as well as context, edit and show tests,
 opt into `tests/current_database_fixture_support.py` when current schema is
 only a prerequisite. It generates a project-free image through real migrations
 once per test process, keeps only immutable bytes, and initializes each private
@@ -1318,6 +1319,23 @@ migration fixtures and explicit corruption/rollback cases retain real creation.
 The fixture tests compare schema, indexes, migration records and seeded rows,
 exercise concurrent copy isolation, and measure preparation separately from
 the feature operation, including cold image creation.
+Opt-in is at the feature call site or an explicitly marked ordinary test method,
+never a global replacement of `initialize_taskgov_internal`. Shared setUp and
+mixed Runner/target helpers default to real creation; the selected test's opt-in
+is passed explicitly through shared factories. Unmarked or new cases stay on
+real creation, including inherited helpers whose caller has no ordinary marker.
+Predecessor runtime pins always select real initialization; the template itself rejects a pin
+before writing. Explicit initialization, Setup, legacy schema/history, identity,
+corruption and rollback fixtures retain their real paths. The review fixture's
+schema-28 Task creation and staged successor migrations remain deliberate,
+including when its final declared schema is current. The reviewed call and
+import/inheritance dispositions are retained as a point-in-time audit in
+`tests/fixtures/database-fixture-inventory.json`; its read-only AST scan is
+`tests/database_fixture_inventory_support.py`. Every direct and reachable indirect
+function maps to its preparation policy and exact source-owned regression guards;
+local import aliases retain their Python scope when following those routes.
+This inventory does not select, omit or change tests. Current copies still undergo production initialization,
+and all existing feature assertions and injected failures remain active.
 
 Review-answer and continuation tests share
 `tests/review_answer_fixture_support.py`: callers select the schema and optional

@@ -21,6 +21,7 @@ from tests.m223_test_support import (
     remove_v24_ownership_for_test,
 )
 from tests.verification_receipt_test_support import (
+    initialize_current,
     add_receipt,
     add_task as add_completion_task,
     completion as complete_task,
@@ -688,7 +689,7 @@ class CompletionEvidenceBundleStorageTests(unittest.TestCase):
 
     def test_recompletion_keeps_earlier_referenced_finding_unlinked(self):
         with tempfile.TemporaryDirectory() as directory:
-            repo, db_path = initialize_completion_fixture(Path(directory))
+            repo, db_path = initialize_current(Path(directory))
             added = run_taskgov(
                 "task",
                 "add",

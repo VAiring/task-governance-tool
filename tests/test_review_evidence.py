@@ -1,3 +1,4 @@
+from tests.current_database_fixture_support import initialize_current_test_database
 import json
 import os
 import sqlite3
@@ -314,7 +315,7 @@ class ReviewEvidenceTests(unittest.TestCase):
                         db = root / f"{tier}-{target_is_set}.sqlite"
                         repo = root / f"repo-{tier}-{target_is_set}"
                         repo.mkdir()
-                        init_db(db, repo)
+                        initialize_current_test_database(db, repo)
                         target = database_target(db, repo)
                         task = add_task(
                             db,
@@ -576,7 +577,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             root = Path(temp)
             repo, db = root / "repo", root / "tasks.sqlite"
             revision = init_git_repo(repo)
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
             before = subprocess.run(
                 ["git", "-C", str(repo), "status", "--porcelain=v2", "--branch"],
@@ -611,7 +612,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             root = Path(temp)
             repo, db = root / "repo", root / "state" / "tasks.sqlite"
             repo.mkdir()
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
 
             missing_target = done(db, repo, task["task_id"])
@@ -630,7 +631,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             root = Path(temp)
             repo, db = root / "repo", root / "state" / "tasks.sqlite"
             repo.mkdir()
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
             task_id = task["task_id"]
             target_set(db, repo, task_id)
@@ -1576,7 +1577,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             root = Path(temp)
             repo, db = root / "repo", root / "tasks.sqlite"
             repo.mkdir()
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
             task_id = task["task_id"]
             target_set(db, repo, task_id)
@@ -2383,7 +2384,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             root = Path(temp)
             repo, db = root / "repo", root / "tasks.sqlite"
             repo.mkdir()
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
             target_set(db, repo, task["task_id"])
             receipt_add(db, repo, task["task_id"], "reviewer-a")
@@ -2408,7 +2409,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             root = Path(temp)
             repo, db = root / "repo", root / "tasks.sqlite"
             repo.mkdir()
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
             target_set(db, repo, task["task_id"])
             receipt_add(db, repo, task["task_id"], "reviewer-a")
@@ -2431,7 +2432,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             root = Path(temp)
             repo, db = root / "repo", root / "tasks.sqlite"
             repo.mkdir()
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
             target_set(db, repo, task["task_id"])
             first = receipt_add(db, repo, task["task_id"], "reviewer-a")
@@ -2461,7 +2462,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             root = Path(temp)
             repo, db = root / "repo", root / "tasks.sqlite"
             repo.mkdir()
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             tier_one = add_task(db, repo, tier=1, title="Tier one")
             target_set(db, repo, tier_one["task_id"])
             fallback_one = receipt_add(
@@ -2567,7 +2568,7 @@ class ReviewEvidenceTests(unittest.TestCase):
                 root = Path(temp)
                 repo, db = root / "repo", root / "tasks.sqlite"
                 repo.mkdir()
-                init_db(db, repo)
+                initialize_current_test_database(db, repo)
                 task = add_task(db, repo, tier=tier)
                 target_set(db, repo, task["task_id"])
                 with closing(sqlite3.connect(db)) as connection:
@@ -2598,7 +2599,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             root = Path(temp)
             repo, db = root / "repo", root / "tasks.sqlite"
             repo.mkdir()
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
             target_set(db, repo, task["task_id"])
             old_receipt = receipt_add(db, repo, task["task_id"], "old-reviewer")
@@ -2626,7 +2627,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             root = Path(temp)
             repo, db = root / "repo", root / "tasks.sqlite"
             repo.mkdir()
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             first = add_task(db, repo, title="First")
             target_set(db, repo, first["task_id"])
             receipt = receipt_add(db, repo, first["task_id"], "reviewer-a")
@@ -2659,7 +2660,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             root = Path(temp)
             repo, db = root / "repo", root / "tasks.sqlite"
             repo.mkdir()
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
             for generation in range(12):
                 target_set(db, repo, task["task_id"], "sha256:" + f"{generation:064x}")
@@ -2687,7 +2688,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             root = Path(temp)
             repo, db = root / "repo", root / "tasks.sqlite"
             repo.mkdir()
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
             private_target = run_taskgov(
                 "review", "target", "set", "--repo", str(repo), "--db", str(db),
@@ -2777,7 +2778,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             root = Path(temp)
             repo, db = root / "repo", root / "tasks.sqlite"
             repo.mkdir()
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
             task_id = task["task_id"]
             target_set(db, repo, task_id)
@@ -2885,7 +2886,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             root = Path(temp)
             repo, db = root / "repo", root / "tasks.sqlite"
             repo.mkdir()
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
             malformed = (
                 (
@@ -2923,7 +2924,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             root = Path(temp)
             repo, db = root / "repo", root / "tasks.sqlite"
             repo.mkdir()
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
             task_id = task["task_id"]
             target_set(db, repo, task_id)
@@ -3147,7 +3148,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             root = Path(temp)
             repo, db = root / "repo", root / "tasks.sqlite"
             revision = init_git_repo(repo)
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task_id = add_task(db, repo)["task_id"]
             target = database_target(db, repo)
             started = threading.Event()
@@ -3215,7 +3216,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             root = Path(temp)
             repo, db = root / "repo", root / "tasks.sqlite"
             init_git_repo(repo)
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task_id = add_task(db, repo)["task_id"]
             target = database_target(db, repo)
             started = threading.Event()
@@ -3281,7 +3282,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             root = Path(temp)
             repo, db = root / "repo", root / "tasks.sqlite"
             init_git_repo(repo)
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task_id = add_task(db, repo)["task_id"]
             unrelated = run_taskgov("task", "add", "--repo", str(repo), "--db", str(db),
                                     "--title", "Unrelated task", "--status", "ready", "--json")
@@ -3365,7 +3366,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             root = Path(temp)
             repo, db = root / "repo", root / "tasks.sqlite"
             init_git_repo(repo)
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task_id = add_task(db, repo)["task_id"]
             target = database_target(db, repo)
             capture_barrier = threading.Barrier(2)
@@ -3508,7 +3509,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             root = Path(temp)
             repo, db = root / "repo", root / "tasks.sqlite"
             base = init_git_repo(repo)
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task_id = add_task(db, repo)["task_id"]
             internal_git_snapshot_target(db, repo, task_id)
             for reviewer in ("reviewer-a", "reviewer-b"):
@@ -3537,7 +3538,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             root = Path(temp)
             repo, db = root / "repo", root / "tasks.sqlite"
             base = init_git_repo(repo)
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task_id = add_task(db, repo)["task_id"]
             reviewed = repo / "reviewed.txt"
             reviewed.write_text("reviewed\n", encoding="utf-8")
@@ -3613,7 +3614,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             root = Path(temp)
             repo, db = root / "repo", root / "tasks.sqlite"
             init_git_repo(repo)
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task_id = add_task(db, repo)["task_id"]
             reviewed = repo / "reviewed.txt"
             reviewed.write_text("reviewed\n", encoding="utf-8")
@@ -3652,7 +3653,7 @@ class ReviewEvidenceTests(unittest.TestCase):
                 root = Path(temp)
                 repo, db = root / "repo", root / "tasks.sqlite"
                 git_revision = init_git_repo(repo)
-                init_db(db, repo)
+                initialize_current_test_database(db, repo)
                 task_id = add_task(db, repo)["task_id"]
                 if completion_kind == "git_commit":
                     target_and_two_passes(
@@ -3755,7 +3756,7 @@ class ReviewEvidenceTests(unittest.TestCase):
                 root = Path(temp)
                 repo, db = root / "repo", root / "tasks.sqlite"
                 reviewed_commit = init_git_repo(repo)
-                init_db(db, repo)
+                initialize_current_test_database(db, repo)
                 task_id = add_task(db, repo)["task_id"]
                 if target_kind == "git_commit":
                     target_and_two_passes(
@@ -3832,7 +3833,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             root = Path(temp)
             repo, db = root / "repo", root / "tasks.sqlite"
             repo.mkdir()
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task_id = add_task(db, repo)["task_id"]
             target_set(db, repo, task_id)
             receipt_add(db, repo, task_id, "reviewer-a")
@@ -3901,7 +3902,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             root = Path(temp)
             repo, db = root / "repo", root / "tasks.sqlite"
             repo.mkdir()
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task_id = add_task(db, repo)["task_id"]
             self.assertEqual(target_set(db, repo, task_id).returncode, 0)
             self.assertEqual(
@@ -3990,7 +3991,7 @@ class ReviewEvidenceTests(unittest.TestCase):
             root = Path(temp)
             repo, db = root / "repo", root / "tasks.sqlite"
             repo.mkdir()
-            init_db(db, repo)
+            initialize_current_test_database(db, repo)
             task = add_task(db, repo)
             target_set(db, repo, task["task_id"])
             with ThreadPoolExecutor(max_workers=2) as executor:

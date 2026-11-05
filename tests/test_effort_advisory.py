@@ -1,3 +1,5 @@
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
+from tests.current_database_fixture_support import initialize_feature_test_target
 import json
 import shutil
 import sqlite3
@@ -102,13 +104,13 @@ def write_profile(skill_root, *, enabled=True, thresholds=None):
     return load_effort_profile(skill_root)
 
 
-def initialize_db(db, repo):
+def initialize_db(db, repo, *, real_initialization=True):
     target = resolve_database_target(
         repo=repo,
         db=db,
         script_path=SKILL_ROOT / "scripts" / "taskgov.py",
     )
-    initialize_database(target)
+    initialize_feature_test_target(target, real_initialization=real_initialization)
     return target
 
 
@@ -302,12 +304,13 @@ class EffortMigrationTests(unittest.TestCase):
 
 
 class EffortAdvisoryServiceTests(unittest.TestCase):
+    @ordinary_current_database
     def test_disabled_profile_changes_no_advisory_state_and_calls_no_git(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             db = root / "taskgov.sqlite"
             repo = root / "repo"
-            target = initialize_db(db, repo)
+            target = initialize_db(db, repo, real_initialization=not uses_current_database_fixture(self))
             with mock.patch(
                 "task_governance_tool.effort.capture_git_basis",
                 side_effect=AssertionError("disabled profile must not inspect Git"),
@@ -343,6 +346,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                     0,
                 )
 
+    @ordinary_current_database
     def test_first_in_progress_captures_one_basis_and_failure_never_blocks_start(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -352,7 +356,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
             repo = root / "repo"
             initialize_git_repo(repo)
             db = root / "taskgov.sqlite"
-            target = initialize_db(db, repo)
+            target = initialize_db(db, repo, real_initialization=not uses_current_database_fixture(self))
             head = git(repo, "rev-parse", "HEAD")
 
             with closing(connect_initialized(target)) as connection:
@@ -427,6 +431,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
             self.assertEqual(initial.task["status"], "in_progress")
             self.assertEqual(started.task["status"], "in_progress")
 
+    @ordinary_current_database
     def test_delayed_basis_capture_allows_unrelated_task_write(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -436,7 +441,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
             repo = root / "repo"
             initialize_git_repo(repo)
             db = root / "taskgov.sqlite"
-            target = initialize_db(db, repo)
+            target = initialize_db(db, repo, real_initialization=not uses_current_database_fixture(self))
             with closing(connect_initialized(target)) as connection:
                 with connection:
                     subject = add_task(
@@ -523,6 +528,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                 self.assertEqual(connection.execute("PRAGMA quick_check").fetchone()[0], "ok")
                 self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
 
+    @ordinary_current_database
     def test_activity_delta_during_basis_capture_marks_overlap(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -532,7 +538,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
             repo = root / "repo"
             initialize_git_repo(repo)
             db = root / "taskgov.sqlite"
-            target = initialize_db(db, repo)
+            target = initialize_db(db, repo, real_initialization=not uses_current_database_fixture(self))
             with closing(connect_initialized(target)) as connection:
                 with connection:
                     subject = add_task(
@@ -626,6 +632,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                 self.assertEqual(connection.execute("PRAGMA quick_check").fetchone()[0], "ok")
                 self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
 
+    @ordinary_current_database
     def test_implicit_lane_order_uses_locked_post_preflight_maximum(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -635,7 +642,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
             repo = root / "repo"
             initialize_git_repo(repo)
             db = root / "taskgov.sqlite"
-            target = initialize_db(db, repo)
+            target = initialize_db(db, repo, real_initialization=not uses_current_database_fixture(self))
             with closing(connect_initialized(target)) as connection:
                 with connection:
                     add_task(
@@ -716,6 +723,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                 self.assertEqual(connection.execute("PRAGMA quick_check").fetchone()[0], "ok")
                 self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
 
+    @ordinary_current_database
     def test_clean_observation_is_deterministic_warns_without_writing_or_stopping(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -739,7 +747,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
             )
             git(repo, "config", "core.fsmonitor", fsmonitor_hook.as_posix())
             db = root / "taskgov.sqlite"
-            target = initialize_db(db, repo)
+            target = initialize_db(db, repo, real_initialization=not uses_current_database_fixture(self))
             with closing(connect_initialized(target)) as connection:
                 with connection:
                     task = add_task(
@@ -818,6 +826,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
             )
             self.assertFalse(fsmonitor_marker.exists())
 
+    @ordinary_current_database
     def test_other_task_overlap_is_remembered_but_subject_activity_is_subtracted(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -827,7 +836,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
             repo = root / "repo"
             initialize_git_repo(repo)
             db = root / "taskgov.sqlite"
-            target = initialize_db(db, repo)
+            target = initialize_db(db, repo, real_initialization=not uses_current_database_fixture(self))
             with closing(connect_initialized(target)) as connection:
                 with connection:
                     subject = add_task(
@@ -925,6 +934,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
                 ],
             )
 
+    @ordinary_current_database
     def test_activity_started_during_git_observation_is_detected(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -934,7 +944,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
             repo = root / "repo"
             initialize_git_repo(repo)
             db = root / "taskgov.sqlite"
-            target = initialize_db(db, repo)
+            target = initialize_db(db, repo, real_initialization=not uses_current_database_fixture(self))
             with closing(connect_initialized(target)) as connection:
                 with connection:
                     subject = add_task(
@@ -994,7 +1004,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
             repo = root / "repo"
             initialize_git_repo(repo)
             db = root / "taskgov.sqlite"
-            target = initialize_db(db, repo)
+            target = initialize_db(db, repo, real_initialization=not uses_current_database_fixture(self))
             with closing(connect_initialized(target)) as connection:
                 with connection:
                     task = add_task(
@@ -1037,6 +1047,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
             self.assertNotIn("--output", json.dumps(result.data, sort_keys=True))
             self.assertEqual(repo_file_bytes(repo), repo_before)
 
+    @ordinary_current_database
     def test_non_git_dirty_and_missing_basis_are_successful_unknown_observations(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1046,7 +1057,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
 
             non_git_repo = root / "non-git"
             non_git_db = root / "non-git.sqlite"
-            non_git_target = initialize_db(non_git_db, non_git_repo)
+            non_git_target = initialize_db(non_git_db, non_git_repo, real_initialization=not uses_current_database_fixture(self))
             with closing(connect_initialized(non_git_target)) as connection:
                 with connection:
                     non_git_task = add_task(
@@ -1073,7 +1084,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
             initialize_git_repo(dirty_repo)
             (dirty_repo / "dirty.txt").write_text("dirty\n", encoding="utf-8")
             dirty_db = root / "dirty.sqlite"
-            dirty_target = initialize_db(dirty_db, dirty_repo)
+            dirty_target = initialize_db(dirty_db, dirty_repo, real_initialization=not uses_current_database_fixture(self))
             with closing(connect_initialized(dirty_target)) as connection:
                 with connection:
                     dirty_task = add_task(
@@ -1106,7 +1117,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
             repo = root / "repo"
             initialize_git_repo(repo)
             db = root / "taskgov.sqlite"
-            target = initialize_db(db, repo)
+            target = initialize_db(db, repo, real_initialization=not uses_current_database_fixture(self))
             with closing(connect_initialized(target)) as connection:
                 with connection:
                     task = add_task(
@@ -1183,7 +1194,7 @@ class EffortAdvisoryServiceTests(unittest.TestCase):
             repo = root / "repo"
             initialize_git_repo(repo)
             db = root / "taskgov.sqlite"
-            target = initialize_db(db, repo)
+            target = initialize_db(db, repo, real_initialization=not uses_current_database_fixture(self))
             with closing(connect_initialized(target)) as connection:
                 with connection:
                     task = add_task(

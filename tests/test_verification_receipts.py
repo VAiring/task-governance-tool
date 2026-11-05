@@ -17,6 +17,7 @@ from tests.verification_receipt_test_support import (
     add_task,
     completion,
     initialize,
+    initialize_current,
     payload,
     run_taskgov,
     seed_current_review_evidence,
@@ -205,7 +206,7 @@ class VerificationReceiptIntegrationTests(unittest.TestCase):
 
     def test_result_coverage_matrix_drives_only_the_exact_current_gate(self):
         with tempfile.TemporaryDirectory() as temp:
-            repo, db = initialize(Path(temp))
+            repo, db = initialize_current(Path(temp))
             task = add_task(db, repo)
             task_id = task["task_id"]
             cases = tuple(
@@ -279,7 +280,7 @@ class VerificationReceiptIntegrationTests(unittest.TestCase):
 
     def test_status_expectation_and_target_errors_use_fixed_precedence(self):
         with tempfile.TemporaryDirectory() as temp:
-            repo, db = initialize(Path(temp))
+            repo, db = initialize_current(Path(temp))
 
             ready = add_task(
                 db,
@@ -400,7 +401,7 @@ class VerificationReceiptIntegrationTests(unittest.TestCase):
 
     def test_completion_check_and_write_require_fresh_pass_full_receipt(self):
         with tempfile.TemporaryDirectory() as temp:
-            repo, db = initialize(Path(temp))
+            repo, db = initialize_current(Path(temp))
             task = add_task(db, repo)
             task_id = task["task_id"]
             first_generation = seed_current_review_evidence(db, repo, task_id)
@@ -537,7 +538,7 @@ class VerificationReceiptIntegrationTests(unittest.TestCase):
 
     def test_missing_receipt_precedes_insufficient_and_blocking_review_evidence(self):
         with tempfile.TemporaryDirectory() as temp:
-            repo, db = initialize(Path(temp))
+            repo, db = initialize_current(Path(temp))
             task = add_task(
                 db,
                 repo,
@@ -625,7 +626,7 @@ class ReceiptPacketConnectionTests(unittest.TestCase):
 
     def test_final_packet_shares_only_its_validated_receipt_snapshot(self):
         with tempfile.TemporaryDirectory() as temp:
-            repo, db = initialize(Path(temp))
+            repo, db = initialize_current(Path(temp))
             task_id = add_task(db, repo)["task_id"]
             generation = set_target(db, repo, task_id)
             receipt_id = payload(add_receipt(db, repo, task_id, generation))["data"]["receipt"]["verification_receipt_id"]
@@ -669,7 +670,7 @@ class ReceiptPacketConnectionTests(unittest.TestCase):
 
     def test_success_keeps_both_operations_but_removes_the_public_relay(self):
         with tempfile.TemporaryDirectory() as temp:
-            repo, db = initialize(Path(temp))
+            repo, db = initialize_current(Path(temp))
             task_id = add_task(db, repo)["task_id"]
             generation = set_target(db, repo, task_id)
             recorded_at = "2026-10-21T00:00:00Z"
@@ -748,7 +749,7 @@ class ReceiptPacketConnectionTests(unittest.TestCase):
 
     def test_retry_rejects_other_task_old_generation_and_nonpassing_receipts(self):
         with tempfile.TemporaryDirectory() as temp:
-            repo, db = initialize(Path(temp))
+            repo, db = initialize_current(Path(temp))
             task_id = add_task(db, repo)["task_id"]
             other_id = add_task(db, repo, title="Other task", status="ready")["task_id"]
             set_target(db, repo, other_id)
@@ -770,7 +771,7 @@ class ReceiptPacketConnectionTests(unittest.TestCase):
 
     def test_target_change_during_packet_observation_is_not_rebound(self):
         with tempfile.TemporaryDirectory() as temp:
-            repo, db = initialize(Path(temp))
+            repo, db = initialize_current(Path(temp))
             task_id = add_task(db, repo)["task_id"]
             generation = set_target(db, repo, task_id)
             observe = packet_module._observe_target
@@ -788,7 +789,7 @@ class ReceiptPacketConnectionTests(unittest.TestCase):
 
     def test_registration_failure_and_nonpassing_result_never_prepare(self):
         with tempfile.TemporaryDirectory() as temp:
-            repo, db = initialize(Path(temp))
+            repo, db = initialize_current(Path(temp))
             task_id = add_task(db, repo)["task_id"]
             generation = set_target(db, repo, task_id)
             with mock.patch.object(cli_module, "prepare_review_packet") as prepare:
@@ -802,7 +803,7 @@ class ReceiptPacketConnectionTests(unittest.TestCase):
 
     def test_contract_change_between_commit_and_prepare_keeps_only_the_receipt(self):
         with tempfile.TemporaryDirectory() as temp:
-            repo, db = initialize(Path(temp))
+            repo, db = initialize_current(Path(temp))
             task_id = add_task(db, repo)["task_id"]
             generation = set_target(db, repo, task_id)
             prepare = cli_module.prepare_review_packet
@@ -821,7 +822,7 @@ class ReceiptPacketConnectionTests(unittest.TestCase):
 
     def test_retry_identifier_errors_are_sanitized_and_do_not_write(self):
         with tempfile.TemporaryDirectory() as temp:
-            repo, db = initialize(Path(temp))
+            repo, db = initialize_current(Path(temp))
             task_id = add_task(db, repo)["task_id"]
             set_target(db, repo, task_id)
             before = db.read_bytes()
@@ -833,7 +834,7 @@ class ReceiptPacketConnectionTests(unittest.TestCase):
 
     def test_lost_response_recovers_existing_id_without_replaying_registration(self):
         with tempfile.TemporaryDirectory() as temp:
-            repo, db = initialize(Path(temp))
+            repo, db = initialize_current(Path(temp))
             task_id = add_task(db, repo)["task_id"]
             generation = set_target(db, repo, task_id)
             # Discard the response as if the caller lost it after the commit.

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.current_database_fixture_support import ordinary_current_database, initialize_case_database
+
 import unittest
 import sys
 import tempfile
@@ -16,7 +18,8 @@ from task_governance_tool.verification_declaration import (
     verification_requirement,
 )
 from tests.verification_receipt_test_support import (
-    initialize, run_taskgov, payload, set_target, seed_current_review_evidence,
+    initialize,
+    initialize_case, run_taskgov, payload, set_target, seed_current_review_evidence,
     completion, add_receipt,
 )
 
@@ -66,7 +69,7 @@ class VerificationDeclarationWorkflowTests(unittest.TestCase):
     def setUp(self):
         self.root = tempfile.TemporaryDirectory()
         self.addCleanup(self.root.cleanup)
-        self.repo, self.db = initialize(Path(self.root.name))
+        self.repo, self.db = initialize_case(Path(self.root.name), self)
 
     def call(self, *args):
         return payload(run_taskgov(*args, "--repo", str(self.repo), "--db", str(self.db), "--json"))
@@ -76,6 +79,7 @@ class VerificationDeclarationWorkflowTests(unittest.TestCase):
         self.assertTrue(result["ok"], result)
         return registration_body(result["data"], result["data"], "task")
 
+    @ordinary_current_database
     def test_omission_blocks_before_and_after_target(self):
         task = self.add()
         self.assertEqual(task["verification_requirement"], "unspecified")
@@ -97,6 +101,7 @@ class VerificationDeclarationWorkflowTests(unittest.TestCase):
             code = result["data"]["blocking_codes"][0] if check else result["errors"][0]["code"]
             self.assertEqual(code, "verification_requirement_unspecified", result)
 
+    @ordinary_current_database
     def test_explicit_waiver_completes_and_reason_change_invalidates_target(self):
         task = self.add("--verification-not-required", "no executable change")
         self.assertEqual(task["verification_requirement"], "not_required")
@@ -111,6 +116,7 @@ class VerificationDeclarationWorkflowTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue(self.call("task", "show", task["task_id"])["ok"])
 
+    @ordinary_current_database
     def test_required_verification_needs_a_fresh_full_passing_receipt(self):
         task_id = self.add("--verification", "Run focused checks")["task_id"]
         for result, coverage in (("fail", "full"), ("pass", "partial"), ("pass", "full")):
@@ -120,6 +126,7 @@ class VerificationDeclarationWorkflowTests(unittest.TestCase):
             completed = completion(self.db, self.repo, task_id)
             self.assertEqual(completed.returncode == 0, (result, coverage) == ("pass", "full"), completed.stdout)
 
+    @ordinary_current_database
     def test_acceptance_and_assertions_never_infer_a_declaration(self):
         task_id = self.add("--verification", " \t", "--contract-scope", "One bounded edit",
                            "--contract-acceptance", "Tests and both reviews pass")["task_id"]
@@ -127,6 +134,7 @@ class VerificationDeclarationWorkflowTests(unittest.TestCase):
         result = payload(completion(self.db, self.repo, task_id))
         self.assertEqual(result["errors"][0]["code"], "verification_requirement_unspecified")
 
+    @ordinary_current_database
     def test_required_waiver_and_unspecified_edits_replace_the_pair(self):
         task_id = self.add("--verification", "checks")["task_id"]
         for arguments, expected in ((('--verification-not-required', 'No executable change'), 'not_required'),
@@ -139,6 +147,7 @@ class VerificationDeclarationWorkflowTests(unittest.TestCase):
                             "--verification-not-required", "No change")
         self.assertFalse(invalid["ok"])
 
+    @ordinary_current_database
     def test_batch_inherits_or_replaces_the_complete_pair_and_rejects_atomically(self):
         from tests.test_task_batch import BinaryInput, document, encode
         from tests.m14_test_support import file_snapshot

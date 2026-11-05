@@ -1,4 +1,5 @@
 """Restartable phase composition uses real admitted core and numerical stores."""
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
 
 from contextlib import closing
 import json
@@ -30,7 +31,7 @@ class RuntimeTests(unittest.TestCase):
 
     def setUp(self):
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        self.target = make_target(self.root, enabled=False)
+        self.target = make_target(self.root, enabled=False, real_initialization=not uses_current_database_fixture(self))
         self.root = self.root / "project"
         from task_governance_tool.state_resolver import observe_current_root
         self.repository = UsageReconciliationRepository(self.root / "usage.sqlite", self.target.project.project_id,
@@ -63,6 +64,7 @@ class RuntimeTests(unittest.TestCase):
                 return phases
         self.fail("initial phase did not converge")
 
+    @ordinary_current_database
     def test_actual_task_acknowledgement_reaches_base_membership_without_claiming_publication(self):
         phases = self.drain_initial()
         self.assertTrue({"core", "baseline", "operations", "intervals", "turn_inputs", "allocation", "base_effects"} <= set(phases))
@@ -72,6 +74,7 @@ class RuntimeTests(unittest.TestCase):
             self.assertIsNotNone(connection.execute("SELECT 1 FROM usage_reconcile_overlay_turn_work").fetchone())
             self.assertIsNone(connection.execute("SELECT 1 FROM usage_capture").fetchone())
 
+    @ordinary_current_database
     def test_unchanged_initial_phase_reentry_never_reloads_history(self):
         self.drain_initial()
         self.repository = UsageReconciliationRepository(self.repository.path, *self.repository.basis)
@@ -121,6 +124,7 @@ class RuntimeTests(unittest.TestCase):
                          {"phase": "base_effects", "provider": "openai", "response_id": "r1"})
         self.assertEqual(advance_initial(self.repository, self.reader), {"phase": "effects_pending"})
 
+    @ordinary_current_database
     def test_owner_effects_keep_ambiguity_seen_before_removal_and_later_readdition(self):
         from task_governance_tool.usage_response_ownership import apply_actions
         owners = {"old"}
@@ -168,6 +172,7 @@ class RuntimeTests(unittest.TestCase):
                 return
         self.fail("effects did not converge")
 
+    @ordinary_current_database
     def test_effects_finish_with_fresh_input_guard_and_full_geometry(self):
         from task_governance_tool.usage_reconciliation_basis import require_inputs
         from task_governance_tool.usage_reconciliation_membership import component_geometry
@@ -189,6 +194,7 @@ class RuntimeTests(unittest.TestCase):
             advance_effects(self.repository, self.reader)
         self.drain_effects()
 
+    @ordinary_current_database
     def test_uncertainty_dependency_survives_restart_and_fences_publication(self):
         from task_governance_tool.usage_reconciliation_membership import replace_contribution
         from task_governance_tool.usage_reconciliation_basis import require_inputs
@@ -222,6 +228,7 @@ class RuntimeTests(unittest.TestCase):
             advance_effects(self.repository, self.reader)
         self.drain_effects()
 
+    @ordinary_current_database
     def test_base_owner_dependency_fences_publication_with_equal_uncertainty(self):
         from task_governance_tool.usage_reconciliation_membership import replace_contribution
         from task_governance_tool.usage_reconciliation_basis import require_inputs
@@ -265,6 +272,7 @@ class RuntimeTests(unittest.TestCase):
                 return result
         self.fail("snapshots did not converge")
 
+    @ordinary_current_database
     def test_selected_snapshot_capture_and_unchanged_reentry(self):
         from task_governance_tool.usage_reconciliation_snapshots import advance
         from task_governance_tool.usage_evidence import snapshot
@@ -278,6 +286,7 @@ class RuntimeTests(unittest.TestCase):
                 mock.patch.object(self.repository, "attribution", side_effect=AssertionError("full classification")):
             self.assertEqual(advance(self.repository, self.reader)["phase"], "captured")
 
+    @ordinary_current_database
     def test_event_budget_stop_keeps_committed_frontier_for_new_repository(self):
         from task_governance_tool import usage_reconciliation_runtime as runtime
         from task_governance_tool.usage_values import UsageError

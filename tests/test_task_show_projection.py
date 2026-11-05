@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from tests.current_database_fixture_support import ordinary_current_database, initialize_case_database
+
+from tests.current_database_fixture_support import initialize_current_test_database
+
 import json
 import sqlite3
 import tempfile
@@ -41,7 +45,7 @@ class TaskShowProjectionTests(unittest.TestCase):
         self.repo = self.root / "repo"
         self.repo.mkdir()
         self.db = self.root / "taskgov.sqlite"
-        initialize_taskgov_internal(repo=self.repo, db=self.db)
+        initialize_case_database(self, repo=self.repo, db=self.db)
         self.event_sequence = 0
 
     def success(self, *arguments):
@@ -122,6 +126,7 @@ class TaskShowProjectionTests(unittest.TestCase):
             if key != "receipts_total"
         })
 
+    @ordinary_current_database
     def test_missing_review_hint_reuses_gate_counts_across_show_context_and_audit(self):
         task = self.add("--verification", "Focused verification")
         task_id = task["task_id"]
@@ -174,6 +179,7 @@ class TaskShowProjectionTests(unittest.TestCase):
             if missing:
                 self.review(task_id, f"reviewer-{missing}")
 
+    @ordinary_current_database
     def test_review_hint_retains_blocking_and_fresh_review_meaning(self):
         task_id = self.add("--verification", "Focused verification")["task_id"]
         generation = self.target(task_id)
@@ -201,6 +207,7 @@ class TaskShowProjectionTests(unittest.TestCase):
         self.verification(task_id, generation)
         self.assertEqual(self.show(task_id)["data"]["suggested_next_action"], generic)
 
+    @ordinary_current_database
     def test_review_hint_requires_satisfied_required_verification_and_supported_status(self):
         task_id = self.add("--verification", "Focused verification")["task_id"]
         self.success("task", "edit", task_id, "--status", "review_pending")
@@ -224,6 +231,7 @@ class TaskShowProjectionTests(unittest.TestCase):
         self.success("task", "edit", no_verification, "--status", "review_pending")
         self.assertEqual(self.show(no_verification)["data"]["suggested_next_action"], generic)
 
+    @ordinary_current_database
     def test_review_hint_respects_tier_and_accepted_fallback(self):
         generic = tasks.suggested_next_action({"status": "review_pending"})
         for tier in (0, 1, 2):
@@ -249,6 +257,7 @@ class TaskShowProjectionTests(unittest.TestCase):
             self.assertEqual(shown["suggested_next_action"], generic)
             self.success("task", "edit", task_id, "--status", "ready")
 
+    @ordinary_current_database
     def test_normal_has_fixed_shapes_and_complete_task_contract_checkpoint_and_routes(self):
         scope = "Complete scope 日本語. " * 110
         acceptance = "Retain every acceptance condition. " * 100
@@ -292,6 +301,7 @@ class TaskShowProjectionTests(unittest.TestCase):
                 self.assert_modes_have_same_gates(normal, audit)
                 self.assertEqual(file_snapshot(self.root), before)
 
+    @ordinary_current_database
     def test_all_current_review_receipts_are_retained_beyond_audit_window(self):
         task = self.add()
         self.target(task["task_id"])
@@ -313,6 +323,7 @@ class TaskShowProjectionTests(unittest.TestCase):
             self.assertEqual(row["judgment_revision"], 1)
         self.assert_modes_have_same_gates(normal, audit)
 
+    @ordinary_current_database
     def test_old_open_findings_and_current_resolved_blocker_survive_many_generations(self):
         task = self.add()
         self.target(task["task_id"])
@@ -348,6 +359,7 @@ class TaskShowProjectionTests(unittest.TestCase):
         refreshed = self.show(task["task_id"])["data"]["review_evidence"]["current_findings"]
         self.assertEqual({row["review_finding_id"] for row in refreshed}, {high["review_finding_id"], low["review_finding_id"]})
 
+    @ordinary_current_database
     def test_notes_and_transition_context_are_not_limited_to_latest_ten_events(self):
         task = self.add()
         standalone = self.success("task", "edit", task["task_id"], "--add-note", "Standalone continuation note 日本語")["data"]["event"]
@@ -401,6 +413,7 @@ class TaskShowProjectionTests(unittest.TestCase):
                         self.assertNotIn(rejected_summary.strip(), result.stdout or result.stderr)
                 self.assertEqual(file_snapshot(self.root), before)
 
+    @ordinary_current_database
     def test_failed_timeout_and_partial_current_receipts_keep_exact_details_and_gate(self):
         task = self.add("--verification", "Focused verification")
         for result, coverage in (("fail", "full"), ("timeout", "full"), ("pass", "partial"), ("pass", "full")):
@@ -420,6 +433,7 @@ class TaskShowProjectionTests(unittest.TestCase):
         self.assertIsNone(missing["current_receipt"])
         self.assertEqual(missing["gate"]["blocking_code"], "verification_receipt_required")
 
+    @ordinary_current_database
     def test_exact_current_receipt_is_not_derived_from_recent_ten_with_timestamp_ties(self):
         task = self.add("--verification", "Focused verification")
         for index in range(12):
@@ -465,6 +479,7 @@ class TaskShowProjectionTests(unittest.TestCase):
         self.assertEqual(failures[0], failures[1])
         self.assertEqual(file_snapshot(self.root), before)
 
+    @ordinary_current_database
     def test_not_found_has_identical_empty_failure_shape_in_both_modes(self):
         before = file_snapshot(self.root)
         results = [run(self.db, self.repo, "task", "show", "tg_task_missing", *options) for options in ((), ("--audit",))]

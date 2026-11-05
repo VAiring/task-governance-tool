@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from tests.current_database_fixture_support import ordinary_current_database, initialize_case_database
+
+from tests.current_database_fixture_support import initialize_current_test_database
+
 import copy
 import io
 import json
@@ -482,7 +486,7 @@ class ReviewResultsTests(unittest.TestCase):
         self.repo = self.root / "repo"
         self.repo.mkdir()
         self.db = self.root / "taskgov.sqlite"
-        initialize_taskgov_internal(repo=self.repo, db=self.db)
+        initialize_case_database(self, repo=self.repo, db=self.db)
         self.target = database_target(self.db, self.repo)
         self.task_id = self.success(
             "task", "add", "--title", "Structured review results", "--status", "in_progress",
@@ -549,6 +553,7 @@ class ReviewResultsTests(unittest.TestCase):
         checked = self.success("task", "complete", self.task_id, "--verification-complete", "--review-complete", "--commit-not-required", "--check", "--read-only")
         self.assertEqual(checked["blocking_codes"], [] if blocking_code is None else [blocking_code])
 
+    @ordinary_current_database
     def test_gate_is_observed_once_inside_writer_without_git(self):
         reader = result_service.read_review_evidence
         observations = []
@@ -562,6 +567,7 @@ class ReviewResultsTests(unittest.TestCase):
         self.assertEqual(observations, [True])
         self.assert_gate(json.loads(stdout)["data"], "review_receipts_insufficient")
 
+    @ordinary_current_database
     def test_old_unresolved_finding_blocks_new_generation_passes(self):
         code, stdout, _ = self.invoke(self.payload(receipts=[receipt(findings=[{"severity": "medium", "summary": "Correct the boundary"}])]))
         self.assertEqual(code, 0, stdout)
@@ -575,6 +581,7 @@ class ReviewResultsTests(unittest.TestCase):
         self.assertEqual(code, 0, stdout)
         self.assert_gate(json.loads(stdout)["data"], None, generation=2)
 
+    @ordinary_current_database
     def test_resolved_current_finding_requires_new_generation_and_fresh_passes(self):
         code, stdout, _ = self.invoke(self.payload(receipts=[receipt(findings=[{"severity": "high", "summary": "Correct current boundary"}])]))
         self.assertEqual(code, 0, stdout)
@@ -592,6 +599,7 @@ class ReviewResultsTests(unittest.TestCase):
         self.assertEqual(code, 0, stdout)
         self.assert_gate(json.loads(stdout)["data"], None, generation=2)
 
+    @ordinary_current_database
     def test_changes_requested_without_findings_blocks_even_with_two_passes(self):
         code, stdout, _ = self.invoke(self.payload(receipts=[receipt("requester", verdict="changes_requested"), receipt("pass-a"), receipt("pass-b")]))
         self.assertEqual(code, 0, stdout)
@@ -606,6 +614,7 @@ class ReviewResultsTests(unittest.TestCase):
         self.assertEqual(file_snapshot(self.root), before)
         maintenance.assert_not_called()
 
+    @ordinary_current_database
     def test_post_commit_text_failure_keeps_saved_json_and_warns_without_replay(self):
         with mock.patch.object(cli_service, "review_text", side_effect=ValueError("token=private-format")):
             code, stdout, stderr = self.invoke()
@@ -617,6 +626,7 @@ class ReviewResultsTests(unittest.TestCase):
         self.assertNotIn("private-format", stdout)
         self.assert_gate(envelope["data"], "review_receipts_insufficient")
 
+    @ordinary_current_database
     def test_post_commit_emit_failure_reports_saved_outcome_not_empty_failure(self):
         for json_output in (False, True):
             with self.subTest(json_output=json_output), mock.patch.object(cli_service, "emit_result", side_effect=OSError("token=private-output")) as emit:
@@ -628,6 +638,7 @@ class ReviewResultsTests(unittest.TestCase):
             emit.assert_called_once()
         self.assertEqual(self.success("task", "show", self.task_id)["review_evidence"]["counts"]["receipts_current_generation"], 2)
 
+    @ordinary_current_database
     def test_compact_response_preserves_all_64_findings_and_reduces_wire_bytes(self):
         legacy = []
         add_receipt, add_finding = result_service.add_review_receipt, result_service.add_review_finding
@@ -656,6 +667,7 @@ class ReviewResultsTests(unittest.TestCase):
         print(f"RG3_RESPONSE_BYTES old={old_bytes} new={new_bytes} receipts=8 findings=64")
         self.assertEqual(envelope["data"]["omitted_details"], ["provenance", "repeated_binding", "events", "timestamps", "resolution_metadata"])
 
+    @ordinary_current_database
     def test_buffered_pipe_flush_failure_retains_rows_and_quiets_later_finalization(self):
         for json_output in (False, True):
             reader, writer = os.pipe()
@@ -676,6 +688,7 @@ class ReviewResultsTests(unittest.TestCase):
                 stdout.flush()  # Interpreter-style later flush no longer retries the pipe.
         self.assertEqual(self.success("task", "show", self.task_id)["review_evidence"]["counts"]["receipts_current_generation"], 2)
 
+    @ordinary_current_database
     def test_two_pass_response_size_and_gate_do_not_complete_task(self):
         legacy = []
         add = result_service.add_review_receipt
@@ -694,6 +707,7 @@ class ReviewResultsTests(unittest.TestCase):
         self.assertLess(new_bytes, old_bytes)
         print(f"RG3_RESPONSE_BYTES old={old_bytes} new={new_bytes} receipts=2 findings=0")
 
+    @ordinary_current_database
     def test_packet_template_and_each_unfinished_claim_are_rejected_without_writes(self):
         template = self.success("review", "prepare", self.task_id)["result_template"]
         before = file_snapshot(self.root)
@@ -706,6 +720,7 @@ class ReviewResultsTests(unittest.TestCase):
                 self.assert_failure(self.invoke(candidate), "invalid_review_evidence")
         self.assertEqual(file_snapshot(self.root), before)
 
+    @ordinary_current_database
     def test_completed_packet_template_registers_findings_through_existing_writer(self):
         template = self.success("review", "prepare", self.task_id)["result_template"]
         finding = {"severity": "low", "summary": "src/example.py:12 Clarify the contract"}
@@ -716,6 +731,7 @@ class ReviewResultsTests(unittest.TestCase):
         self.assertEqual(saved["receipt"]["verdict"], "pass")
         self.assertEqual(saved["findings"][0]["finding"]["summary"], finding["summary"])
 
+    @ordinary_current_database
     def test_tier_zero_packet_template_accepts_explicit_not_required_declaration(self):
         self.task_id = self.add_review_task("--title", "Mechanical change", "--review-tier", "0", "--verification-not-required", "Mechanical review fixture")
         targeted = self.success("review", "target", "set", self.task_id, "--kind", "external_revision", "--revision", "reviewed-mechanical-change")
@@ -729,6 +745,7 @@ class ReviewResultsTests(unittest.TestCase):
         self.assertNotIn("review_provenance", saved)
         self.assertIsNone(self.success("task", "show", self.task_id, "--audit")["review_evidence"]["recent_receipts"][0]["review_provenance"])
 
+    @ordinary_current_database
     def test_completed_packet_template_retains_privacy_and_stale_target_rejection(self):
         template = self.success("review", "prepare", self.task_id)["result_template"]
         template["receipts"][0].update(receipt())
@@ -744,6 +761,7 @@ class ReviewResultsTests(unittest.TestCase):
         self.assert_failure(self.invoke(template), "review_target_mismatch")
         self.assertEqual(file_snapshot(self.root), before)
 
+    @ordinary_current_database
     def test_multiple_receipts_findings_keep_native_provenance_references_events_and_gates(self):
         findings = [{"severity": "low", "summary": "Shared observation 日本語"}]
         payload = self.payload(receipts=[receipt("reviewer-b", findings=findings), receipt("reviewer-a", findings=findings)])
@@ -797,6 +815,7 @@ class ReviewResultsTests(unittest.TestCase):
         self.assertEqual({row["review_finding_id"] for row in evidence["current_findings"]}, set(finding_ids))
         self.assert_gate(result["data"], None)
 
+    @ordinary_current_database
     def test_changes_requested_and_blocking_findings_remain_individual_gate_blockers(self):
         payload = self.payload(receipts=[
             receipt("reviewer-a", findings=[{"severity": "high", "summary": "Atomicity needs correction"}], verdict="changes_requested"),
@@ -810,6 +829,7 @@ class ReviewResultsTests(unittest.TestCase):
         self.assertEqual(evidence["counts"]["open_high"], 1)
         self.assertEqual(evidence["current_findings"][0]["blocking_reason"], "unresolved")
 
+    @ordinary_current_database
     def test_invalid_second_entry_is_rejected_before_writer_and_without_file_change(self):
         candidate = self.payload(receipts=[receipt("reviewer-a"), receipt("reviewer-b")])
         candidate["receipts"][1]["provenance"]["model_state"] = "declared"
@@ -844,6 +864,7 @@ class ReviewResultsTests(unittest.TestCase):
         maintenance.assert_not_called()
         self.assertEqual(file_snapshot(self.root), before)
 
+    @ordinary_current_database
     def test_each_submitted_task_contract_and_complete_target_component_must_match(self):
         changes = [
             (("task_id",), "tg_task_ffffffffffffffff"), (("contract_revision",), 0),
@@ -863,6 +884,7 @@ class ReviewResultsTests(unittest.TestCase):
                 self.assert_failure(self.invoke(candidate), "review_target_mismatch")
                 self.assertEqual(file_snapshot(self.root), before)
 
+    @ordinary_current_database
     def test_committed_target_and_contract_changes_do_not_rebind_old_results(self):
         original = self.payload()
         self.success("review", "target", "set", self.task_id, "--kind", "diff_fingerprint", "--revision", FINGERPRINT)
@@ -889,6 +911,7 @@ class ReviewResultsTests(unittest.TestCase):
         self.assert_failure(self.invoke(current), "review_target_mismatch")
         self.assertEqual(file_snapshot(self.root), before)
 
+    @ordinary_current_database
     def test_target_change_between_preflight_and_writer_lock_is_rejected(self):
         lock = result_service.lock_and_reread_target_owner
         after_concurrent_change = []
@@ -906,6 +929,7 @@ class ReviewResultsTests(unittest.TestCase):
         self.assertEqual(file_snapshot(self.root), after_concurrent_change[0])
         self.assertEqual(self.success("task", "show", self.task_id)["task"]["review_target_generation"], 2)
 
+    @ordinary_current_database
     def test_concurrent_tier_change_cannot_reuse_prelock_fallback_normalization(self):
         self.task_id = self.add_review_task("--title", "Tier-sensitive fallback", "--review-tier", "1")
         self.success("review", "target", "set", self.task_id, "--kind", "diff_fingerprint", "--revision", FINGERPRINT)
@@ -926,6 +950,7 @@ class ReviewResultsTests(unittest.TestCase):
         self.assertEqual(file_snapshot(self.root), concurrent_snapshot[0])
         self.assertEqual(self.success("task", "show", self.task_id)["task"]["review_tier"], 2)
 
+    @ordinary_current_database
     def test_missing_target_and_done_task_retain_single_receipt_errors(self):
         original_task_id = self.task_id
         self.task_id = self.add_review_task("--title", "No target", "--review-tier", "2")
@@ -971,6 +996,7 @@ class ReviewResultsTests(unittest.TestCase):
                 connection.rollback()
         self.assertEqual(file_snapshot(self.root), before)
 
+    @ordinary_current_database
     def test_duplicate_batch_reviewer_existing_single_receipt_and_replay_are_atomic(self):
         duplicate = self.payload(receipts=[receipt("reviewer-a"), receipt(" reviewer-a ")])
         before = file_snapshot(self.root)
@@ -990,6 +1016,7 @@ class ReviewResultsTests(unittest.TestCase):
         self.assertEqual(json.loads(reverse.stdout)["errors"][0]["code"], "review_receipt_already_recorded")
         self.assertEqual(file_snapshot(self.root), before)
 
+    @ordinary_current_database
     def test_existing_single_finding_writer_accepts_new_batch_receipt(self):
         code, stdout, _ = self.invoke()
         self.assertEqual(code, 0, stdout)
@@ -998,6 +1025,7 @@ class ReviewResultsTests(unittest.TestCase):
         self.assertEqual(finding["review_receipt_id"], receipt_id)
         self.assertFalse(self.success("task", "show", self.task_id)["review_evidence"]["gate"]["satisfied"])
 
+    @ordinary_current_database
     def test_external_approval_is_required_matched_distinct_and_fallback_only(self):
         fallback = self.payload(receipts=[receipt("self-review", kind="self_review_fallback")])
         before = file_snapshot(self.root)
@@ -1017,6 +1045,7 @@ class ReviewResultsTests(unittest.TestCase):
         self.assert_gate(json.loads(stdout)["data"], None)
         self.assertTrue(self.success("task", "show", self.task_id)["review_evidence"]["gate"]["satisfied"])
 
+    @ordinary_current_database
     def test_tier_zero_null_provenance_and_tier_one_fallback_keep_existing_meanings(self):
         for tier in (0, 1):
             with self.subTest(tier=tier):
@@ -1034,6 +1063,7 @@ class ReviewResultsTests(unittest.TestCase):
                 self.assertEqual(audit["recent_receipts"][0]["review_provenance"] is None, tier == 0)
                 self.assertTrue(self.success("task", "show", self.task_id)["review_evidence"]["gate"]["satisfied"])
 
+    @ordinary_current_database
     def test_privacy_precedes_semantic_error_and_never_echoes_or_persists_input(self):
         candidate = self.payload(receipts=[{**receipt("reviewer-a"), "kind": "unsupported"}, receipt("reviewer-b")])
         candidate["receipts"][1]["findings"] = [{"severity": "low", "summary": "token=private-result"}]
@@ -1043,6 +1073,7 @@ class ReviewResultsTests(unittest.TestCase):
         self.assertNotIn("private-result", result[1] + result[2])
         self.assertEqual(file_snapshot(self.root), before)
 
+    @ordinary_current_database
     def test_safe_diagnostic_reaches_json_and_text_without_writes(self):
         candidate = self.payload(receipts=[receipt("first"), receipt("second")])
         candidate["receipts"][1]["provenance"]["method_codes"] = ["diff_inspection"] * 2
@@ -1057,6 +1088,7 @@ class ReviewResultsTests(unittest.TestCase):
         self.assertEqual(stderr, error["message"] + "\n")
         self.assertEqual(file_snapshot(self.root), before)
 
+    @ordinary_current_database
     def test_ineligible_approval_diagnostic_reaches_cli_without_writes(self):
         before = file_snapshot(self.root)
         error = self.assert_failure(self.invoke(self.payload(), "--user-approved-reviewer", "reviewer-a"),
@@ -1064,6 +1096,7 @@ class ReviewResultsTests(unittest.TestCase):
         self.assertEqual(error["field"], "--user-approved-reviewer")
         self.assertEqual(file_snapshot(self.root), before)
 
+    @ordinary_current_database
     def test_element_and_receipt_group_diagnostics_reach_cli_without_writes(self):
         before = file_snapshot(self.root)
         for key in ("review_profiles", "review_lenses", "method_codes"):
@@ -1076,6 +1109,7 @@ class ReviewResultsTests(unittest.TestCase):
         self.assertEqual(error["field"], "receipts[]")
         self.assertEqual(file_snapshot(self.root), before)
 
+    @ordinary_current_database
     def test_read_only_and_parse_rejection_never_consume_stdin_or_open_writer(self):
         before = file_snapshot(self.root)
         with mock.patch.object(cli_service, "connect_initialized", side_effect=AssertionError("must not open writer")):
@@ -1088,6 +1122,7 @@ class ReviewResultsTests(unittest.TestCase):
             self.assertEqual(rejected["errors"][0]["code"], "invalid_argument")
         self.assertEqual(file_snapshot(self.root), before)
 
+    @ordinary_current_database
     def test_malformed_or_oversized_stdin_is_bounded_and_rejected_before_connection(self):
         before = file_snapshot(self.root)
         for raw in (b"{", b" " * 262145, b"\xff"):
@@ -1098,6 +1133,7 @@ class ReviewResultsTests(unittest.TestCase):
                 self.assertEqual(file_snapshot(self.root), before)
         self.assert_failure(self.invoke(stdin=io.StringIO("{}")), "invalid_review_evidence")
 
+    @ordinary_current_database
     def test_text_retains_ids_findings_and_gate_and_error_is_sanitized(self):
         candidate = self.payload(receipts=[receipt("reviewer-a", findings=[{"severity": "low", "summary": "Private work description"}]), receipt("reviewer-b")])
         code, stdout, stderr = self.invoke(candidate, json_output=False)
@@ -1110,6 +1146,7 @@ class ReviewResultsTests(unittest.TestCase):
         self.assertNotIn("private-result", stdout + stderr)
         self.assertEqual((stdout, stderr), ("", "review result input is invalid\n"))
 
+    @ordinary_current_database
     def test_maintenance_runs_once_after_commit_and_close_and_failure_is_warning_only(self):
         opened = []
         maintenance_observations = []
@@ -1206,6 +1243,7 @@ class ReviewResultsDocumentArrayTests(ReviewResultsTests):
     document_array = True
 
 
+    @ordinary_current_database
     def test_array_and_single_document_have_equal_evidence_and_gate_semantics(self):
         baseline_db = self.db
         payload = self.payload(receipts=[
@@ -1243,6 +1281,7 @@ class ReviewResultsDocumentArrayTests(ReviewResultsTests):
             observations.append(comparable([json.loads(stdout)["data"], references, evidence]))
         self.assertEqual(observations[0], observations[1])
 
+    @ordinary_current_database
     def test_disagreeing_document_identity_rejects_before_connection(self):
         first = self.payload()
         changes = [
@@ -1263,6 +1302,7 @@ class ReviewResultsDocumentArrayTests(ReviewResultsTests):
                 self.assert_failure(self.invoke([first, second]), "review_target_mismatch")
             self.assertEqual(file_snapshot(self.root), before)
 
+    @ordinary_current_database
     def test_array_second_document_privacy_precedes_identity_comparison(self):
         second = self.payload(receipts=[receipt("reviewer-b")])
         second["contract_revision"] = 0

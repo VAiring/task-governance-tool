@@ -1,4 +1,5 @@
 """Selected Viewer corruption rejection and work independent of unrelated rows."""
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
 from contextlib import closing, contextmanager
 from pathlib import Path
 import sqlite3
@@ -39,7 +40,7 @@ def reject_whole_audits():
 class ViewerTargetedAdmissionTests(unittest.TestCase):
     def setUp(self):
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        self.target = make_target(self.root, enabled=True)
+        self.target = make_target(self.root, enabled=True, real_initialization=not uses_current_database_fixture(self))
         self.selected, self.other, _ = seed_reviews(self.target)
 
     def publish(self):
@@ -51,9 +52,10 @@ class ViewerTargetedAdmissionTests(unittest.TestCase):
             mark_tasks_locked(connection, self.target.project.project_id, (self.selected,))
             connection.commit()
 
+    @ordinary_current_database
     def test_rebuild_delta_current_disabled_and_legacy_metadata_writes_have_no_whole_audit(self):
         (self.root / "disabled").mkdir()
-        disabled = make_target(self.root / "disabled", enabled=False)
+        disabled = make_target(self.root / "disabled", enabled=False, real_initialization=not uses_current_database_fixture(self))
         with reject_whole_audits() as audits:
             self.assertEqual(self.publish().code, "succeeded")
             self.assertEqual(self.publish().code, "current")
@@ -169,6 +171,7 @@ class ViewerTargetedAdmissionTests(unittest.TestCase):
         self.assertNotEqual(self.target.resolved_viewer_path.read_bytes(), last_good)
         self.assertEqual(metadata.read_projection_basis(self.target).viewer.rendered_generation, generation)
 
+    @ordinary_current_database
     def test_revision_selection_work_does_not_grow_with_applied_revisions(self):
         from task_governance_tool.viewer_projection_repository import changed_tasks
         self.assertEqual(self.publish().code, "succeeded")
@@ -239,6 +242,7 @@ class ViewerTargetedAdmissionTests(unittest.TestCase):
             with self.assertRaises(storage.StorageError):
                 _history(connection, task)
 
+    @ordinary_current_database
     def test_selected_capture_work_does_not_grow_with_unrelated_finding_history(self):
         self.assertEqual(self.publish().code, "succeeded")
         candidate = cache.load_candidate(cache.cache_output(self.target))
@@ -348,6 +352,7 @@ class ViewerTargetedAdmissionTests(unittest.TestCase):
                 self.assertEqual(self.target.resolved_viewer_path.read_bytes(), last_good)
                 self._replace_event_cycle(event["task_event_id"], event["completion_cycle_id"])
 
+    @ordinary_current_database
     def test_incoming_cycle_alias_query_remains_indexed_with_unrelated_events(self):
         from task_governance_tool.viewer_task_projection_repository import _history
         owner = self._native_cycle_task()

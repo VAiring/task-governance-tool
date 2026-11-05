@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
+
+from tests.current_database_fixture_support import initialize_current_test_database
+
 import json
 import os
 import sqlite3
@@ -162,7 +166,7 @@ def row_counts(db: Path) -> dict[str, int]:
 
 
 class RunnerServiceFixture:
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, real_initialization=True) -> None:
         root = Path(root).resolve(strict=True)
         self.repo = root / "repo"
         self.db = root / "state" / "taskgov.sqlite"
@@ -177,7 +181,14 @@ class RunnerServiceFixture:
         tracked.write_text("print('staged')\n", encoding="utf-8")
         git(self.repo, "add", "focused.py")
 
-        initialize_taskgov_internal(repo=self.repo, db=self.db)
+        # Consumers pin predecessor runtimes for Runner migration acceptance.
+        # Only the unpinned current feature preparation opts into cloning.
+        from tests.current_database_fixture_support import CURRENT_TEMPLATE_SCHEMA_VERSION
+        from task_governance_tool import storage
+        initializer = (initialize_current_test_database
+                       if not real_initialization and storage.SCHEMA_VERSION == CURRENT_TEMPLATE_SCHEMA_VERSION
+                       else initialize_taskgov_internal)
+        initializer(repo=self.repo, db=self.db)
         added = run_taskgov_internal(
             "task",
             "add",
@@ -279,16 +290,17 @@ class VerificationRunnerServiceTests(unittest.TestCase):
             alias_component = temporary_root / "alias-component"
             alias_component.mkdir()
 
-            fixture = RunnerServiceFixture(alias_component / "..")
+            fixture = RunnerServiceFixture(alias_component / "..", real_initialization=not uses_current_database_fixture(self))
             canonical_root = temporary_root.resolve(strict=True)
 
             self.assertEqual(fixture.repo.parent, canonical_root)
             self.assertEqual(fixture.repo, fixture.target.project.canonical_repo)
             self.assertEqual(fixture.db, fixture.target.db_path)
 
+    @ordinary_current_database
     def test_commit_revision_is_required_before_git_resolution(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             with mock.patch(
                 "task_governance_tool.reviews.resolve_git_commit",
                 side_effect=AssertionError("Git resolution must not run"),
@@ -307,9 +319,10 @@ class VerificationRunnerServiceTests(unittest.TestCase):
             resolve_commit.assert_not_called()
             self.assertEqual(sum(row_counts(fixture.db).values()), 0)
 
+    @ordinary_current_database
     def test_public_fallback_returns_receipt_route_and_runner_tables_empty(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             result = run_taskgov_internal(
                 "review",
                 "target",
@@ -355,9 +368,10 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 },
             )
 
+    @ordinary_current_database
     def test_public_target_with_explicit_waiver_returns_not_required(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             added = run_taskgov_internal(
                 "task",
                 "add",
@@ -400,6 +414,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
             self.assertEqual(data["verification_route"], "not_required")
             self.assertIsNone(data["blocking_code"])
 
+    @ordinary_current_database
     def test_plan_fallback_matrix_keeps_runner_tables_empty(self):
         fallback_reasons = {
             "absent": "plan_absent",
@@ -408,7 +423,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
         }
         for state, reason in fallback_reasons.items():
             with self.subTest(state=state), tempfile.TemporaryDirectory() as temporary:
-                fixture = RunnerServiceFixture(Path(temporary))
+                fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
                 source_absent = state == "absent"
                 fallback = VerificationRunnerPlanResolution(
                     plan_state=state,
@@ -440,9 +455,10 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 self.assertEqual(result.task["review_target_generation"], 1)
                 self.assertEqual(sum(row_counts(fixture.db).values()), 0)
 
+    @ordinary_current_database
     def test_target_unsupported_falls_back_with_zero_runner_rows(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             prepared = fixture.prepared()
             unsupported = VerificationRunnerGitError(
                 code="target_unsupported",
@@ -473,9 +489,10 @@ class VerificationRunnerServiceTests(unittest.TestCase):
             self.assertEqual(result.task["review_target_generation"], 1)
             self.assertEqual(sum(row_counts(fixture.db).values()), 0)
 
+    @ordinary_current_database
     def test_cli_target_set_has_no_outer_connection_and_error_skips_maintenance(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             review = SimpleNamespace(
                 task={
                     "task_id": fixture.task_id,
@@ -555,9 +572,10 @@ class VerificationRunnerServiceTests(unittest.TestCase):
             )
             maintenance.assert_not_called()
 
+    @ordinary_current_database
     def test_lock_and_reconciliation_precede_atomic_t1(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             prepared = fixture.prepared()
             events: list[str] = []
             review = SimpleNamespace(
@@ -623,7 +641,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
 
     def test_real_runner_busy_contention_writes_nothing_and_does_not_launch(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             prepared = fixture.prepared()
             paths = service._runner_paths(fixture.target)
             with mock.patch.object(
@@ -652,9 +670,10 @@ class VerificationRunnerServiceTests(unittest.TestCase):
             self.assertEqual(sum(row_counts(fixture.db).values()), 0)
             self.assertEqual(fixture.authority().task["review_target_generation"], 0)
 
+    @ordinary_current_database
     def test_locked_pre_t1_refresh_falls_back_or_blocks_without_runner_rows(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             prepared = fixture.prepared()
             with mock.patch.object(
                 service,
@@ -675,7 +694,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
 
         for drift_kind in ("target", "material", "implementation"):
             with self.subTest(drift_kind=drift_kind), tempfile.TemporaryDirectory() as temporary:
-                fixture = RunnerServiceFixture(Path(temporary))
+                fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
                 prepared = fixture.prepared()
                 if drift_kind == "target":
                     (fixture.repo / "focused.py").write_text(
@@ -727,7 +746,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
 
     def test_target_and_intent_t1_roll_back_together(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             prepared = fixture.prepared()
             with mock.patch.object(
                 service,
@@ -748,9 +767,10 @@ class VerificationRunnerServiceTests(unittest.TestCase):
             self.assertEqual(marker, 0)
             self.assertEqual(sum(row_counts(fixture.db).values()), 0)
 
+    @ordinary_current_database
     def test_prelaunch_terminal_uses_explicit_t2_and_records_evidence(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             prepared = fixture.prepared()
             paths = service._runner_paths(fixture.target)
             with service.zero_wait_runner_lock(paths):
@@ -792,9 +812,10 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                     1,
                 )
 
+    @ordinary_current_database
     def test_runtime_observation_failure_terminalizes_without_a_lease(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             prepared = fixture.prepared()
             paths = service._runner_paths(fixture.target)
             failure = VerificationRunnerRuntimeError(
@@ -828,9 +849,10 @@ class VerificationRunnerServiceTests(unittest.TestCase):
             self.assertEqual(generation["observation"].reason, "runtime_unavailable")
             self.assertEqual(generation["observation"].launch_state, "no_launch")
 
+    @ordinary_current_database
     def test_interrupted_runtime_observation_remains_pending(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             prepared = fixture.prepared()
             paths = service._runner_paths(fixture.target)
             with service.zero_wait_runner_lock(paths):
@@ -864,6 +886,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
             self.assertIsNone(generation["observation"])
             self.assertIsNone(generation["cleanup_event"])
 
+    @ordinary_current_database
     def test_post_bind_runtime_and_unknown_failures_remain_pending(self):
         failures = (
             VerificationRunnerRuntimeError(
@@ -875,7 +898,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
         )
         for failure in failures:
             with self.subTest(failure=type(failure).__name__), tempfile.TemporaryDirectory() as temporary:
-                fixture = RunnerServiceFixture(Path(temporary))
+                fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
                 prepared = fixture.prepared()
                 paths = service._runner_paths(fixture.target)
                 with service.zero_wait_runner_lock(paths):
@@ -917,9 +940,10 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 self.assertIsNone(generation["observation"])
                 self.assertIsNone(generation["cleanup_event"])
 
+    @ordinary_current_database
     def test_process_step_setup_failure_terminalizes_before_runtime_observation(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             prepared = fixture.prepared()
             paths = service._runner_paths(fixture.target)
             with service.zero_wait_runner_lock(paths):
@@ -959,9 +983,10 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 "process_setup_failed",
             )
 
+    @ordinary_current_database
     def test_bound_process_setup_failure_terminalizes_without_a_lease(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             prepared = fixture.prepared()
             paths = service._runner_paths(fixture.target)
             with service.zero_wait_runner_lock(paths):
@@ -991,10 +1016,11 @@ class VerificationRunnerServiceTests(unittest.TestCase):
             self.assertEqual(generation["state"], "terminal")
             self.assertEqual(generation["observation"].reason, "process_setup_failed")
 
+    @ordinary_current_database
     def test_unknown_pre_adapter_exceptions_remain_pending(self):
         for failure_type in (KeyboardInterrupt, SystemExit, RuntimeError):
             with self.subTest(failure_type=failure_type.__name__), tempfile.TemporaryDirectory() as temporary:
-                fixture = RunnerServiceFixture(Path(temporary))
+                fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
                 prepared = fixture.prepared()
                 paths = service._runner_paths(fixture.target)
 
@@ -1034,7 +1060,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
 
     def test_basis_storage_error_keeps_stable_code_and_does_not_append_cleanup(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             prepared = fixture.prepared()
             paths = service._runner_paths(fixture.target)
             failure = StorageError(
@@ -1092,7 +1118,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                     seam=seam,
                     failure_type=failure_type.__name__,
                 ), tempfile.TemporaryDirectory() as temporary:
-                    fixture = RunnerServiceFixture(Path(temporary))
+                    fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
                     prepared = fixture.prepared()
                     failure = failure_type(
                         r"private failure at C:\sensitive\runner-state"
@@ -1198,7 +1224,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
 
     def test_post_t1_boundary_preserves_storage_error_code(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             prepared = fixture.prepared()
             review = ReviewTargetResult(task={}, changed_fields=[], event={})
             intent = SimpleNamespace(review=review)
@@ -1254,7 +1280,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                     seam=seam,
                     failure_type=failure_type.__name__,
                 ), tempfile.TemporaryDirectory() as temporary:
-                    fixture = RunnerServiceFixture(Path(temporary))
+                    fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
                     prepared = fixture.prepared()
                     paths = service._runner_paths(fixture.target)
                     with service.zero_wait_runner_lock(paths):
@@ -1321,7 +1347,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
 
     def test_restart_boundary_preserves_storage_error_code(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             prepared = fixture.prepared()
             paths = service._runner_paths(fixture.target)
             with service.zero_wait_runner_lock(paths):
@@ -1369,9 +1395,10 @@ class VerificationRunnerServiceTests(unittest.TestCase):
             self.assertIsNone(generation["observation"])
             self.assertIsNone(generation["cleanup_event"])
 
+    @ordinary_current_database
     def test_post_t1_physical_basis_includes_fresh_material_preflight(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             prepared = fixture.prepared()
             with mock.patch.object(
                 service,
@@ -1399,9 +1426,10 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 )
             preflight.assert_called_once_with(fixture.repo, prepared.target)
 
+    @ordinary_current_database
     def test_v2_windows_limits_are_copied_to_process_steps(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             prepared = fixture.prepared()
             physical_step = prepared.plan.steps[0].physical_value(plan_version=2)
             for limits, expected in (
@@ -1432,10 +1460,11 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                     self.assertFalse(converted.shell)
                     self.assertFalse(converted.path_lookup)
 
+    @ordinary_current_database
     @unittest.skipUnless(sys.platform == "win32", "Windows no-launch admission")
     def test_v2_missing_windows_limits_terminalize_as_manual_fallback(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             prepared = fixture.prepared()
             physical_step = prepared.plan.steps[0].physical_value(plan_version=2)
             steps = decode_verification_runner_plan_steps(
@@ -1506,9 +1535,10 @@ class VerificationRunnerServiceTests(unittest.TestCase):
             self.assertEqual(inventory.attempt_ids, ())
             self.assertEqual(inventory.quarantine_ids, ())
 
+    @ordinary_current_database
     def test_launched_pass_maps_to_one_runner_terminal_graph(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             prepared = fixture.prepared()
             paths = service._runner_paths(fixture.target)
 
@@ -1561,6 +1591,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
             self.assertEqual(generation["observation"].complete_plan, 1)
             self.assertIsNotNone(generation["cleanup_event"].terminal_observation_id)
 
+    @ordinary_current_database
     @unittest.skipUnless(os.name == "nt", "integrated Windows shadow Runner")
     def test_real_windows_shadow_runner_integrates_plan_git_process_lifecycle_and_qualifying_evidence(
         self,
@@ -1571,7 +1602,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
         committed_source = "print('staged')\n"
 
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             skill_parent = fixture.repo / ".agents" / "skills"
             skill_parent.mkdir(parents=True)
             skill_root = _copy_skill(skill_parent)
@@ -1796,10 +1827,11 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 self.assertNotIn(raw_output_secret.encode("utf-8"), retained)
                 self.assertNotIn(credential_value.encode("utf-8"), retained)
 
+    @ordinary_current_database
     def test_false_process_proof_is_pending_then_restart_cleanup_allows_next_generation(self):
         for policy in (RUNNER_POLICY_DIGEST, RUNNER_POSIX_POLICY_DIGEST):
             with self.subTest(policy=policy), tempfile.TemporaryDirectory() as temporary:
-                fixture = RunnerServiceFixture(Path(temporary))
+                fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
                 prepared = replace(fixture.prepared(), runner_policy_digest=policy)
                 paths = service._runner_paths(fixture.target)
 
@@ -1896,9 +1928,10 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 self.assertEqual(next_intent.resolution.target_generation, 2)
                 self.assertEqual(fixture.generation(2)["state"], "pending")
 
+    @ordinary_current_database
     def test_t2_basis_race_becomes_cleanup_only_and_next_generation_is_allowed(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             prepared = fixture.prepared()
             intent = service._persist_launch_intent(fixture.target, prepared)
 
@@ -1994,10 +2027,11 @@ class VerificationRunnerServiceTests(unittest.TestCase):
         self.assertFalse(service._process_result_matches_request(windows_request, windows_over))
         self.assertFalse(service._process_result_matches_request(posix_request, object()))
 
+    @ordinary_current_database
     def test_common_posix_dispatch_copies_policy_and_unmeasured_auxiliary_to_terminal(self):
         for platform in ("linux", "darwin"):
             with self.subTest(platform=platform), tempfile.TemporaryDirectory() as temporary:
-                fixture = RunnerServiceFixture(Path(temporary))
+                fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
                 prepared = replace(
                     fixture.prepared(), runner_policy_digest=RUNNER_POSIX_POLICY_DIGEST,
                 )
@@ -2049,9 +2083,10 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                     "runner_observation",
                 )
 
+    @ordinary_current_database
     def test_preparation_captures_policy_and_revalidation_rejects_policy_drift(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             original = fixture.prepared()
             with ExitStack() as stack:
                 for name, value in (
@@ -2075,9 +2110,10 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                     )
                 self.assertEqual(raised.exception.code, "runner_state_invalid")
 
+    @ordinary_current_database
     def test_current_policy_freshness_keeps_package_error_precedence(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             prepared = fixture.prepared()
             intent = service._persist_launch_intent(fixture.target, prepared)
             snapshot = {"resolution": intent.resolution}
@@ -2117,9 +2153,10 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                 ))
             policy.assert_not_called()
 
+    @ordinary_current_database
     def test_complete_plan_requires_every_planned_step_to_pass(self):
         with tempfile.TemporaryDirectory() as temporary:
-            fixture = RunnerServiceFixture(Path(temporary))
+            fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
             intent = service._persist_launch_intent(
                 fixture.target,
                 fixture.prepared(),

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
+
+from tests.current_database_fixture_support import initialize_feature_test_target
+
 import json
 import tempfile
 import unittest
@@ -38,7 +42,7 @@ SCRIPT_PATH = SOURCE_SKILL_ROOT / "scripts" / "taskgov.py"
 FIXED_TIME = "2026-07-27T00:00:00Z"
 
 
-def make_target(root: Path, *, enabled: bool):
+def make_target(root: Path, *, enabled: bool, real_initialization=True):
     repo = root / "project"
     repo.mkdir()
     target = resolve_database_target(
@@ -46,7 +50,7 @@ def make_target(root: Path, *, enabled: bool):
         db=root / "isolated-state" / "taskgov.sqlite",
         script_path=SCRIPT_PATH,
     )
-    initialize_database(target)
+    initialize_feature_test_target(target, real_initialization=real_initialization)
     if enabled:
         configure_project_maintenance(
             target,
@@ -80,9 +84,10 @@ def add_viewer_event(target, title: str) -> None:
 
 
 class ViewerMaintenanceTests(unittest.TestCase):
+    @ordinary_current_database
     def test_pre_opt_in_skips_artifact_and_lock_directory(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp), enabled=False)
+            target = make_target(Path(tmp), enabled=False, real_initialization=not uses_current_database_fixture(self))
             output = resolve_canonical_viewer_output_target(target)
 
             result = viewer_service.run_routine_viewer_refresh(
@@ -101,7 +106,7 @@ class ViewerMaintenanceTests(unittest.TestCase):
     def test_setup_force_publishes_current_state_to_isolated_canonical_target(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            target = make_target(root, enabled=True)
+            target = make_target(root, enabled=True, real_initialization=not uses_current_database_fixture(self))
             output = resolve_canonical_viewer_output_target(target)
 
             first = viewer_service.publish_setup_viewer(
@@ -135,9 +140,10 @@ class ViewerMaintenanceTests(unittest.TestCase):
             self.assertEqual(state.rendered_generation, state.source_generation)
             self.assertEqual(state.last_outcome_code, "succeeded")
 
+    @ordinary_current_database
     def test_routine_refresh_moves_due_state_to_current_then_skips(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp), enabled=True)
+            target = make_target(Path(tmp), enabled=True, real_initialization=not uses_current_database_fixture(self))
             viewer_service.publish_setup_viewer(target, observed_at=FIXED_TIME)
             add_viewer_event(target, "Due Viewer task")
             due = viewer_state(target)
@@ -168,7 +174,7 @@ class ViewerMaintenanceTests(unittest.TestCase):
 
     def test_zero_wait_contention_is_deferred_and_remains_due(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp), enabled=True)
+            target = make_target(Path(tmp), enabled=True, real_initialization=not uses_current_database_fixture(self))
             with mock.patch.object(
                 viewer_service,
                 "utc_now",
@@ -202,7 +208,7 @@ class ViewerMaintenanceTests(unittest.TestCase):
 
     def test_atomic_write_failure_preserves_last_good_and_cleans_temp(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp), enabled=True)
+            target = make_target(Path(tmp), enabled=True, real_initialization=not uses_current_database_fixture(self))
             with mock.patch.object(
                 viewer_service,
                 "utc_now",
@@ -241,7 +247,7 @@ class ViewerMaintenanceTests(unittest.TestCase):
 
     def test_artifact_size_failure_preserves_last_good_and_due_state(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp), enabled=True)
+            target = make_target(Path(tmp), enabled=True, real_initialization=not uses_current_database_fixture(self))
             with mock.patch.object(
                 viewer_service,
                 "utc_now",
@@ -274,12 +280,13 @@ class ViewerMaintenanceTests(unittest.TestCase):
             self.assertEqual(state.last_success_at, before.last_success_at)
             self.assertEqual(state.last_outcome_code, "failed")
 
+    @ordinary_current_database
     def test_configured_interval_is_published_on_next_relevant_change(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             skill_root = root / "skill"
             skill_root.mkdir()
-            target = make_target(root, enabled=True)
+            target = make_target(root, enabled=True, real_initialization=not uses_current_database_fixture(self))
             output = resolve_canonical_viewer_output_target(target)
 
             viewer_service.publish_setup_viewer(
@@ -329,7 +336,7 @@ class ViewerMaintenanceTests(unittest.TestCase):
             root = Path(tmp)
             skill_root = root / "skill"
             skill_root.mkdir()
-            target = make_target(root, enabled=True)
+            target = make_target(root, enabled=True, real_initialization=not uses_current_database_fixture(self))
             with mock.patch.object(
                 viewer_service,
                 "utc_now",
@@ -362,9 +369,10 @@ class ViewerMaintenanceTests(unittest.TestCase):
             self.assertEqual(state.last_success_at, before.last_success_at)
             self.assertEqual(state.last_outcome_code, "failed")
 
+    @ordinary_current_database
     def test_second_render_progress_is_bounded_and_remaining_churn_stays_due(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp), enabled=True)
+            target = make_target(Path(tmp), enabled=True, real_initialization=not uses_current_database_fixture(self))
             viewer_service.publish_setup_viewer(target, observed_at=FIXED_TIME)
             add_viewer_event(target, "Initial Viewer change")
             real_write = viewer_service.write_viewer_html
@@ -408,9 +416,10 @@ class ViewerMaintenanceTests(unittest.TestCase):
             )
             self.assertEqual(state.last_outcome_code, "failed")
 
+    @ordinary_current_database
     def test_follow_up_success_supersedes_later_started_contention(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp), enabled=True)
+            target = make_target(Path(tmp), enabled=True, real_initialization=not uses_current_database_fixture(self))
             with mock.patch.object(
                 viewer_service,
                 "utc_now",
@@ -466,9 +475,10 @@ class ViewerMaintenanceTests(unittest.TestCase):
                 "2026-07-27T00:00:02Z",
             )
 
+    @ordinary_current_database
     def test_older_generation_cannot_replace_newer_publication_state(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp), enabled=True)
+            target = make_target(Path(tmp), enabled=True, real_initialization=not uses_current_database_fixture(self))
             viewer_service.publish_setup_viewer(target, observed_at=FIXED_TIME)
             add_viewer_event(target, "First generation")
             add_viewer_event(target, "Second generation")
@@ -495,9 +505,10 @@ class ViewerMaintenanceTests(unittest.TestCase):
             self.assertEqual(output.path.read_bytes(), artifact)
             self.assertEqual(viewer_state(target), newer)
 
+    @ordinary_current_database
     def test_same_time_attempt_cannot_replace_current_success_outcome(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp), enabled=True)
+            target = make_target(Path(tmp), enabled=True, real_initialization=not uses_current_database_fixture(self))
             viewer_service.publish_setup_viewer(
                 target,
                 observed_at="2026-07-27T00:00:02Z",
@@ -515,9 +526,10 @@ class ViewerMaintenanceTests(unittest.TestCase):
             self.assertEqual(current.last_outcome_at, succeeded.last_outcome_at)
             self.assertFalse(current.due)
 
+    @ordinary_current_database
     def test_same_time_due_failure_then_catch_up_records_commit_order(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp), enabled=True)
+            target = make_target(Path(tmp), enabled=True, real_initialization=not uses_current_database_fixture(self))
             with mock.patch.object(
                 viewer_service,
                 "utc_now",
@@ -559,7 +571,7 @@ class ViewerMaintenanceTests(unittest.TestCase):
 
     def test_canonical_target_rejects_reparse_parent_and_database_alias(self):
         with tempfile.TemporaryDirectory() as tmp:
-            target = make_target(Path(tmp), enabled=True)
+            target = make_target(Path(tmp), enabled=True, real_initialization=not uses_current_database_fixture(self))
 
             with mock.patch.object(
                 viewer_module,

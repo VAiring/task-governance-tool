@@ -1,4 +1,5 @@
 """Real isolated copies, concurrent writes, retained generations and crashes."""
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
 
 from contextlib import closing, contextmanager
 from dataclasses import replace
@@ -22,7 +23,7 @@ from task_governance_tool import backup, storage, tasks
 class AsyncBackupCaptureTests(unittest.TestCase):
     def fixture(self, *, canonical=False):
         root = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        return _setup_current(root)[1] if canonical else make_target(root)
+        return _setup_current(root)[1] if canonical else make_target(root, real_initialization=not uses_current_database_fixture(self))
 
     def run_backup(self, target, minute=0, **kwargs):
         with backup.managed_backup_lock(target):
@@ -33,6 +34,7 @@ class AsyncBackupCaptureTests(unittest.TestCase):
     def files(self, target):
         return {path.name: path.read_bytes() for path in target.resolved_backups_path.glob("*.sqlite")}
 
+    @ordinary_current_database
     def test_first_interval_retention_and_canonical_layout(self):
         for canonical in (False, True):
             with self.subTest(canonical=canonical):
@@ -75,6 +77,7 @@ class AsyncBackupCaptureTests(unittest.TestCase):
                     self.assertEqual(self.run_backup(target, 90).code, "succeeded")
                     self.assertEqual(len(self.files(target)), 1)
 
+    @ordinary_current_database
     def test_real_writer_completes_during_private_validation_and_is_not_in_copy(self):
         target = self.fixture()
         original = repository.validate_snapshot
@@ -135,6 +138,7 @@ class AsyncBackupCaptureTests(unittest.TestCase):
         self.assertEqual(self.files(target), {})
         self.assertFalse((target.resolved_backups_path / "runtime").exists())
 
+    @ordinary_current_database
     def test_matching_caller_admission_survives_ordinary_task_update(self):
         target = self.fixture()
         expected = repository.read_control(target)

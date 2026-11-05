@@ -19,7 +19,7 @@ from pathlib import Path
 from unittest import mock
 
 from tests.m14_test_support import (
-    file_snapshot, initialize_taskgov_internal, make_physical_install, run_taskgov_internal,
+    file_snapshot, initialize_taskgov_internal, make_current_physical_install as make_physical_install, run_taskgov_internal,
 )
 from tests.test_review_evidence import database_target, receipt_add
 from tests.review_test_helpers import REVIEW_PROVENANCE_V1_CASES

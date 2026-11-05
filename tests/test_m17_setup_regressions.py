@@ -15,7 +15,7 @@ try:
         create_v12_database,
         create_v14_target,
         json_payload,
-        make_physical_install,
+        make_current_physical_install as make_physical_install,
     )
 except ModuleNotFoundError:
     from tests.m14_test_support import (
@@ -23,7 +23,7 @@ except ModuleNotFoundError:
         create_v12_database,
         create_v14_target,
         json_payload,
-        make_physical_install,
+        make_current_physical_install as make_physical_install,
     )
 
 from task_governance_tool import backup as backup_service

@@ -17,7 +17,7 @@ from tests.registration_output_support import registration_body, registration_ta
 from tests.m14_test_support import (
     SOURCE_SKILL_ROOT,
     json_payload,
-    make_physical_install,
+    make_current_physical_install as make_physical_install,
 )
 
 from task_governance_tool import cli as cli_service

@@ -25,7 +25,7 @@ from tests.evidence_test_support import (
     valid_native_payload,
 )
 from tests.m14_test_support import (
-    make_physical_install,
+    make_current_physical_install as make_physical_install,
     refresh_test_manifest,
     tree_snapshot,
 )

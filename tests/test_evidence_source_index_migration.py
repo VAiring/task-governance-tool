@@ -16,7 +16,7 @@ from task_governance_tool import storage
 from task_governance_tool import schema_viewer_finding_index as predecessor
 from task_governance_tool import schema_evidence_reference_index as schema
 from tests import test_criterion_link_collector_migration as public_fixture
-from tests.m14_test_support import make_physical_install, refresh_test_manifest
+from tests.m14_test_support import make_current_physical_install as make_physical_install, refresh_test_manifest
 
 
 class RebuildCatalogTests(unittest.TestCase):

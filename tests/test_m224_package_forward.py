@@ -15,7 +15,7 @@ from tests.m14_test_support import (
     extract_skill_at_commit,
     file_snapshot,
     json_payload,
-    make_physical_install,
+    make_current_physical_install as make_physical_install,
     replace_install_package_preserving_state,
     require_repository_git,
     setup_exact_install,

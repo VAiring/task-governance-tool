@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from tests.m14_test_support import make_physical_install, file_snapshot
+from tests.m14_test_support import make_current_physical_install as make_physical_install, file_snapshot
 from tests.test_usage_attribution import THREAD, turn
 from tests.test_usage_collection import PARENT, event, usage
 from tests.test_usage_turn_adapter import tool_record

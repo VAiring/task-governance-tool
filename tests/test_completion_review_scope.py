@@ -14,7 +14,7 @@ from tests.test_task_complete import (
     seed_review_evidence,
 )
 from task_governance_tool import storage
-from tests.m14_test_support import make_physical_install
+from tests.m14_test_support import make_current_physical_install as make_physical_install
 from tests.registration_output_support import registration_task
 from tests.review_test_helpers import seed_review_evidence_connection
 

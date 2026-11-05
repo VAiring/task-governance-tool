@@ -14,7 +14,7 @@ from pathlib import Path
 from unittest import mock
 
 from tests.m14_test_support import (
-    _copy_skill,
+    _copy_current_skill as _copy_skill,
     refresh_test_manifest,
     run_taskgov_internal,
     tree_snapshot,

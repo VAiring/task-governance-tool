@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 from tests.m14_test_support import (
-    make_physical_install,
+    make_current_physical_install as make_physical_install,
     remove_v18_evidence_ledger_for_test,
 )
 from tests import setup_package_diagnostics

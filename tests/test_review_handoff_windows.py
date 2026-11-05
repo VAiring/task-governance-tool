@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tests.m14_test_support import make_physical_install
+from tests.m14_test_support import make_current_physical_install as make_physical_install
 from tests.test_review_handoff import packet_for
 from tests.test_review_results import document, encode, receipt, FINGERPRINT
 from tests.test_review_handoff_preparation import PreparationFixture, request_commands

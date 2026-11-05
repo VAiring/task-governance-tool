@@ -14,7 +14,7 @@ from pathlib import Path
 from unittest import mock
 
 from tests import test_completion_review_scope as scope_fixture
-from tests.m14_test_support import make_physical_install
+from tests.m14_test_support import make_current_physical_install as make_physical_install
 from tests.registration_output_support import registration_task
 from tests.test_task_complete import complete_args, database_counts, run_taskgov
 from task_governance_tool import cli, storage

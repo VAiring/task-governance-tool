@@ -445,7 +445,7 @@ class ProtectionCliTests(unittest.TestCase):
         self.assertEqual(install.run("backup", "protect", "--read-only", "--json").returncode, 0)
 
     def test_invalid_arguments_and_records_only_fail_before_writes(self):
-        from tests.m14_test_support import make_physical_install, file_snapshot
+        from tests.m14_test_support import make_current_physical_install as make_physical_install, file_snapshot
         install = make_physical_install(Path(self.enterContext(tempfile.TemporaryDirectory())).resolve())
         before = file_snapshot(install.project_root)
         for arguments in (("backup", "protect", "--output", "private", "--json"),

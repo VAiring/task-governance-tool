@@ -395,7 +395,7 @@ class PublicViewerProjectionSetupTests(unittest.TestCase):
     business = _public.business
 
     def test_public33_upgrade_two_restores_and_readonly_reentry(self):
-        from tests.m14_test_support import make_physical_install, refresh_test_manifest, pin_pre_incremental_viewer
+        from tests.m14_test_support import make_current_physical_install as make_physical_install, refresh_test_manifest, pin_pre_incremental_viewer
         from task_governance_tool import backup
         root = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.install = make_physical_install(root)

@@ -18,6 +18,8 @@ from typing import Iterable
 
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 SOURCE_SKILL_ROOT = ROOT / "task-governance-tool"
 SOURCE_SCRIPTS_ROOT = SOURCE_SKILL_ROOT / "scripts"
 if str(SOURCE_SCRIPTS_ROOT) not in sys.path:
@@ -156,10 +158,14 @@ def extract_skill_at_commit(destination: Path, commit: str) -> Path:
     return destination / "task-governance-tool"
 
 
-def _copy_skill(destination: Path) -> Path:
+def _copy_skill(destination: Path, *, source_root: Path | None = None, package_basis=None) -> Path:
     copied = destination / "task-governance-tool"
+    if package_basis is not None:
+        if source_root is not None:
+            raise ValueError("select a source or an immutable package basis")
+        return package_basis.copy_to(copied)
     shutil.copytree(
-        SOURCE_SKILL_ROOT,
+        SOURCE_SKILL_ROOT if source_root is None else source_root,
         copied,
         ignore=shutil.ignore_patterns(
             "config",
@@ -180,6 +186,11 @@ def _copy_skill(destination: Path) -> Path:
     )
     refresh_test_manifest(copied)
     return copied
+
+
+def _copy_current_skill(destination: Path) -> Path:
+    from tests.package_fixture_support import CURRENT_TEST_PACKAGE
+    return _copy_skill(destination, package_basis=CURRENT_TEST_PACKAGE)
 
 
 def _manifest_core_paths(skill_root: Path) -> list[Path]:
@@ -481,11 +492,11 @@ def activate_fresh_uuid_fixture(install: PhysicalInstall, *, project_id: str) ->
     marker.write_bytes(retirement_marker_bytes(record))
 
 
-def make_physical_install(root: Path, *, git_managed: bool = False) -> PhysicalInstall:
+def make_physical_install(root: Path, *, git_managed: bool = False, package_basis=None) -> PhysicalInstall:
     project = root / "project"
     skill_parent = project / ".agents" / "skills"
     skill_parent.mkdir(parents=True)
-    skill_root = _copy_skill(skill_parent)
+    skill_root = _copy_skill(skill_parent, package_basis=package_basis)
     if git_managed:
         subprocess.run(
             ["git", "init", "--quiet"],
@@ -500,6 +511,11 @@ def make_physical_install(root: Path, *, git_managed: bool = False) -> PhysicalI
             encoding="utf-8",
         )
     return PhysicalInstall(project_root=project, skill_root=skill_root)
+
+
+def make_current_physical_install(root: Path, *, git_managed: bool = False) -> PhysicalInstall:
+    from tests.package_fixture_support import CURRENT_TEST_PACKAGE
+    return make_physical_install(root, git_managed=git_managed, package_basis=CURRENT_TEST_PACKAGE)
 
 
 def setup_exact_install(root: Path, commit: str) -> OldFixedPhysicalInstall:
@@ -576,18 +592,24 @@ def make_legacy_physical_install(
     root: Path,
     *,
     git_managed: bool = False,
+    package_basis=None,
 ) -> LegacyPhysicalInstall:
-    install = make_physical_install(root, git_managed=git_managed)
+    install = make_physical_install(root, git_managed=git_managed, package_basis=package_basis)
     return LegacyPhysicalInstall(
         project_root=install.project_root,
         skill_root=install.skill_root,
     )
 
 
-def make_source_self_host(root: Path) -> PhysicalInstall:
+def make_current_legacy_physical_install(root: Path, *, git_managed: bool = False) -> LegacyPhysicalInstall:
+    from tests.package_fixture_support import CURRENT_TEST_PACKAGE
+    return make_legacy_physical_install(root, git_managed=git_managed, package_basis=CURRENT_TEST_PACKAGE)
+
+
+def make_source_self_host(root: Path, *, package_basis=None) -> PhysicalInstall:
     repo = root / "source-repository"
     repo.mkdir(parents=True)
-    skill_root = _copy_skill(repo)
+    skill_root = _copy_skill(repo, package_basis=package_basis)
     for relative in (
         Path("AGENTS.md"),
         Path("docs/specification.md"),
@@ -598,6 +620,11 @@ def make_source_self_host(root: Path) -> PhysicalInstall:
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / relative, destination)
     return PhysicalInstall(project_root=repo, skill_root=skill_root)
+
+
+def make_current_source_self_host(root: Path) -> PhysicalInstall:
+    from tests.package_fixture_support import CURRENT_TEST_PACKAGE
+    return make_source_self_host(root, package_basis=CURRENT_TEST_PACKAGE)
 
 
 def json_payload(result: subprocess.CompletedProcess[str]) -> dict:

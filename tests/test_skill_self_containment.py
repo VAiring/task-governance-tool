@@ -46,7 +46,7 @@ try:  # noqa: E402
         canonical_managed_sqlite_files,
         canonical_test_path,
         file_snapshot,
-        make_physical_install,
+        make_current_physical_install as make_physical_install,
         tree_snapshot,
     )
 except ModuleNotFoundError:  # noqa: E402
@@ -54,7 +54,7 @@ except ModuleNotFoundError:  # noqa: E402
         canonical_managed_sqlite_files,
         canonical_test_path,
         file_snapshot,
-        make_physical_install,
+        make_current_physical_install as make_physical_install,
         tree_snapshot,
     )
 

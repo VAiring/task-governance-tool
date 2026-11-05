@@ -834,7 +834,7 @@ fault_boundary.require_ignored = injected_timeout
         self.assertIn(b"Ran 6 tests", result.stderr)
 
     def test_source_self_host_template_uses_its_explicit_repository(self):
-        from tests.m14_test_support import make_source_self_host
+        from tests.m14_test_support import make_current_source_self_host as make_source_self_host
         self.install = make_source_self_host(self.root.parent / "self-host 日本語's")
         self.root = self.install.project_root
         self.helper = self.install.skill_root / "scripts/review_handoff.py"

@@ -13,7 +13,7 @@ import time
 import unittest
 from pathlib import Path
 
-from tests.m14_test_support import make_physical_install, repository_git_environment
+from tests.m14_test_support import make_current_physical_install as make_physical_install, repository_git_environment
 from tests.evidence_reader_oracle import read_evidence_index, validate_evidence_source
 from tests.test_review_workspace import COUNTER, SIX_TESTS
 

@@ -1337,6 +1337,24 @@ local import aliases retain their Python scope when following those routes.
 This inventory does not select, omit or change tests. Current copies still undergo production initialization,
 and all existing feature assertions and injected failures remain active.
 
+Physical-package tests explicitly select the named immutable current-package
+basis through the `make_current_*` or `_copy_current_skill` fixture entry points.
+`tests/package_fixture_support.py` creates that basis once per process with the
+real filtered copy and manifest generator, then retains only immutable bytes
+and file modes. Each use materializes independent regular physical files.
+A bounded pool on Windows overlaps first reads of these fresh files without recalculating
+digests or caching a validation result;
+installed CLI and product manifest validation still inspect those actual files.
+The generic `tests/m14_test_support.py` copy/install helpers retain live-source
+preparation by default. `freeze_package(source)` captures a new basis for changed
+or different material; a frozen basis deliberately keeps its captured contents
+instead of treating a mutable directory's path, size or timestamps as identity.
+Copy edits, additions, removals and historical runtime pins retain real manifest
+regeneration against the modified copy. No process-independent cache, packaged
+fixture binary, link-based copy or shared writable package is introduced.
+The point-in-time package-call dispositions are recorded in
+`tests/fixtures/package-fixture-inventory.json`.
+
 Review-answer and continuation tests share
 `tests/review_answer_fixture_support.py`: callers select the schema and optional
 Contract explicitly. Its context manager owns isolated state, real predecessor

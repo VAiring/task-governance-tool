@@ -16,7 +16,7 @@ import unittest
 from unittest import mock
 
 from tests.m14_test_support import (
-    ROOT, PhysicalInstall, _copy_skill, tree_snapshot,
+    ROOT, PhysicalInstall, _copy_current_skill as _copy_skill, tree_snapshot,
 )
 from tests.test_m17_recovery_hardening import _setup_current
 from task_governance_tool import sqlite_diagnostics, usage_lifecycle

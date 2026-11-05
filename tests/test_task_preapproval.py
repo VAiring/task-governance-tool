@@ -16,7 +16,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from tests.m14_test_support import make_physical_install, file_snapshot, refresh_test_manifest
+from tests.m14_test_support import make_current_physical_install as make_physical_install, file_snapshot, refresh_test_manifest
 from tests.test_review_handoff_preparation import PreparationFixture
 from tests.test_review_results import FINGERPRINT, encode, receipt
 from task_governance_tool import task_preapproval as policy

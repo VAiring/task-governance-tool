@@ -37,9 +37,9 @@ from task_governance_tool.backup import (  # noqa: E402
     select_managed_backup_for_recovery,
 )
 try:  # noqa: E402
-    from m14_test_support import activate_fixed_fixture, json_payload, make_physical_install
+    from m14_test_support import activate_fixed_fixture, json_payload, make_current_physical_install as make_physical_install
 except ModuleNotFoundError:  # noqa: E402
-    from tests.m14_test_support import activate_fixed_fixture, json_payload, make_physical_install
+    from tests.m14_test_support import activate_fixed_fixture, json_payload, make_current_physical_install as make_physical_install
 
 
 MIGRATION_SETUP_WRITES = [

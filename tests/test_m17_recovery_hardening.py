@@ -8,7 +8,7 @@ from contextlib import ExitStack, closing, contextmanager
 from pathlib import Path
 from unittest import mock
 
-from tests.m14_test_support import PhysicalInstall, make_physical_install
+from tests.m14_test_support import PhysicalInstall, make_current_physical_install as make_physical_install
 
 from task_governance_tool import backup as backup_service
 from task_governance_tool import setup as setup_service

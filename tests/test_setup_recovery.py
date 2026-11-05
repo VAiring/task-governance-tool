@@ -20,7 +20,7 @@ try:
         create_v12_target,
         create_v9_target,
         json_payload,
-        make_physical_install,
+        make_current_physical_install as make_physical_install,
         remove_v18_evidence_ledger_for_test,
     )
 except ModuleNotFoundError:
@@ -35,7 +35,7 @@ except ModuleNotFoundError:
         create_v12_target,
         create_v9_target,
         json_payload,
-        make_physical_install,
+        make_current_physical_install as make_physical_install,
         remove_v18_evidence_ledger_for_test,
     )
 

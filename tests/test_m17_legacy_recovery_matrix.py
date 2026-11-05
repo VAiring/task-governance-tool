@@ -12,7 +12,7 @@ from unittest import mock
 from tests.m14_test_support import (
     create_v14_target,
     file_snapshot,
-    make_physical_install,
+    make_current_physical_install as make_physical_install,
 )
 from tests.test_state_resolver import (
     create_backup_artifact,

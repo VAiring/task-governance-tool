@@ -18,7 +18,7 @@ try:
         activate_fresh_uuid_fixture,
         create_v14_target,
         json_payload,
-        make_physical_install,
+        make_current_physical_install as make_physical_install,
     )
 except ModuleNotFoundError:
     from tests.m14_test_support import (
@@ -26,7 +26,7 @@ except ModuleNotFoundError:
         activate_fresh_uuid_fixture,
         create_v14_target,
         json_payload,
-        make_physical_install,
+        make_current_physical_install as make_physical_install,
     )
 
 from task_governance_tool import setup as setup_service

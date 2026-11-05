@@ -14,7 +14,7 @@ from unittest import mock
 from tests.m14_test_support import (
     create_v14_target,
     json_payload,
-    make_physical_install,
+    make_current_physical_install as make_physical_install,
     run_taskgov_internal,
 )
 from tests.m214c_test_support import (

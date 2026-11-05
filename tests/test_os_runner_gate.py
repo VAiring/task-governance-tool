@@ -11,7 +11,7 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 
-from tests.m14_test_support import make_physical_install, repository_git_environment
+from tests.m14_test_support import make_current_physical_install as make_physical_install, repository_git_environment
 from tests.evidence_reader_oracle import read_evidence_index, validate_evidence_source
 
 from task_governance_tool import storage

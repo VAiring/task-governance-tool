@@ -763,7 +763,7 @@ class ViewerIncrementalTests(unittest.TestCase):
 
 class ViewerIncrementalReviewTests(unittest.TestCase):
     def test_public_setup_detects_and_repairs_missing_corrupt_or_orphan_cache(self):
-        from tests.m14_test_support import make_physical_install
+        from tests.m14_test_support import make_current_physical_install as make_physical_install
         from tests.test_criterion_link_collector_migration import PublicCriterionLinkCollectorSetupTests
         self.install = make_physical_install(Path(self.enterContext(tempfile.TemporaryDirectory())))
         cli = lambda *args: PublicCriterionLinkCollectorSetupTests.cli(self, *args)

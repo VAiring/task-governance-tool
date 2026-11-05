@@ -18,9 +18,9 @@ sys.path.insert(0, str(SCRIPTS_ROOT))
 from task_governance_tool import __version__, self_status as self_status_module
 from task_governance_tool.self_status import inspect_local_package
 try:
-    from m14_test_support import make_physical_install
+    from m14_test_support import make_current_physical_install as make_physical_install
 except ModuleNotFoundError:
-    from tests.m14_test_support import make_physical_install
+    from tests.m14_test_support import make_current_physical_install as make_physical_install
 
 
 MANIFEST_NAME = "release-manifest.json"

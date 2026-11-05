@@ -13,7 +13,7 @@ from unittest import mock
 from tests import test_m243b_schema21_compatibility as manual_fixture
 from tests import test_m23s_schema22_validation as history_fixture
 from tests import test_m243c_runner_gate as runner_fixture
-from tests.m14_test_support import _copy_skill, tree_snapshot
+from tests.m14_test_support import _copy_current_skill as _copy_skill, tree_snapshot
 from tests.m214b_test_support import make_recordless_legacy_artifact, publish_generations, replace_verification
 from tests.test_m17_recovery_hardening import _setup_current
 from tests.test_m19_legacy_upgrade_rehearsal import (

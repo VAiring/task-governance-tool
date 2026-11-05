@@ -10,7 +10,7 @@ from unittest import mock
 
 from tests.m14_test_support import (
     json_payload,
-    make_physical_install,
+    make_current_physical_install as make_physical_install,
 )
 from tests.review_test_helpers import seed_review_evidence_connection
 from tests.verification_receipt_test_support import (

@@ -17,7 +17,7 @@ SCRIPTS_ROOT = ROOT / "task-governance-tool" / "scripts"
 if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 
-from tests.m14_test_support import make_physical_install
+from tests.m14_test_support import make_current_physical_install as make_physical_install
 from tests.test_m242_runner_plan_edit import (
     FUTURE_VERIFICATION,
     draft_blob,

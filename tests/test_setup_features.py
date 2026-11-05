@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from tests.m14_test_support import make_physical_install, file_snapshot
+from tests.m14_test_support import make_current_physical_install as make_physical_install, file_snapshot
 from task_governance_tool import setup, setup_features as features
 from task_governance_tool import setup_feature_config as config, usage_lifecycle
 from task_governance_tool.effort import load_effort_profile

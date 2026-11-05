@@ -16,14 +16,14 @@ try:
     from m14_test_support import (
         file_snapshot,
         json_payload,
-        make_physical_install,
+        make_current_physical_install as make_physical_install,
         tree_snapshot,
     )
 except ModuleNotFoundError:
     from tests.m14_test_support import (
         file_snapshot,
         json_payload,
-        make_physical_install,
+        make_current_physical_install as make_physical_install,
         tree_snapshot,
     )
 

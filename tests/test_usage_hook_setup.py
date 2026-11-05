@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from tests.m14_test_support import make_physical_install, make_source_self_host, file_snapshot
+from tests.m14_test_support import make_current_physical_install as make_physical_install, make_current_source_self_host as make_source_self_host, file_snapshot
 from task_governance_tool import setup, usage_hook_setup as hooks
 
 

@@ -12,7 +12,7 @@ from unittest import mock
 from tests.test_review_packet import (
     FINGERPRINT_A, FINGERPRINT_B, database_target,
 )
-from tests.m14_test_support import _copy_skill, initialize_taskgov_internal, run_taskgov_internal
+from tests.m14_test_support import _copy_current_skill as _copy_skill, initialize_taskgov_internal, run_taskgov_internal
 from task_governance_tool import cli, review_packet, review_verification, verification_runner_service as service
 from task_governance_tool import verification_runner_selection as selection
 

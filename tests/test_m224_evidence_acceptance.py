@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from tests.m14_test_support import (
     json_payload,
-    make_physical_install,
+    make_current_physical_install as make_physical_install,
     tree_snapshot,
 )
 from task_governance_tool.storage import SCHEMA_VERSION

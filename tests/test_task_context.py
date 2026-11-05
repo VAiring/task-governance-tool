@@ -20,7 +20,7 @@ from tests.current_database_fixture_support import initialize_current_test_datab
 from tests.m14_test_support import (
     file_snapshot,
     initialize_taskgov_internal,
-    make_physical_install,
+    make_current_physical_install as make_physical_install,
     run_taskgov_internal,
 )
 from tests.test_m17_cli_consumer_hardening import _run_cli, _setup

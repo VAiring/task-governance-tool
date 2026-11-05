@@ -11,7 +11,7 @@ from contextlib import chdir, closing, redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from tests.m14_test_support import make_physical_install
+from tests.m14_test_support import make_current_physical_install as make_physical_install
 
 from task_governance_tool import cli as cli_service
 from task_governance_tool.cli_parser import build_parser

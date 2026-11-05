@@ -20,7 +20,7 @@ from task_governance_tool import schema_session_slot_index as schema
 from tests import test_session_slot_cli as cli_fixture
 from tests import test_session_slot_migration as legacy_fixture
 from tests import test_criterion_link_collector_migration as public_fixture
-from tests.m14_test_support import make_physical_install, refresh_test_manifest
+from tests.m14_test_support import make_current_physical_install as make_physical_install, refresh_test_manifest
 
 
 class IndexedSessionSlotCliTests(cli_fixture.SessionSlotCliTests):

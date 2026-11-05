@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from tests.m14_test_support import file_snapshot, make_physical_install, tree_snapshot
+from tests.m14_test_support import file_snapshot, make_current_physical_install as make_physical_install, tree_snapshot
 from tests.test_viewer_renderer import embedded_snapshot
 from tools.release_contract import check_release_contract
 

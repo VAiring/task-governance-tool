@@ -14,8 +14,8 @@ from pathlib import Path
 from unittest import mock
 
 from tests.m14_test_support import (
-    _copy_skill,
-    make_physical_install,
+    _copy_current_skill as _copy_skill,
+    make_current_physical_install as make_physical_install,
     run_taskgov_internal,
 )
 from tests.test_m242_r3b_schema20_activation import (

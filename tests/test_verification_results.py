@@ -13,7 +13,7 @@ from contextlib import closing, redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from tests.m14_test_support import file_snapshot, make_physical_install, run_taskgov_internal
+from tests.m14_test_support import file_snapshot, make_current_physical_install as make_physical_install, run_taskgov_internal
 from tests.test_m243c_runner_gate import RunnerServiceFixture, _launch, _persist_terminal
 from tests.verification_receipt_test_support import (
     FINGERPRINT_A, FINGERPRINT_B, add_receipt, add_task, completion,

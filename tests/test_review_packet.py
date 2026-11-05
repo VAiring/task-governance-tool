@@ -21,7 +21,7 @@ from tests.m14_test_support import (  # noqa: E402
     file_snapshot,
     initialize_taskgov_internal,
     json_payload,
-    make_physical_install,
+    make_current_physical_install as make_physical_install,
     run_taskgov_internal,
 )
 from task_governance_tool import review_packet as packet_module  # noqa: E402

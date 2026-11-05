@@ -148,6 +148,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_m242_runner_plan_cli",
         "test_m242_runner_plan_edit",
         "test_own_review_query_scaling",
+        "test_package_fixture",
         "test_project_scope",
         "test_python314_exception_reporting",
         "test_relocation",

@@ -9,7 +9,7 @@ from unittest import mock
 
 from tests import test_m243b_schema21_compatibility as manual_fixture
 from tests import test_m243c_runner_gate as runner_fixture
-from tests.m14_test_support import _copy_skill, refresh_test_manifest, tree_snapshot
+from tests.m14_test_support import _copy_current_skill as _copy_skill, refresh_test_manifest, tree_snapshot
 from tests.test_m242_runner_service import RunnerServiceFixture, git
 from tests.test_m23s_schema22_migration import _logical_snapshot
 from tests.test_m23s_schema22_projection import _source

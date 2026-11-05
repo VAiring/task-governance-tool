@@ -39,7 +39,7 @@ from task_governance_tool.viewer import build_viewer_snapshot  # noqa: E402
 from tests.m14_test_support import (  # noqa: E402
     PhysicalInstall,
     activate_fresh_uuid_fixture,
-    make_physical_install,
+    make_current_physical_install as make_physical_install,
     pin_pre_incremental_viewer,
     refresh_test_manifest,
     tree_snapshot,

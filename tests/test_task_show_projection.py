@@ -13,7 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from tests.m14_test_support import file_snapshot, initialize_taskgov_internal, make_physical_install
+from tests.m14_test_support import file_snapshot, initialize_taskgov_internal, make_current_physical_install as make_physical_install
 from tests.test_m17_cli_consumer_hardening import _run_cli, _setup
 from tests.test_task_context import run
 from tests.registration_output_support import registration_body

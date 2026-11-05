@@ -8,7 +8,7 @@ from pathlib import Path
 try:
     from m14_test_support import (
         json_payload,
-        make_physical_install,
+        make_current_physical_install as make_physical_install,
     )
     from test_m17_relocation_setup import (
         relocate_install,
@@ -24,7 +24,7 @@ try:
 except ModuleNotFoundError:
     from tests.m14_test_support import (
         json_payload,
-        make_physical_install,
+        make_current_physical_install as make_physical_install,
     )
     from tests.test_m17_relocation_setup import (
         relocate_install,

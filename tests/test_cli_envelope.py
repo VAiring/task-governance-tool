@@ -29,9 +29,9 @@ finally:
     sys.path.pop(0)
 
 try:
-    from m14_test_support import file_snapshot, make_physical_install
+    from m14_test_support import file_snapshot, make_current_physical_install as make_physical_install
 except ModuleNotFoundError:
-    from tests.m14_test_support import file_snapshot, make_physical_install
+    from tests.m14_test_support import file_snapshot, make_current_physical_install as make_physical_install
 
 
 ENVELOPE_KEYS = {

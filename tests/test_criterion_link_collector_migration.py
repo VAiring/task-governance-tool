@@ -19,7 +19,7 @@ from tests.test_m23s_schema22_validation import _bundle_artifacts
 from task_governance_tool import storage
 from task_governance_tool import schema_review_answers as predecessor
 from task_governance_tool import schema_criterion_link_collector as schema
-from tests.m14_test_support import make_physical_install, refresh_test_manifest
+from tests.m14_test_support import make_current_physical_install as make_physical_install, refresh_test_manifest
 
 
 def _row_identity_snapshot(connection, *, fixture_aliases=None):

@@ -12,7 +12,7 @@ from pathlib import Path
 
 from tests.m14_test_support import (
     file_snapshot,
-    make_physical_install,
+    make_current_physical_install as make_physical_install,
     initialize_taskgov_internal,
     remove_v10_maintenance_for_test,
     run_taskgov_internal,

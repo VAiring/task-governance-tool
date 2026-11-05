@@ -15,7 +15,7 @@ import unittest
 from unittest import mock
 
 from tests.m14_test_support import (
-    make_physical_install, file_snapshot, tree_snapshot, _copy_skill, PhysicalInstall, create_v12_target,
+    make_current_physical_install as make_physical_install, file_snapshot, tree_snapshot, _copy_current_skill as _copy_skill, PhysicalInstall, create_v12_target,
 )
 from task_governance_tool import setup, setup_state_separation as separation
 from task_governance_tool.artifact_lock import zero_wait_artifact_lock

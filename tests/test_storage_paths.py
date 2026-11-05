@@ -29,7 +29,7 @@ try:
 finally:
     sys.path.pop(0)
 
-from tests.m14_test_support import make_physical_install
+from tests.m14_test_support import make_current_physical_install as make_physical_install
 
 
 class StoragePathTests(unittest.TestCase):

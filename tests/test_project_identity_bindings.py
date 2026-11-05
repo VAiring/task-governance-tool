@@ -55,7 +55,7 @@ from task_governance_tool.storage import (  # noqa: E402
 )
 from tests.m14_test_support import (  # noqa: E402
     create_v12_target,
-    make_legacy_physical_install as make_physical_install,
+    make_current_legacy_physical_install as make_physical_install,
 )
 
 

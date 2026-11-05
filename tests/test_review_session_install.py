@@ -16,7 +16,7 @@ from contextlib import closing
 from pathlib import Path
 from tests.registration_output_support import registration_body
 
-from tests.m14_test_support import make_physical_install, refresh_test_manifest
+from tests.m14_test_support import make_current_physical_install as make_physical_install, refresh_test_manifest
 from tests.test_review_results import encode, receipt, FINGERPRINT
 from tests.test_review_session_repository import OWNER, REVIEWER, SECOND
 from task_governance_tool.session_identity import CallerIdentity

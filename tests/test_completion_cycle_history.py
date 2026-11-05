@@ -42,7 +42,7 @@ from task_governance_tool.task_show_projection import show_task  # noqa: E402
 from task_governance_tool.viewer import build_viewer_snapshot  # noqa: E402
 from tests.m14_test_support import (  # noqa: E402
     create_v14_target,
-    make_physical_install,
+    make_current_physical_install as make_physical_install,
 )
 from tests.test_project_identity_bindings import (  # noqa: E402
     logical_database_state,

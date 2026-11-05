@@ -11,7 +11,7 @@ from tests.m14_test_support import (
     activate_fixed_fixture,
     create_v10_target,
     create_v14_target,
-    make_physical_install,
+    make_current_physical_install as make_physical_install,
     remove_v18_evidence_ledger_for_test,
 )
 from tests.m214b_test_support import (

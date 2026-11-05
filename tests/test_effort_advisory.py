@@ -13,7 +13,7 @@ from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
-from tests.m14_test_support import make_physical_install
+from tests.m14_test_support import make_current_physical_install as make_physical_install
 
 
 ROOT = Path(__file__).resolve().parents[1]

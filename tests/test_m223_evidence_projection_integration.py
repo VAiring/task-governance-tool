@@ -9,7 +9,7 @@ from contextlib import ExitStack
 from pathlib import Path
 from unittest import mock
 
-from tests.m14_test_support import json_payload, make_physical_install
+from tests.m14_test_support import json_payload, make_current_physical_install as make_physical_install
 
 
 ROOT = Path(__file__).resolve().parents[1]

@@ -18,7 +18,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from tests.m14_test_support import file_snapshot, make_physical_install
+from tests.m14_test_support import file_snapshot, make_current_physical_install as make_physical_install
 from tests.test_review_results import encode, receipt, FINGERPRINT
 from task_governance_tool import review_handoff_transport as handoff_transport
 from task_governance_tool import review_handoff as handoff

@@ -14,16 +14,16 @@ try:
         create_v10_database,
         file_snapshot,
         json_payload,
-        make_physical_install,
-        make_source_self_host,
+        make_current_physical_install as make_physical_install,
+        make_current_source_self_host as make_source_self_host,
     )
 except ModuleNotFoundError:
     from tests.m14_test_support import (
         create_v10_database,
         file_snapshot,
         json_payload,
-        make_physical_install,
-        make_source_self_host,
+        make_current_physical_install as make_physical_install,
+        make_current_source_self_host as make_source_self_host,
     )
 
 from task_governance_tool import backup as backup_service

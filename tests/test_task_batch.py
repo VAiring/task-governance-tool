@@ -17,7 +17,7 @@ from unittest import mock
 from tests.registration_output_support import registration_body
 
 from tests.m14_test_support import (
-    file_snapshot, initialize_taskgov_internal, make_physical_install,
+    file_snapshot, initialize_taskgov_internal, make_current_physical_install as make_physical_install,
     run_taskgov_internal,
 )
 

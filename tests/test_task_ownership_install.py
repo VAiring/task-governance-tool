@@ -11,7 +11,7 @@ from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
-from tests.m14_test_support import make_physical_install, refresh_test_manifest
+from tests.m14_test_support import make_current_physical_install as make_physical_install, refresh_test_manifest
 from tests.test_task_ownership import X, Y, UNKNOWN
 from tests.registration_output_support import registration_body
 

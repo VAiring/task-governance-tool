@@ -10,7 +10,7 @@ import sys
 import tempfile
 import unittest
 
-from tests.m14_test_support import make_physical_install, refresh_test_manifest
+from tests.m14_test_support import make_current_physical_install as make_physical_install
 from tests.test_usage_turn_adapter import tool_record
 from tests.test_usage_collection import event, usage
 from tests.test_usage_attribution import THREAD, turn
@@ -26,7 +26,6 @@ class UsageAttributionInstallTests(unittest.TestCase):
     def test_public_start_exit_restart_are_inclusive_and_use_actual_core_events(self):
         with tempfile.TemporaryDirectory() as temporary:
             install = make_physical_install(Path(temporary), git_managed=True)
-            refresh_test_manifest(install.skill_root)
             root = install.project_root
             environment = {**os.environ, "CODEX_THREAD_ID": THREAD}
             environment.pop("PYTHONPATH", None)

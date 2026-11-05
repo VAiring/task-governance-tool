@@ -47,7 +47,7 @@ class EntryAdoptionTests(unittest.TestCase):
             self.assertEqual(before, install.state_snapshot())
 
     def test_fresh_setup_admits_only_after_publication_and_relocation_does_not(self):
-        from tests.m14_test_support import make_physical_install
+        from tests.m14_test_support import make_current_physical_install as make_physical_install
         temporary = tempfile.TemporaryDirectory(prefix='log-fresh-')
         self.addCleanup(temporary.cleanup)
         install = make_physical_install(Path(temporary.name) / 'original', git_managed=True)

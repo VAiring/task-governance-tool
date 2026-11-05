@@ -18,7 +18,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from tests.m14_test_support import (
-    _copy_skill,
+    _copy_current_skill as _copy_skill,
     file_snapshot,
     initialize_taskgov_internal,
     run_taskgov_internal,

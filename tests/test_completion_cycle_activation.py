@@ -52,7 +52,7 @@ from tests.test_completion_cycle_history import (  # noqa: E402
     schema_inventory,
     seed_v14_tasks,
 )
-from tests.m14_test_support import make_physical_install  # noqa: E402
+from tests.m14_test_support import make_current_physical_install as make_physical_install  # noqa: E402
 
 
 ACTIVATION_TIME = "2026-07-30T05:00:00Z"

@@ -14,7 +14,7 @@ from tests.verification_receipt_test_support import (
 )
 from tests.test_review_session_migration import candidate_runtime
 from tests.test_m23s_schema22_migration import _logical_snapshot, _source_copy, _add_unrelated_objects
-from tests.m14_test_support import make_physical_install
+from tests.m14_test_support import make_current_physical_install as make_physical_install
 from tests.test_m17_cli_consumer_hardening import _setup, _run_cli
 from tests.m214b_test_support import publish_generations
 from task_governance_tool import storage, tasks, viewer, backup

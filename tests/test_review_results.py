@@ -480,6 +480,10 @@ class ReviewResultsTests(unittest.TestCase):
     document_array = False
 
     def setUp(self):
+        if self._testMethodName == "test_physical_public_cli_consumes_utf8_stdin_without_target_or_config_mutation":
+            # This case owns a physical install and real Setup below; none of
+            # this shared in-process DB fixture is consumed (including arrays).
+            return
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)

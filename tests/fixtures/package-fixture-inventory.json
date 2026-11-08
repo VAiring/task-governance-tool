@@ -269,30 +269,6 @@
    "call": "make_physical_install(Path(tmp))",
    "disposition": "explicit-immutable-current",
    "file": "tests/test_cli_help.py",
-   "function": "CliHelpTests.test_task_contract_compact_completion_and_checkpoint_help_remain_available",
-   "operation": "make_current_physical_install",
-   "resolved": "tests.m14_test_support.make_current_physical_install"
-  },
-  {
-   "call": "make_physical_install(Path(tmp))",
-   "disposition": "explicit-immutable-current",
-   "file": "tests/test_cli_help.py",
-   "function": "CliHelpTests.test_task_contract_compact_completion_and_checkpoint_help_remain_available",
-   "operation": "make_current_physical_install",
-   "resolved": "tests.m14_test_support.make_current_physical_install"
-  },
-  {
-   "call": "make_physical_install(Path(tmp))",
-   "disposition": "explicit-immutable-current",
-   "file": "tests/test_cli_help.py",
-   "function": "CliHelpTests.test_task_contract_compact_completion_and_checkpoint_help_remain_available",
-   "operation": "make_current_physical_install",
-   "resolved": "tests.m14_test_support.make_current_physical_install"
-  },
-  {
-   "call": "make_physical_install(Path(tmp))",
-   "disposition": "explicit-immutable-current",
-   "file": "tests/test_cli_help.py",
    "function": "CliHelpTests.test_task_edit_help_explains_contract_requirements_and_partial_recovery",
    "operation": "make_current_physical_install",
    "resolved": "tests.m14_test_support.make_current_physical_install"
@@ -3867,7 +3843,8 @@
   "Generic source preparation and explicit changed-copy refreshes remain real.",
   "Current wrappers declare one immutable candidate basis; mutable/different sources use new explicit captures.",
   "Each destination owns ordinary physical files. First-read overlap computes no digest, records no validation result, and never replaces product manifest validation.",
-  "No cache survives the Python process; no link, writable shared package or fixture binary is used."
+  "No cache survives the Python process; no link, writable shared package or fixture binary is used.",
+  "The compact completion/checkpoint and verification-limit help loops use one physical install per test with a complete tree comparison after every command. Their current direct call rows are synchronized; original candidate and assertion captures remain historical audit data."
  ],
  "original_candidates": [
   {

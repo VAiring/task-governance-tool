@@ -138,6 +138,10 @@ class VerificationResultInputTests(unittest.TestCase):
 
 class VerificationResultCliTests(unittest.TestCase):
     def setUp(self):
+        if self._testMethodName == "test_physical_install_subprocess_accepts_verbatim_input_without_target_changes":
+            # This case owns a physical install and real Setup below; none of
+            # this shared in-process DB fixture is consumed.
+            return
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)

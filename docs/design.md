@@ -1337,6 +1337,19 @@ local import aliases retain their Python scope when following those routes.
 This inventory does not select, omit or change tests. Current copies still undergo production initialization,
 and all existing feature assertions and injected failures remain active.
 
+The self-contained physical CLI cases for review results (object and array),
+verification results, Finding resolution, Task batch and Task notes bypass only
+their unused shared in-process database preparation. Their own physical install
+and real Setup remain active. Review results, verification results, Finding
+resolution and Task batch retain their subprocess and file-invariance assertions.
+The Task notes case retains its in-process Setup/CLI calls and canonical-state,
+body-preservation and rejection assertions. Other cases retain the default
+real/explicit-current preparation above. The exact method-level branch
+keeps existing test identities and discovery order, including inherited cases.
+Read-only help loops reuse one physical install within that test only and compare
+the complete file tree before and after each command. Mutable failure cases do
+not share that install.
+
 Physical-package tests explicitly select the named immutable current-package
 basis through the `make_current_*` or `_copy_current_skill` fixture entry points.
 `tests/package_fixture_support.py` creates that basis once per process with the

@@ -32,6 +32,10 @@ class FailingCopy(sqlite3.Connection):
 
 class TaskNoteBodyTests(unittest.TestCase):
     def setUp(self):
+        if self._testMethodName == "test_physical_public_cli_uses_canonical_state_and_preserves_body":
+            # This case owns a physical install and real Setup below; none of
+            # this shared in-process DB fixture is consumed.
+            return
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.repo, self.db = initialize_case(Path(temporary.name), self)

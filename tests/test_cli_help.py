@@ -16,9 +16,9 @@ finally:
     sys.path.pop(0)
 
 try:
-    from m14_test_support import make_current_physical_install as make_physical_install
+    from m14_test_support import make_current_physical_install as make_physical_install, tree_snapshot
 except ModuleNotFoundError:
-    from tests.m14_test_support import make_current_physical_install as make_physical_install
+    from tests.m14_test_support import make_current_physical_install as make_physical_install, tree_snapshot
 
 
 PUBLIC_COMMAND_LEAVES = {
@@ -177,76 +177,79 @@ class CliHelpTests(unittest.TestCase):
                 self.assertNotIn(removed, result.stdout)
 
     def test_task_contract_compact_completion_and_checkpoint_help_remain_available(self):
-        for command in (("task", "add"), ("task", "edit")):
-            with self.subTest(command=command), tempfile.TemporaryDirectory() as tmp:
-                result = make_physical_install(Path(tmp)).run(*command, "--help")
-                self.assertEqual(result.returncode, 0, result.stderr)
-                for option in (
-                    "--contract-scope",
-                    "--contract-acceptance",
-                    "--contract-constraints",
-                    "--contract-authority-ref",
-                    "--contract-change-reason",
-                ):
-                    self.assertIn(option, result.stdout)
-                self.assertNotIn("--db", result.stdout)
-
-        for command in (("task", "current"), ("task", "next")):
-            with self.subTest(command=command), tempfile.TemporaryDirectory() as tmp:
-                result = make_physical_install(Path(tmp)).run(*command, "--help")
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertIn("--compact", result.stdout)
-                self.assertNotIn("--db", result.stdout)
-
         with tempfile.TemporaryDirectory() as tmp:
-            complete = make_physical_install(Path(tmp)).run("task", "complete", "--help")
-        self.assertEqual(complete.returncode, 0, complete.stderr)
-        for option in (
-            "--check",
-            "--completion-evidence-kind",
-            "--completion-revision",
-            "--verification-complete",
-            "--review-complete",
-        ):
-            self.assertIn(option, complete.stdout)
-        self.assertNotIn("--status", complete.stdout)
-        self.assertNotIn("--db", complete.stdout)
+            install = make_physical_install(Path(tmp))
+            before = tree_snapshot(install.project_root)
 
-        with tempfile.TemporaryDirectory() as tmp:
-            checkpoint = make_physical_install(Path(tmp)).run(
-                "task",
-                "checkpoint",
-                "--help",
-            )
-        self.assertEqual(checkpoint.returncode, 0, checkpoint.stderr)
-        for option in (
-            "task_id",
-            "--summary",
-            "--next-action",
-            "--unresolved-risk",
-            "--repo",
-            "--json",
-            "--read-only",
-        ):
-            self.assertIn(option, checkpoint.stdout)
-        for unsupported in ("--compact", "--check", "--db"):
-            self.assertNotIn(unsupported, checkpoint.stdout)
+            def help_for(*command):
+                result = install.run(*command, "--help")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(tree_snapshot(install.project_root), before, command)
+                return result
+
+            for command in (("task", "add"), ("task", "edit")):
+                with self.subTest(command=command):
+                    result = help_for(*command)
+                    for option in (
+                        "--contract-scope",
+                        "--contract-acceptance",
+                        "--contract-constraints",
+                        "--contract-authority-ref",
+                        "--contract-change-reason",
+                    ):
+                        self.assertIn(option, result.stdout)
+                    self.assertNotIn("--db", result.stdout)
+
+            for command in (("task", "current"), ("task", "next")):
+                with self.subTest(command=command):
+                    result = help_for(*command)
+                    self.assertIn("--compact", result.stdout)
+                    self.assertNotIn("--db", result.stdout)
+
+            complete = help_for("task", "complete")
+            for option in (
+                "--check",
+                "--completion-evidence-kind",
+                "--completion-revision",
+                "--verification-complete",
+                "--review-complete",
+            ):
+                self.assertIn(option, complete.stdout)
+            self.assertNotIn("--status", complete.stdout)
+            self.assertNotIn("--db", complete.stdout)
+
+            checkpoint = help_for("task", "checkpoint")
+            for option in (
+                "task_id",
+                "--summary",
+                "--next-action",
+                "--unresolved-risk",
+                "--repo",
+                "--json",
+                "--read-only",
+            ):
+                self.assertIn(option, checkpoint.stdout)
+            for unsupported in ("--compact", "--check", "--db"):
+                self.assertNotIn(unsupported, checkpoint.stdout)
 
     def test_task_add_and_edit_help_share_verification_input_limit(self):
-        for command in (("task", "add"), ("task", "edit")):
-            with self.subTest(command=command), tempfile.TemporaryDirectory() as tmp:
-                result = make_physical_install(Path(tmp)).run(*command, "--help")
-
-                self.assertEqual(result.returncode, 0, result.stderr)
-                normalized = " ".join(result.stdout.split())
-                self.assertIn(
-                    "--verification VERIFICATION",
-                    normalized,
-                )
-                self.assertIn(
-                    "verification expectation (1,000 characters or fewer)",
-                    normalized,
-                )
+        with tempfile.TemporaryDirectory() as tmp:
+            install = make_physical_install(Path(tmp))
+            before = tree_snapshot(install.project_root)
+            for command in (("task", "add"), ("task", "edit")):
+                with self.subTest(command=command):
+                    result = install.run(*command, "--help")
+                    self.assertEqual(tree_snapshot(install.project_root), before, command)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    normalized = " ".join(result.stdout.split())
+                    self.assertIn(
+                        "--verification VERIFICATION",
+                        normalized,
+                    )
+                    self.assertIn(
+                        "verification expectation (1,000 characters or fewer)",
+                        normalized,
+                    )
 
     def test_runner_plan_action_is_only_on_existing_task_edit_leaf(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -1249,7 +1249,7 @@
    "disposition": "real",
    "file": "tests/test_finding_resolutions.py",
    "function": "FindingResolutionCliTests.test_physical_install_consumes_utf8_batch_without_source_or_config_changes",
-   "reason": "No ordinary opt-in: preserve real preparation for this inspected fault, rollback, initialization, recovery, identity or fixed-schema case.",
+   "reason": "Owns a separate physical install and real Setup; no shared setUp DB field is used. The unused in-process preparation is bypassed; real subprocess and file invariance assertions remain.",
    "regression_conditions": [
     "self.assertEqual(help_result.returncode, 0, help_result.stderr)",
     "self.assertEqual((result.returncode, result.stderr), (0, b''), result.stdout.decode('utf-8'))",
@@ -2868,7 +2868,7 @@
    "disposition": "real",
    "file": "tests/test_review_results.py",
    "function": "ReviewResultsTests.test_physical_public_cli_consumes_utf8_stdin_without_target_or_config_mutation",
-   "reason": "No ordinary opt-in: preserve real preparation for this inspected fault, rollback, initialization, recovery, identity or fixed-schema case.",
+   "reason": "Owns a separate physical install and real Setup; no shared setUp DB field is used. The unused in-process preparation is bypassed; real subprocess and file invariance assertions remain.",
    "regression_conditions": [
     "self.assertEqual(setup.returncode, 0, setup.stdout or setup.stderr)",
     "self.assertEqual(added.returncode, 0, added.stdout or added.stderr)",
@@ -3334,7 +3334,7 @@
    "disposition": "real",
    "file": "tests/test_task_batch.py",
    "function": "TaskBatchCliTests.test_physical_install_consumes_one_utf8_batch_without_source_or_config_changes",
-   "reason": "No ordinary opt-in: preserve real preparation for this inspected fault, rollback, initialization, recovery, identity or fixed-schema case.",
+   "reason": "Owns a separate physical install and real Setup; no shared setUp DB field is used. The unused in-process preparation is bypassed; real subprocess and file invariance assertions remain.",
    "regression_conditions": [
     "self.assertEqual(setup.returncode, 0, setup.stdout or setup.stderr)",
     "self.assertEqual((result.returncode, result.stderr), (0, b''), result.stdout.decode('utf-8'))",
@@ -3759,7 +3759,7 @@
    "disposition": "real",
    "file": "tests/test_task_note_bodies.py",
    "function": "TaskNoteBodyTests.test_physical_public_cli_uses_canonical_state_and_preserves_body",
-   "reason": "No ordinary opt-in: preserve real preparation for this inspected fault, rollback, initialization, recovery, identity or fixed-schema case.",
+   "reason": "Owns a separate physical install and real Setup; no shared setUp DB field is used. The unused shared preparation is bypassed; in-process Setup/CLI calls and canonical-state, body-preservation and rejection assertions remain.",
    "regression_conditions": [
     "self.assertEqual(created.returncode, 0, created.stdout)",
     "self.assertEqual(edited.returncode, 0, edited.stdout)",
@@ -4619,7 +4619,7 @@
    "disposition": "real",
    "file": "tests/test_verification_results.py",
    "function": "VerificationResultCliTests.test_physical_install_subprocess_accepts_verbatim_input_without_target_changes",
-   "reason": "No ordinary opt-in: preserve real preparation for this inspected fault, rollback, initialization, recovery, identity or fixed-schema case.",
+   "reason": "Owns a separate physical install and real Setup; no shared setUp DB field is used. The unused in-process preparation is bypassed; real subprocess and file invariance assertions remain.",
    "regression_conditions": [
     "self.assertEqual(setup.returncode, 0, setup.stdout or setup.stderr)",
     "self.assertEqual(added.returncode, 0, added.stdout or added.stderr)",
@@ -6949,7 +6949,7 @@
    "preparation_controls": [],
    "preserved": "Existing operations, assertions, side effects, sizes, repetitions and timeouts remain active.",
    "reachable_disposition_ref": "tests.test_finding_resolutions.FindingResolutionCliTests.setUp",
-   "reason": "Shared preparation keeps the real initializer by default; only an explicitly opted-in current-schema case uses the template. See case_dispositions and the exact callable branch.",
+   "reason": "Shared preparation keeps the real initializer by default; only an explicitly opted-in current-schema case uses the template. See case_dispositions and the exact callable branch. The named self-contained physical CLI case bypasses this unused DB; its own physical install and real Setup remain active. Other cases keep this policy.",
    "regression_conditions": []
   },
   {
@@ -11111,7 +11111,7 @@
    "preparation_controls": [],
    "preserved": "Existing operations, assertions, side effects, sizes, repetitions and timeouts remain active.",
    "reachable_disposition_ref": "tests.test_review_results.ReviewResultsTests.setUp",
-   "reason": "Shared preparation keeps the real initializer by default; only an explicitly opted-in current-schema case uses the template. See case_dispositions and the exact callable branch.",
+   "reason": "Shared preparation keeps the real initializer by default; only an explicitly opted-in current-schema case uses the template. See case_dispositions and the exact callable branch. The named self-contained physical CLI case bypasses this unused DB; its own physical install and real Setup remain active. Other cases keep this policy.",
    "regression_conditions": []
   },
   {
@@ -11855,7 +11855,7 @@
    "preparation_controls": [],
    "preserved": "Existing operations, assertions, side effects, sizes, repetitions and timeouts remain active.",
    "reachable_disposition_ref": "tests.test_task_batch.TaskBatchCliTests.setUp",
-   "reason": "Shared preparation keeps the real initializer by default; only an explicitly opted-in current-schema case uses the template. See case_dispositions and the exact callable branch.",
+   "reason": "Shared preparation keeps the real initializer by default; only an explicitly opted-in current-schema case uses the template. See case_dispositions and the exact callable branch. The named self-contained physical CLI case bypasses this unused DB; its own physical install and real Setup remain active. Other cases keep this policy.",
    "regression_conditions": []
   },
   {
@@ -13059,7 +13059,7 @@
    "preparation_controls": [],
    "preserved": "Existing operations, assertions, side effects, sizes, repetitions and timeouts remain active.",
    "reachable_disposition_ref": "tests.test_task_note_bodies.TaskNoteBodyTests.setUp",
-   "reason": "Shared preparation keeps the real initializer by default; only an explicitly opted-in current-schema case uses the template. See case_dispositions and the exact callable branch.",
+   "reason": "Shared preparation keeps the real initializer by default; only an explicitly opted-in current-schema case uses the template. See case_dispositions and the exact callable branch. The named self-contained physical CLI case bypasses this unused DB; its own physical install and real Setup remain active. Other cases keep this policy.",
    "regression_conditions": []
   },
   {
@@ -13491,7 +13491,7 @@
    "preparation_controls": [],
    "preserved": "Existing operations, assertions, side effects, sizes, repetitions and timeouts remain active.",
    "reachable_disposition_ref": "tests.test_verification_results.VerificationResultCliTests.setUp",
-   "reason": "Shared preparation keeps the real initializer by default; only an explicitly opted-in current-schema case uses the template. See case_dispositions and the exact callable branch.",
+   "reason": "Shared preparation keeps the real initializer by default; only an explicitly opted-in current-schema case uses the template. See case_dispositions and the exact callable branch. The named self-contained physical CLI case bypasses this unused DB; its own physical install and real Setup remain active. Other cases keep this policy.",
    "regression_conditions": []
   },
   {
@@ -43488,5 +43488,5 @@
   "Every reachable disposition names its concrete preparation boundaries and regression source functions. regression_sources records the original assertion expressions at those exact functions, including assertions reached through helpers and unittest setup ownership.",
   "A branch policy is not an ordinary opt-in: unmarked callers and predecessor runtime pins keep real initialization. The effective-factory audit resolves reexported constructors as well as direct imports."
  ],
- "shared_setup_policy": "Only ordinary_current_database-marked methods clone. Unmarked/new/unknown cases and predecessor runtime pins use real creation; explicit factory flags propagate the selected method through shared helpers."
+ "shared_setup_policy": "Only ordinary_current_database-marked methods clone. Unmarked/new/unknown cases and predecessor runtime pins use real creation; explicit factory flags propagate the selected method through shared helpers. Explicit self-contained physical CLI methods in review results (including inherited arrays), verification results, Finding resolution, Task batch and Task notes own their real Setup instead of constructing an unused shared DB."
 }

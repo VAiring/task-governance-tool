@@ -1350,6 +1350,35 @@ Hook installs and checker-only attachments retain their existing paths. These
 explicit preparation callers register nested cleanup before preparing a child
 so failed preparation cannot strand that child's temporary state.
 
+Runner service fault tests explicitly select
+`RunnerServiceFixture.prepared_for_service_fault()` only when Git admission is
+the prerequisite to a later injected service, runtime, cleanup or persistence
+failure. Each call reads that case's current Task authority and real staged Git
+observation, then reads and hashes the one fixture blob to build the typed
+material input. It omits only preflight's repeated target recaptures; it shares
+no mutable repository, index, database, material or cross-case cache. The normal
+`prepared()` entry still performs the complete real preflight, including for
+unknown callers and predecessor-schema fixtures. Initialization policy is
+unchanged.
+
+The post-T1 matrix retains all four boundaries crossed with RuntimeError,
+KeyboardInterrupt and SystemExit, and proves each injected boundary is reached.
+Sanitized errors, pending intent, absent observation/cleanup-event and the real
+service writers remain checked. The restart fault matrix and the bounded
+pre-adapter/runtime failure cases use the same explicit preparation. Dedicated
+fixture regressions compare it with real preflight on different actual staged
+contents, persist each case's bound intent, reject wrong blob/unsupported fixture
+shape, and prove independent Git/index/DB state and cleanup after an exception.
+
+Other Runner fixture consumers retain real preparation: admission/refresh and
+physical-basis cases test freshness; lock, rollback and terminal-pass cases
+retain representative real-preparation-to-service integration; public process
+acceptance retains real Git, plan, runtime and lifecycle work; gate, Packet,
+selection, Evidence, ownership, recovery and predecessor-schema consumers retain
+their real bound graph inputs. `test_m242_runner_git` independently retains
+target drift, object-loss, target-mismatch and materialization checks. The fixture
+shortcut is not a product admission path and does not replace these checks.
+
 The self-contained physical CLI cases for review results (object and array),
 verification results, Finding resolution, Task batch and Task notes bypass only
 their unused shared in-process database preparation. Their own physical install

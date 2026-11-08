@@ -4,6 +4,7 @@ from tests.current_database_fixture_support import ordinary_current_database, us
 
 from tests.current_database_fixture_support import initialize_current_test_database
 
+import hashlib
 import json
 import os
 import sqlite3
@@ -59,6 +60,7 @@ from task_governance_tool.verification_runner import (  # noqa: E402
     RUNNER_POSIX_POLICY_DIGEST,
 )
 from task_governance_tool.verification_runner_git import (  # noqa: E402
+    RunnerMaterialization,
     VerificationRunnerGitError,
     observe_staged_runner_target,
     preflight_runner_material,
@@ -231,6 +233,37 @@ class RunnerServiceFixture:
         authority = authority or self.authority()
         observed = observe_staged_runner_target(self.repo)
         material = preflight_runner_material(self.repo, observed)
+        return self._prepared_values(authority, observed, material)
+
+    def prepared_for_service_fault(self):
+        """Fresh case-local input for faults after Git admission, not its tests.
+
+        Keep the real staged observation and read the actual single fixture blob.
+        Only the repeated preflight recaptures are omitted. No values are cached,
+        and callers cannot supply another Task's authority or a prior target.
+        """
+        authority = self.authority()
+        observed = observe_staged_runner_target(self.repo)
+        if len(observed.entries) != 1 or (
+            observed.entries[0].relative_posix_path != "focused.py"
+            or observed.entries[0].mode != "100644"
+        ):
+            raise AssertionError("service-fault input requires the single fixture file")
+        entry = observed.entries[0]
+        payload = git(self.repo, "cat-file", "blob", entry.object_id).stdout
+        object_bytes = b"blob " + str(len(payload)).encode("ascii") + b"\0" + payload
+        if hashlib.new(observed.object_format, object_bytes).hexdigest() != entry.object_id:
+            raise AssertionError("service-fault blob does not match its observed target")
+        material = RunnerMaterialization(
+            target=observed,
+            object_sizes=((entry.object_id, len(payload)),),
+            total_bytes=len(payload),
+            target_material_digest=observed.target_material_digest,
+        )
+        return self._prepared_values(authority, observed, material)
+
+    @staticmethod
+    def _prepared_values(authority, observed, material):
         step = VerificationRunnerPlanStep(
             ordinal=1,
             step_id="focused",
@@ -284,6 +317,82 @@ class RunnerServiceFixture:
 
 
 class VerificationRunnerServiceTests(unittest.TestCase):
+    def test_service_fault_preparation_matches_real_preflight_and_bound_intent(self):
+        identities = []
+        for source in (b"print('staged')\n", b"print('another case, different bytes')\n"):
+            with tempfile.TemporaryDirectory() as temporary:
+                fixture = RunnerServiceFixture(Path(temporary))
+                (fixture.repo / "focused.py").write_bytes(source)
+                git(fixture.repo, "add", "focused.py")
+                # Independent oracle: the unchanged real preflight checks blob
+                # types/sizes and recaptures Git twice, not the shortcut's builder.
+                real = fixture.prepared()
+                with mock.patch(
+                    __name__ + ".preflight_runner_material",
+                    side_effect=AssertionError("fault input must omit repeated preflight"),
+                ):
+                    light = fixture.prepared_for_service_fault()
+                self.assertEqual(light, real)
+                self.assertEqual(light.material.total_bytes, len(source))
+                self.assertEqual(light.authority.task["task_id"], fixture.task_id)
+                self.assertEqual(light.authority.task["project_id"], fixture.target.project.project_id)
+                paths = service._runner_paths(fixture.target)
+                with service.zero_wait_runner_lock(paths):
+                    intent = service._persist_launch_intent(fixture.target, light)
+                generation = fixture.generation(1)
+                self.assertEqual(generation["state"], "pending")
+                self.assertEqual(intent.resolution.task_id, fixture.task_id)
+                self.assertEqual(intent.resolution.contract_revision,
+                                 light.authority.task["current_contract_revision"])
+                self.assertEqual(intent.resolution.target_material_digest,
+                                 real.material.target_material_digest)
+                self.assertEqual(intent.resolution.target_value, real.target.artifact.target_value)
+                identities.append((fixture.task_id, light.material.target_material_digest))
+            self.assertFalse(Path(temporary).exists())
+        self.assertNotEqual(*[value[0] for value in identities])
+        self.assertNotEqual(*[value[1] for value in identities])
+
+    def test_service_fault_preparation_rejects_wrong_blob_and_nonfixture_target(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = RunnerServiceFixture(Path(temporary))
+            with mock.patch(__name__ + ".git", return_value=SimpleNamespace(stdout=b"wrong blob")):
+                with self.assertRaisesRegex(AssertionError, "does not match"):
+                    fixture.prepared_for_service_fault()
+            (fixture.repo / "extra.txt").write_bytes(b"not this fixture")
+            git(fixture.repo, "add", "extra.txt")
+            with self.assertRaisesRegex(AssertionError, "single fixture file"):
+                fixture.prepared_for_service_fault()
+            self.assertEqual(sum(row_counts(fixture.db).values()), 0)
+
+    def test_service_fault_preparation_isolates_git_database_and_failed_cleanup(self):
+        with tempfile.TemporaryDirectory() as second_root:
+            second = RunnerServiceFixture(Path(second_root))
+            second_index = (second.repo / ".git" / "index").read_bytes()
+            second_source = (second.repo / "focused.py").read_bytes()
+            with self.assertRaisesRegex(RuntimeError, "fixture failure"):
+                with tempfile.TemporaryDirectory() as first_root:
+                    first = RunnerServiceFixture(Path(first_root))
+                    prepared = first.prepared_for_service_fault()
+                    paths = service._runner_paths(first.target)
+                    with service.zero_wait_runner_lock(paths):
+                        intent = service._persist_launch_intent(first.target, prepared)
+                        service.create_attempt_directories(paths, intent.attempt.verification_runner_attempt_id)
+                        service.create_scratch_directories(paths, intent.attempt.verification_runner_attempt_id)
+                    (first.repo / "focused.py").write_bytes(b"first-only change")
+                    git(first.repo, "add", "focused.py")
+                    raise RuntimeError("fixture failure")
+            self.assertFalse(Path(first_root).exists())
+            self.assertEqual((second.repo / ".git" / "index").read_bytes(), second_index)
+            self.assertEqual((second.repo / "focused.py").read_bytes(), second_source)
+            self.assertEqual(sum(row_counts(second.db).values()), 0)
+            prepared = second.prepared_for_service_fault()
+            self.assertEqual(prepared.authority.task["task_id"], second.task_id)
+            paths = service._runner_paths(second.target)
+            with service.zero_wait_runner_lock(paths):
+                service._persist_launch_intent(second.target, prepared)
+            self.assertEqual(second.generation(1)["state"], "pending")
+        self.assertFalse(Path(second_root).exists())
+
     def test_fixture_canonicalizes_temporary_root_before_deriving_paths(self):
         with tempfile.TemporaryDirectory() as temporary:
             temporary_root = Path(temporary)
@@ -816,7 +925,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
     def test_runtime_observation_failure_terminalizes_without_a_lease(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
-            prepared = fixture.prepared()
+            prepared = fixture.prepared_for_service_fault()
             paths = service._runner_paths(fixture.target)
             failure = VerificationRunnerRuntimeError(
                 "runtime_unavailable",
@@ -853,7 +962,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
     def test_interrupted_runtime_observation_remains_pending(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
-            prepared = fixture.prepared()
+            prepared = fixture.prepared_for_service_fault()
             paths = service._runner_paths(fixture.target)
             with service.zero_wait_runner_lock(paths):
                 intent = service._persist_launch_intent(fixture.target, prepared)
@@ -899,7 +1008,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
         for failure in failures:
             with self.subTest(failure=type(failure).__name__), tempfile.TemporaryDirectory() as temporary:
                 fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
-                prepared = fixture.prepared()
+                prepared = fixture.prepared_for_service_fault()
                 paths = service._runner_paths(fixture.target)
                 with service.zero_wait_runner_lock(paths):
                     intent = service._persist_launch_intent(fixture.target, prepared)
@@ -944,7 +1053,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
     def test_process_step_setup_failure_terminalizes_before_runtime_observation(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
-            prepared = fixture.prepared()
+            prepared = fixture.prepared_for_service_fault()
             paths = service._runner_paths(fixture.target)
             with service.zero_wait_runner_lock(paths):
                 intent = service._persist_launch_intent(fixture.target, prepared)
@@ -987,7 +1096,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
     def test_bound_process_setup_failure_terminalizes_without_a_lease(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
-            prepared = fixture.prepared()
+            prepared = fixture.prepared_for_service_fault()
             paths = service._runner_paths(fixture.target)
             with service.zero_wait_runner_lock(paths):
                 intent = service._persist_launch_intent(fixture.target, prepared)
@@ -1021,7 +1130,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
         for failure_type in (KeyboardInterrupt, SystemExit, RuntimeError):
             with self.subTest(failure_type=failure_type.__name__), tempfile.TemporaryDirectory() as temporary:
                 fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
-                prepared = fixture.prepared()
+                prepared = fixture.prepared_for_service_fault()
                 paths = service._runner_paths(fixture.target)
 
                 def fail_callback():
@@ -1061,7 +1170,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
     def test_basis_storage_error_keeps_stable_code_and_does_not_append_cleanup(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
-            prepared = fixture.prepared()
+            prepared = fixture.prepared_for_service_fault()
             paths = service._runner_paths(fixture.target)
             failure = StorageError(
                 "evidence_ledger_inconsistent",
@@ -1119,10 +1228,11 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                     failure_type=failure_type.__name__,
                 ), tempfile.TemporaryDirectory() as temporary:
                     fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
-                    prepared = fixture.prepared()
+                    prepared = fixture.prepared_for_service_fault()
                     failure = failure_type(
                         r"private failure at C:\sensitive\runner-state"
                     )
+                    failed_seam = mock.Mock(side_effect=failure)
                     basis_results = (
                         (True, False)
                         if seam == "_persist_cleanup_only"
@@ -1160,7 +1270,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                             mock.patch.object(
                                 service,
                                 "cleanup_attempt_tree",
-                                side_effect=failure,
+                                new=failed_seam,
                             )
                         )
                     if seam == "_physical_basis_matches":
@@ -1168,7 +1278,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                             mock.patch.object(
                                 service,
                                 "_physical_basis_matches",
-                                side_effect=failure,
+                                new=failed_seam,
                             )
                         )
                     else:
@@ -1184,7 +1294,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                             mock.patch.object(
                                 service,
                                 "_persist_cleanup_only",
-                                side_effect=failure,
+                                new=failed_seam,
                             )
                         )
                     if seam == "_persist_terminal":
@@ -1192,7 +1302,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                             mock.patch.object(
                                 service,
                                 "_persist_terminal",
-                                side_effect=failure,
+                                new=failed_seam,
                             )
                         )
 
@@ -1217,6 +1327,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                         service.RUNNER_FAILURE_MESSAGE,
                     )
                     self.assertNotIn("sensitive", str(raised.exception))
+                    failed_seam.assert_called_once()
                     generation = fixture.generation(1)
                     self.assertEqual(generation["state"], "pending")
                     self.assertIsNone(generation["observation"])
@@ -1225,7 +1336,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
     def test_post_t1_boundary_preserves_storage_error_code(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
-            prepared = fixture.prepared()
+            prepared = fixture.prepared_for_service_fault()
             review = ReviewTargetResult(task={}, changed_fields=[], event={})
             intent = SimpleNamespace(review=review)
             failure = StorageError(
@@ -1281,7 +1392,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
                     failure_type=failure_type.__name__,
                 ), tempfile.TemporaryDirectory() as temporary:
                     fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
-                    prepared = fixture.prepared()
+                    prepared = fixture.prepared_for_service_fault()
                     paths = service._runner_paths(fixture.target)
                     with service.zero_wait_runner_lock(paths):
                         intent = service._persist_launch_intent(
@@ -1348,7 +1459,7 @@ class VerificationRunnerServiceTests(unittest.TestCase):
     def test_restart_boundary_preserves_storage_error_code(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = RunnerServiceFixture(Path(temporary), real_initialization=not uses_current_database_fixture(self))
-            prepared = fixture.prepared()
+            prepared = fixture.prepared_for_service_fault()
             paths = service._runner_paths(fixture.target)
             with service.zero_wait_runner_lock(paths):
                 intent = service._persist_launch_intent(fixture.target, prepared)

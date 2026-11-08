@@ -480,6 +480,10 @@ def record_task_transition(
             connection.execute(f"RELEASE SAVEPOINT {activity_savepoint}")
             return
         except sqlite3.Error as exc:
+            if not connection.in_transaction:
+                # The owning Task was rolled back too; this is not an optional
+                # advisory-only failure and its original cause must survive.
+                raise
             connection.execute(f"ROLLBACK TO SAVEPOINT {activity_savepoint}")
             connection.execute(f"RELEASE SAVEPOINT {activity_savepoint}")
             if is_sqlite_busy_or_locked(exc):
@@ -563,6 +567,8 @@ def record_task_transition(
             ),
         )
     except sqlite3.Error as exc:
+        if not connection.in_transaction:
+            raise
         connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
         if is_sqlite_busy_or_locked(exc):
             raise operational_sqlite_error(
@@ -572,7 +578,8 @@ def record_task_transition(
     except OSError:
         connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
     finally:
-        connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+        if connection.in_transaction:
+            connection.execute(f"RELEASE SAVEPOINT {savepoint}")
 
 
 def _parse_numstat(payload: bytes) -> tuple[set[bytes], int | None] | None:

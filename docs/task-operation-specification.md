@@ -405,6 +405,23 @@ review-pending/done. Once review begins, including after reopen, tier may only
 stay or rise. Invalid downgrade is `review_tier_downgrade_forbidden`.
 Successful change appends `review_tier_changed` with old/new tier and reason.
 
+Task registration (including a batch), edits with or without a note, Contract
+edits, completion and reopen each preserve operation-level atomicity. The Task
+rows, related events, ownership, derived state and transition bookkeeping are
+one rollback scope, including the repository's final reread. A caller catching
+an operation failure and committing its outer transaction cannot retain only
+part of that failed operation. A successful rollback of that slice preserves
+earlier outer-transaction changes; SQLite's whole-transaction rollback removes
+those earlier changes too. Cleanup must retain the original failure rather
+than replace it with an error for an already removed Savepoint.
+
+Known lane/order collisions are checked under the writer lock and remain
+`invalid_argument`. Explicit Contract pointer races retain `contract_write_conflict`.
+An otherwise unclassified storage constraint failure is `internal_error`, not
+evidence of invalid caller input. Public errors contain neither SQL nor the raw
+SQLite exception. This does not change the normal CLI's outer rollback, gates,
+ownership rules or schema, and adds no automatic retry.
+
 ### Session Ownership And Recovery
 
 The CLI reads and validates canonical UUID `CODEX_THREAD_ID` once per invocation
@@ -780,7 +797,9 @@ Missing coverage or dirty/uncertain/non-Git endpoints and overlapping active
 work produce `unknown`, never inference. Optional basis capture on the first
 in-progress write is best-effort and never blocks start. An absent/disabled
 profile performs no Git work; disabling after a prior basis may retain only
-hidden activity counters.
+hidden activity counters. Best-effort advisory handling applies only while
+the owning transaction survives: a whole-transaction storage abort fails the
+Task operation and retains its original cause.
 
 The basis captures project/subject activity generations and
 `other_active_at_capture`; later attribution is exclusive only when both

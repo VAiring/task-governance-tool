@@ -34,6 +34,10 @@ the source-query consumers borrow their caller's admitted snapshot as before.
 async_backup_repository reads the restoration epoch through the existing
 observed control snapshot, or a zero-wait sqlite_connection.connect_readonly
 for runtime observation. It adds no native dispatch or unobserved connection.
+
+tasks and contracts borrow the existing writer. Their shared Task savepoint
+cleanup replaces duplicated SQL dispatch without bypassing the observed
+connection; the outer caller still owns commit/close.
 """
 import ast
 import json

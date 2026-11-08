@@ -61,9 +61,30 @@ not raw logs.
 
 Schema 28 adds `note_body` to the same Task event. `create_task_event` stores the
 validated accepted body separately from `note_event_summary`; it does not widen
-the summary limit. Every note-bearing edit creates its event, rereads its Task
-and records ownership transitions inside the existing Task-edit savepoint.
+the summary limit. Every edit, with or without a note, creates its event,
+rereads its Task and records transition bookkeeping inside one Task-write
+savepoint. Registration, batch registration, completion and reopen use the
+same private savepoint boundary in `tasks.py`; Contract edits include their
+inner Contract writer and subsequent transition bookkeeping in that boundary.
 Failure rolls back that complete slice even if the outer caller later commits.
+
+Savepoint cleanup checks actual `in_transaction` before rollback/release.
+SQLite may already have aborted the entire transaction; then cleanup issues no
+SQL and the original failure survives. If rollback of a still-active slice
+itself fails, the unusable transaction is rolled back (or the connection is
+closed if rollback fails), preserving the operation failure. This fallback
+does not roll back a healthy outer transaction. Successful repository calls
+release only their own savepoint and never commit the caller's transaction.
+Nested Contract cleanup follows the same rule. Effort's optional bookkeeping
+may absorb its existing local advisory failures only while the Task's owning
+transaction still exists; whole-transaction abort propagates.
+
+Single/batch add and edit test canonical lane/order collisions before changing
+the row, under the already-held writer lock. Thus known input conflicts do not
+depend on SQLite exception text or an arbitrary constraint failure. Unknown
+`IntegrityError` becomes a sanitized `internal_error` with the original Python
+cause retained internally, including Contract insertions. Explicit row-count
+and current-basis conflict checks keep their existing domain error codes.
 
 `validated_event_note` checks stored text without trimming or reconstructing it,
 using the existing note limit/privacy validator and closed event types. The

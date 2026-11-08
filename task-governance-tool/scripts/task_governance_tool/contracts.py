@@ -25,6 +25,7 @@ from task_governance_tool.storage import (
 from task_governance_tool.tasks import (
     TaskEditBasisPrecommitValidator,
     TaskRepositoryError,
+    _rollback_task_savepoint,
     bounded_transition_summary,
     create_task_event,
     read_internal_task as read_validated_internal_task,
@@ -224,8 +225,8 @@ def add_initial_contract(
         )
     except sqlite3.IntegrityError as exc:
         raise TaskRepositoryError(
-            "contract_write_conflict",
-            "Task Contract revision conflicted with current state",
+            "internal_error",
+            "Task Contract storage constraints could not be satisfied",
         ) from exc
     if cursor.rowcount != 1:
         raise TaskRepositoryError(
@@ -263,8 +264,7 @@ def _read_internal_task(
 
 
 def _rollback_savepoint(connection: sqlite3.Connection, savepoint: str) -> None:
-    connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
-    connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+    _rollback_task_savepoint(connection, savepoint)
 
 
 def _activate_revision_zero(
@@ -399,8 +399,8 @@ def _activate_revision_zero(
     except sqlite3.IntegrityError as exc:
         _rollback_savepoint(connection, savepoint)
         raise TaskRepositoryError(
-            "contract_write_conflict",
-            "Task Contract activation conflicted with current state",
+            "internal_error",
+            "Task Contract storage constraints could not be satisfied",
         ) from exc
     except Exception:
         _rollback_savepoint(connection, savepoint)
@@ -690,8 +690,8 @@ def _later_revision(
     except sqlite3.IntegrityError as exc:
         _rollback_savepoint(connection, savepoint)
         raise TaskRepositoryError(
-            "contract_write_conflict",
-            "Task Contract revision conflicted with current state",
+            "internal_error",
+            "Task Contract storage constraints could not be satisfied",
         ) from exc
     except Exception:
         _rollback_savepoint(connection, savepoint)

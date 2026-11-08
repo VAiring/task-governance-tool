@@ -48,7 +48,7 @@
     },
     "contracts.py": {
       "attributes": {
-        "execute": 12,
+        "execute": 10,
         "fetchone": 2
       },
       "kind": "observed_connection"
@@ -477,7 +477,7 @@
     },
     "tasks.py": {
       "attributes": {
-        "execute": 37,
+        "execute": 19,
         "fetchall": 3,
         "fetchone": 7
       },

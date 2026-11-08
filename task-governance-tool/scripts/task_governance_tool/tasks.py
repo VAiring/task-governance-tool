@@ -8,6 +8,7 @@ import json
 import secrets
 import sqlite3
 from collections.abc import Callable, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -600,6 +601,45 @@ def ensure_git_preflight_outside_transaction(
 TASK_BATCH_LIMIT = 64
 
 
+def _rollback_task_savepoint(connection: sqlite3.Connection, savepoint: str) -> None:
+    """Clean a failed slice without replacing its exception or committing it."""
+    try:
+        if not connection.in_transaction:
+            # SQLite RAISE(ROLLBACK), for example, removed every savepoint.
+            return
+        connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+        connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+    except sqlite3.Error:
+        # Isolation could not be restored. Do not leave a partial slice that a
+        # caller could commit. Healthy outer transactions never take this path.
+        try:
+            connection.rollback()
+        except sqlite3.Error:
+            try:
+                connection.close()
+            except (sqlite3.Error, OSError):
+                # Keep the operation's original failure, including when the
+                # connection was already closed or POSIX descriptor retirement
+                # fails after the native connection has closed.
+                pass
+
+
+@contextmanager
+def _task_write_savepoint(connection: sqlite3.Connection):
+    savepoint = f"taskgov_write_{secrets.token_hex(4)}"
+    connection.execute(f"SAVEPOINT {savepoint}")
+    try:
+        yield
+        connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+    except BaseException as exc:
+        _rollback_task_savepoint(connection, savepoint)
+        if isinstance(exc, sqlite3.IntegrityError):
+            raise TaskRepositoryError(
+                "internal_error", "Task storage constraints could not be satisfied",
+            ) from exc
+        raise
+
+
 @dataclass(frozen=True)
 class _PreparedTaskAdd:
     task_id: str
@@ -679,19 +719,12 @@ def add_tasks(
         for values in task_inputs
     ]
     begin_task_write(connection, database_target, operation_local=True)
-    savepoint = f"taskgov_batch_{secrets.token_hex(4)}"
-    connection.execute(f"SAVEPOINT {savepoint}")
-    try:
+    with _task_write_savepoint(connection):
         results = [
             _add_prepared_task(connection, project, item, effort_profile=effort_profile,
                                database_target=database_target, caller=caller)
             for item in prepared
         ]
-    except Exception:
-        connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
-        connection.execute(f"RELEASE SAVEPOINT {savepoint}")
-        raise
-    connection.execute(f"RELEASE SAVEPOINT {savepoint}")
     return results
 
 
@@ -757,10 +790,16 @@ def _add_prepared_task(
         )
         completion_history_column = ", completion_history_coverage"
         completion_history_value = ", :completion_history_coverage"
-    savepoint = f"taskgov_ordering_{secrets.token_hex(4)}"
     contract_write: dict[str, Any] | None = None
-    connection.execute(f"SAVEPOINT {savepoint}")
-    try:
+    with _task_write_savepoint(connection):
+        if row["kind"] == "sequential" and canonical_lane_order_conflict(
+            connection, project_id=project.project_id, task_id=task_id,
+            lane=str(row["lane"]), lane_order=int(row["lane_order"]),
+        ):
+            raise TaskRepositoryError(
+                "invalid_argument",
+                "task conflicts with an existing canonical sequential lane order",
+            )
         connection.execute(
             f"""
             INSERT INTO tasks(
@@ -814,17 +853,6 @@ def _add_prepared_task(
                 status=str(row["status"]), caller=caller, now=now,
             )
         if row["kind"] == "sequential":
-            if canonical_lane_order_conflict(
-                connection,
-                project_id=project.project_id,
-                task_id=task_id,
-                lane=str(row["lane"]),
-                lane_order=int(row["lane_order"]),
-            ):
-                raise TaskRepositoryError(
-                    "invalid_argument",
-                    "task conflicts with an existing canonical sequential lane order",
-                )
             invalid_task_id = first_out_of_order_advanced_task(
                 connection,
                 project_id=project.project_id,
@@ -885,25 +913,12 @@ def _add_prepared_task(
             source_schema_version=schema_version,
             expected_project_id=project.project_id,
         )
-    except sqlite3.IntegrityError as exc:
-        connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
-        connection.execute(f"RELEASE SAVEPOINT {savepoint}")
-        raise TaskRepositoryError(
-            "invalid_argument",
-            "task violates database constraints, such as duplicate sequential lane order",
-        ) from exc
-    except Exception:
-        connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
-        connection.execute(f"RELEASE SAVEPOINT {savepoint}")
-        raise
-    else:
-        connection.execute(f"RELEASE SAVEPOINT {savepoint}")
-
-    return AddTaskResult(
-        task=task_ownership.project_tasks(connection, [row_to_task(task)], caller)[0],
-        event=event,
-        contract_write=contract_write,
-    )
+        result = AddTaskResult(
+            task=task_ownership.project_tasks(connection, [row_to_task(task)], caller)[0],
+            event=event,
+            contract_write=contract_write,
+        )
+    return result
 
 
 def list_tasks(
@@ -2508,9 +2523,7 @@ def reopen_done_task(
         note=None,
     )
 
-    savepoint = f"taskgov_reopen_{secrets.token_hex(4)}"
-    connection.execute(f"SAVEPOINT {savepoint}")
-    try:
+    with _task_write_savepoint(connection):
         if latest_cycle is None:
             latest_cycle = insert_completion_cycle_locked(
                 connection,
@@ -2564,19 +2577,6 @@ def reopen_done_task(
             occurred_at=now,
             preflight=effort_preflight,
         )
-    except sqlite3.IntegrityError as exc:
-        connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
-        connection.execute(f"RELEASE SAVEPOINT {savepoint}")
-        raise TaskRepositoryError(
-            "invalid_argument",
-            "task violates database constraints while reopening",
-        ) from exc
-    except Exception:
-        connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
-        connection.execute(f"RELEASE SAVEPOINT {savepoint}")
-        raise
-    else:
-        connection.execute(f"RELEASE SAVEPOINT {savepoint}")
     changed_fields = [
         field
         for field in persisted_changed_fields
@@ -3058,33 +3058,34 @@ def edit_task(
             database_target=database_target,
             operation_local=operation_local,
         )
-        result = edit_contract(
-            connection,
-            project,
-            locked_existing,
-            caller_edit_input=edit_input,
-            contract_input=contract_input,
-            basis_precommit_validator=basis_precommit_validator,
-            caller=caller,
-            ownership_basis=ownership_basis,
-        )
-        if result.event is not None:
-            record_task_transition(
+        with _task_write_savepoint(connection):
+            result = edit_contract(
                 connection,
                 project,
-                task_id=normalized_task_id,
-                previous_status=str(locked_existing["status"]),
-                current_status=str(result.task["status"]),
-                profile=effort_profile,
-                occurred_at=str(result.event["created_at"]),
-                preflight=effort_preflight,
+                locked_existing,
+                caller_edit_input=edit_input,
+                contract_input=contract_input,
+                basis_precommit_validator=basis_precommit_validator,
+                caller=caller,
+                ownership_basis=ownership_basis,
             )
-        return EditTaskResult(
-            task=result.task,
-            changed_fields=result.changed_fields,
-            event=result.event,
-            contract_write=result.contract_write.to_dict(),
-        )
+            if result.event is not None:
+                record_task_transition(
+                    connection,
+                    project,
+                    task_id=normalized_task_id,
+                    previous_status=str(locked_existing["status"]),
+                    current_status=str(result.task["status"]),
+                    profile=effort_profile,
+                    occurred_at=str(result.event["created_at"]),
+                    preflight=effort_preflight,
+                )
+            return EditTaskResult(
+                task=result.task,
+                changed_fields=result.changed_fields,
+                event=result.event,
+                contract_write=result.contract_write.to_dict(),
+            )
 
     normalized = validate_task_edit_input(**edit_input)
     provided_fields = set(normalized)
@@ -3515,9 +3516,7 @@ def edit_task(
         affected_lanes.add(str(updated["lane"]))
     event: dict[str, Any] | None = None
     task: dict[str, Any] | None = None
-    savepoint = f"taskgov_ordering_{secrets.token_hex(4)}"
-    connection.execute(f"SAVEPOINT {savepoint}")
-    try:
+    with _task_write_savepoint(connection):
         completion_cycle_id: str | None = None
         if ownership_basis is not None and completing:
             task_ownership.require_mutation(connection, ownership_basis, caller)
@@ -3556,6 +3555,15 @@ def edit_task(
                 task_ownership.link_completion_cycle(
                     connection, ownership_basis, completion_cycle_id=completion_cycle_id,
                 )
+        if updated["kind"] == "sequential" and (lane_metadata_changed or advanced_transition):
+            if canonical_lane_order_conflict(
+                connection, project_id=project.project_id, task_id=normalized_task_id,
+                lane=str(updated["lane"]), lane_order=int(updated["lane_order"]),
+            ):
+                raise TaskRepositoryError(
+                    "invalid_argument",
+                    "task conflicts with an existing canonical sequential lane order",
+                )
         update_task_row(
             connection,
             task_id=normalized_task_id,
@@ -3569,21 +3577,6 @@ def edit_task(
                 task_id=normalized_task_id,
                 created_at=now,
             )
-        if (
-            updated["kind"] == "sequential"
-            and (lane_metadata_changed or advanced_transition)
-            and canonical_lane_order_conflict(
-                connection,
-                project_id=project.project_id,
-                task_id=normalized_task_id,
-                lane=str(updated["lane"]),
-                lane_order=int(updated["lane_order"]),
-            )
-        ):
-            raise TaskRepositoryError(
-                "invalid_argument",
-                "task conflicts with an existing canonical sequential lane order",
-            )
         invalid_task_id = first_out_of_order_advanced_task(
             connection,
             project_id=project.project_id,
@@ -3594,53 +3587,6 @@ def edit_task(
                 "sequential_predecessor_incomplete",
                 "sequential lane contains active, review-pending, or done work with an incomplete predecessor",
             )
-        if completing or add_note is not None:
-            event = create_task_event(
-                connection,
-                project_id=project.project_id,
-                task_id=normalized_task_id,
-                event_type=event_type,
-                summary=summary,
-                created_at=now,
-                completion_cycle_id=completion_cycle_id,
-                note_body=add_note,
-            )
-            task = read_task(
-                connection,
-                project.project_id,
-                normalized_task_id,
-                caller=caller,
-            )
-            if task is None:
-                raise TaskRepositoryError(
-                    "internal_error",
-                    "task was not readable after update",
-                )
-            record_task_transition(
-                connection,
-                project,
-                task_id=normalized_task_id,
-                previous_status=str(existing["status"]),
-                current_status=str(task["status"]),
-                profile=effort_profile,
-                occurred_at=now,
-                preflight=effort_preflight,
-            )
-    except sqlite3.IntegrityError as exc:
-        connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
-        connection.execute(f"RELEASE SAVEPOINT {savepoint}")
-        raise TaskRepositoryError(
-            "invalid_argument",
-            "task violates database constraints, such as duplicate sequential lane order",
-        ) from exc
-    except Exception:
-        connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
-        connection.execute(f"RELEASE SAVEPOINT {savepoint}")
-        raise
-    else:
-        connection.execute(f"RELEASE SAVEPOINT {savepoint}")
-
-    if not completing and add_note is None:
         event = create_task_event(
             connection,
             project_id=project.project_id,
@@ -3648,8 +3594,15 @@ def edit_task(
             event_type=event_type,
             summary=summary,
             created_at=now,
+            completion_cycle_id=completion_cycle_id,
+            note_body=add_note,
         )
-        task = read_task(connection, project.project_id, normalized_task_id, caller=caller)
+        task = read_task(
+            connection,
+            project.project_id,
+            normalized_task_id,
+            caller=caller,
+        )
         if task is None:
             raise TaskRepositoryError(
                 "internal_error",
@@ -3664,11 +3617,6 @@ def edit_task(
             profile=effort_profile,
             occurred_at=now,
             preflight=effort_preflight,
-        )
-    if event is None or task is None:
-        raise TaskRepositoryError(
-            "internal_error",
-            "task completion write did not produce an event and task",
         )
     return EditTaskResult(task=task, changed_fields=changed_fields, event=event)
 

@@ -1394,6 +1394,17 @@ repeating the detail inventory. These checks do not replace
 installed-CLI, no-write, physical-isolation, migration, upgrade/rollback, or
 release-acceptance behavior tests.
 
+Document-contract tests separate local byte/Markdown properties from the
+repository graph. Every required owner's encoding mutations still exercise
+real regular files through the strict reader; owner titles, live-state tokens,
+inert route markup, and history-warning grammar use small inputs to the same
+checker functions. Complete-checker fixtures retain dispatch to every owner,
+all three encoding failures, representative marker/visibility failures, and
+the file/link/anchor, current/conditional/history, registry and index relations.
+Read failure and path admission remain file-backed tests; parsing does not
+introduce shared mutable results, a validation cache, or a filesystem-safety
+shortcut. The real repository's deterministic read-only and CLI checks remain.
+
 The deterministic repository runner assigns every discovered test module to
 exactly one base lane:
 

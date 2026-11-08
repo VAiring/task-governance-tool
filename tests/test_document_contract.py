@@ -953,16 +953,24 @@ class DocumentContractTests(unittest.TestCase):
             ),
         )
         for name, replacement in inert_routes:
-            with self.subTest(inert_route=name), self.fixture() as root:
-                self.replace(
-                    root,
+            # These twelve cases test Markdown visibility, not other owners.
+            # The full missing-route, reference-route and container-error cases
+            # below retain the route consumer's fail-closed behavior.
+            with self.subTest(inert_route=name):
+                issues = []
+                scan = contract._scan(
                     contract.AUTHORITY,
-                    "- [AGENTS.md](../AGENTS.md)",
-                    replacement,
+                    "## Mandatory Start Set\n\n" + replacement + "\n",
+                    issues,
                 )
-                codes = self.codes(contract.check_document_contract(root))
-                self.assertIn("authority_route", codes)
-                self.assertNotIn("markdown_structure", codes)
+                self.assertFalse([link for link in scan.links if link.route_eligible])
+                self.assertFalse(issues, issues)
+
+        # A visible but ineligible link still cannot satisfy a required route.
+        with self.fixture() as root:
+            self.replace(root, contract.AUTHORITY, "- [AGENTS.md](../AGENTS.md)",
+                         "> - [AGENTS.md](../AGENTS.md)")
+            self.assertIn("authority_route", self.codes(contract.check_document_contract(root)))
 
         with self.fixture() as root:
             self.replace(
@@ -1173,15 +1181,16 @@ class DocumentContractTests(unittest.TestCase):
 
     def test_active_owner_roles_and_live_state_exclusion_are_structural(self):
         for relative in EXPECTED_METRIC_DOCS:
-            with self.subTest(owner=relative), self.fixture() as root:
-                path = root.joinpath(*relative.split("/"))
-                lines = path.read_text(encoding="utf-8").splitlines()
-                lines[0] = "# Wrong Document Role"
-                path.write_bytes(("\n".join(lines) + "\n").encode("utf-8"))
-                self.assertIn(
-                    "document_role",
-                    self.codes(contract.check_document_contract(root)),
-                )
+            with self.subTest(owner=relative):
+                title = (ROOT / relative).read_text(encoding="utf-8").splitlines()[0]
+                issues = []
+                scan = contract._scan(relative, title + "\n", issues)
+                contract._roles({relative: scan}, None, issues)
+                self.assertFalse(issues, issues)
+                scan = contract._scan(relative, "# Wrong Document Role\n", issues)
+                contract._roles({relative: scan}, None, issues)
+                self.assertEqual([(item.code, item.subject) for item in issues],
+                                 [("document_role", relative)])
 
         live_fragments = (
             "\nstatus: in_progress\n",
@@ -1190,12 +1199,27 @@ class DocumentContractTests(unittest.TestCase):
             "\n| status | done |\n",
         )
         for fragment in live_fragments:
-            with self.subTest(fragment=fragment.strip()), self.fixture() as root:
-                self.append(root, "plan.md", fragment)
-                self.assertIn(
-                    "volatile_state",
-                    self.codes(contract.check_document_contract(root)),
-                )
+            with self.subTest(fragment=fragment.strip()):
+                issues = []
+                title = (ROOT / "plan.md").read_text(encoding="utf-8").splitlines()[0]
+                scan = contract._scan("plan.md", title + "\n" + fragment, issues)
+                contract._roles({"plan.md": scan}, None, issues)
+                self.assertEqual([(item.code, item.subject) for item in issues],
+                                 [("volatile_state", "plan.md")])
+
+        # One complete run retains dispatch to every metric owner, not just a
+        # sample path; registry overlap/conditional routes stay in their full tests.
+        with self.fixture() as root:
+            for relative in EXPECTED_METRIC_DOCS:
+                path = root / relative
+                lines = path.read_text(encoding="utf-8").splitlines()
+                lines[0] = "# Wrong Document Role"
+                path.write_bytes(("\n".join(lines) + "\n").encode("utf-8"))
+            self.append(root, "plan.md", live_fragments[0])
+            result = contract.check_document_contract(root)
+            self.assertEqual({item.subject for item in result.issues if item.code == "document_role"},
+                             set(EXPECTED_METRIC_DOCS))
+            self.assertIn("volatile_state", self.codes(result))
 
         with self.fixture() as root:
             self.append(root, "plan.md", "\nThe current task is TG-M99.1.\n")
@@ -1251,14 +1275,8 @@ class DocumentContractTests(unittest.TestCase):
             ),
         )
         for name, body in structural_forms:
-            with self.subTest(structural_form=name), self.fixture() as root:
-                self.add_history_capture(
-                    root,
-                    f"v0.13.0/{name}",
-                    body,
-                    index_count=1,
-                )
-                self.assertTrue(contract.check_document_contract(root).ok)
+            with self.subTest(structural_form=name):
+                self.assertTrue(contract._first_structural_history_marker(body))
 
         invalid_bodies = (
             ("ordinary", "# Capture\n\nOrdinary prose.\n"),
@@ -1312,16 +1330,15 @@ class DocumentContractTests(unittest.TestCase):
             ),
         )
         for name, body in invalid_bodies:
-            with self.subTest(history_body=name), self.fixture() as root:
-                self.add_history_capture(
-                    root,
-                    f"v0.13.0/invalid-{name}.md",
-                    body,
-                    index_count=1,
-                )
-                self.assertIn(
-                    "history_banner", self.codes(contract.check_document_contract(root))
-                )
+            with self.subTest(history_body=name):
+                self.assertFalse(contract._first_structural_history_marker(body))
+
+        # Marker grammar is local above; enumeration, attribution, and exact
+        # index multiplicity remain real-file whole-checker tests here.
+        with self.fixture() as root:
+            self.add_history_capture(root, "v0.13.0/invalid-ordinary.md",
+                                     invalid_bodies[0][1], index_count=1)
+            self.assertIn("history_banner", self.codes(contract.check_document_contract(root)))
 
         for index_count in (0, 2):
             with self.subTest(index_count=index_count), self.fixture() as root:
@@ -1389,21 +1406,89 @@ class DocumentContractTests(unittest.TestCase):
                 else:
                     self.assertIn("search_policy", self.codes(result))
 
+    def test_small_scans_keep_path_content_and_mutable_results_independent(self):
+        text = '# Local\n\n<a id="same"></a>\n<a id="same"></a>\n'
+        first_issues, second_issues = [], []
+        first = contract._scan("README.md", text, first_issues)
+        second = contract._scan("plan.md", text, second_issues)
+        self.assertEqual([(item.code, item.subject) for item in first_issues],
+                         [("anchor_duplicate", "README.md")])
+        self.assertEqual([(item.code, item.subject) for item in second_issues],
+                         [("anchor_duplicate", "plan.md")])
+        first.anchors.clear()
+        first.lines.clear()
+        self.assertIn("same", second.anchors)
+        self.assertTrue(second.lines)
+        issues = []
+        changed = contract._scan("README.md", "# Changed\n", issues)
+        self.assertFalse(issues)
+        self.assertFalse(changed.anchors)
+        self.assertEqual(changed.headings, [(1, "# Changed", 0)])
+
+    def test_reader_failure_and_path_admission_remain_file_backed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "README.md"
+            path.write_bytes(b"# Readable\n")
+            for relative in ("../README.md", "./README.md", "README.md/child", "missing.md"):
+                with self.subTest(unsafe_or_missing=relative):
+                    issues = []
+                    self.assertIsNone(contract._read(root, relative, issues))
+                    self.assertEqual([item.code for item in issues], ["document_unavailable"])
+            # Portable injected I/O failure after real regular-file admission.
+            with mock.patch.object(Path, "read_bytes", side_effect=PermissionError("unreadable")):
+                issues = []
+                self.assertIsNone(contract._read(root, "README.md", issues))
+                self.assertEqual([item.code for item in issues], ["document_encoding"])
+            self.assertEqual(path.read_bytes(), b"# Readable\n")
+
+        with self.fixture() as root:
+            read_bytes = Path.read_bytes
+            def fail_one(path):
+                if path == root / "README.md":
+                    raise PermissionError("unreadable")
+                return read_bytes(path)
+            with mock.patch.object(Path, "read_bytes", fail_one):
+                result = contract.check_document_contract(root)
+            self.assertEqual([(item.code, item.subject) for item in result.issues],
+                             [("document_encoding", "README.md")])
+
     def test_required_documents_reject_invalid_encoding_and_framing(self):
         mutations = (
             ("invalid_utf8", lambda raw: b"\xff" + raw),
             ("utf8_bom", lambda raw: b"\xef\xbb\xbf" + raw),
             ("missing_final_lf", lambda raw: raw.rstrip(b"\n")),
         )
-        for relative in EXPECTED_METRIC_DOCS:
-            for name, mutate in mutations:
-                with self.subTest(document=relative, encoding_case=name), self.fixture() as root:
-                    path = root.joinpath(*relative.split("/"))
+        # Every original owner/byte mutation is retained at the real reader.
+        # Independent whole-checker cases below prove wiring for all owners.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for relative in EXPECTED_METRIC_DOCS:
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                for name, mutate in mutations:
+                    with self.subTest(document=relative, encoding_case=name):
+                        path.write_bytes(mutate(b"# Local input\n"))
+                        issues = []
+                        contract._read(root, relative, issues)
+                        self.assertEqual([(item.code, item.subject) for item in issues],
+                                         [("document_encoding", relative)])
+                # No stale success or failure survives a content change.
+                for raw in (b"# First\r\n", b"# Changed\n"):
+                    path.write_bytes(raw)
+                    issues = []
+                    self.assertEqual(contract._read(root, relative, issues),
+                                     (raw, raw.decode("utf-8").replace("\r\n", "\n")))
+                    self.assertFalse(issues)
+
+        for name, mutate in mutations:
+            with self.subTest(integration=name), self.fixture() as root:
+                for relative in EXPECTED_METRIC_DOCS:
+                    path = root / relative
                     path.write_bytes(mutate(path.read_bytes()))
-                    self.assertIn(
-                        "document_encoding",
-                        self.codes(contract.check_document_contract(root)),
-                    )
+                result = contract.check_document_contract(root)
+                self.assertEqual({item.subject for item in result.issues if item.code == "document_encoding"},
+                                 set(EXPECTED_METRIC_DOCS))
 
         with self.fixture() as root:
             self.append(

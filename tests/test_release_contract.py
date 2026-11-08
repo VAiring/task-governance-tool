@@ -16,7 +16,9 @@ from tools.release_contract import (
     check_release_contract,
     collect_runtime_contract,
     forbidden_tracked_artifact,
+    _workflow_checks,
 )
+from tests.package_fixture_support import read_fresh_files
 from tools.test_lanes import (
     CI_CHECK_INVOCATION,
     CI_LANE_INVOCATION,
@@ -52,21 +54,21 @@ def tracked_paths() -> tuple[str, ...]:
 RUNTIME_CONTRACT = collect_runtime_contract()
 
 
-def copy_release_fixture(destination: Path) -> Path:
+def copy_release_fixture(destination: Path, *, source_root: Path = ROOT) -> Path:
     fixture = destination / "repository"
     fixture.mkdir()
-    shutil.copy2(ROOT / "LICENSE", fixture / "LICENSE")
-    shutil.copy2(ROOT / "README.md", fixture / "README.md")
+    shutil.copy2(source_root / "LICENSE", fixture / "LICENSE")
+    shutil.copy2(source_root / "README.md", fixture / "README.md")
 
     (fixture / ".github" / "workflows").mkdir(parents=True)
     shutil.copy2(
-        ROOT / ".github" / "workflows" / "ci.yml",
+        source_root / ".github" / "workflows" / "ci.yml",
         fixture / ".github" / "workflows" / "ci.yml",
     )
 
     (fixture / "tools").mkdir()
     for name in ("release_contract.py", "document_contract.py", "test_lanes.py"):
-        shutil.copy2(ROOT / "tools" / name, fixture / "tools" / name)
+        shutil.copy2(source_root / "tools" / name, fixture / "tools" / name)
 
     (fixture / "docs" / "releases").mkdir(parents=True)
     for relative in (
@@ -78,13 +80,13 @@ def copy_release_fixture(destination: Path) -> Path:
         "releases/v0.12.0.md",
         "releases/v0.13.0.md",
     ):
-        source = ROOT / "docs" / Path(*relative.split("/"))
+        source = source_root / "docs" / Path(*relative.split("/"))
         target = fixture / "docs" / Path(*relative.split("/"))
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
 
     shutil.copytree(
-        SKILL_ROOT,
+        source_root / "task-governance-tool",
         fixture / "task-governance-tool",
         ignore=shutil.ignore_patterns(
             "config",
@@ -94,6 +96,9 @@ def copy_release_fixture(destination: Path) -> Path:
             ".pytest_cache",
         ),
     )
+    # Preserve the original manifest, even if missing or corrupt. Release
+    # qualification must not use the manifest-regenerating current basis.
+    read_fresh_files(path for path in fixture.rglob("*") if path.is_file())
     return fixture
 
 
@@ -695,20 +700,13 @@ class ReleaseContractCheckerTests(unittest.TestCase):
             ),
         )
         for name, mutate, expected_code in mutations:
-            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
-                fixture = copy_release_fixture(Path(temporary))
-                fixture_workflow = fixture / ".github" / "workflows" / "ci.yml"
-                original = fixture_workflow.read_text(encoding="utf-8")
+            with self.subTest(name=name):
+                original = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
                 changed = mutate(original)
                 self.assertNotEqual(changed, original)
-                fixture_workflow.write_text(
-                    changed,
-                    encoding="utf-8",
-                )
-
-                result = check_fixture(fixture)
-
-                self.assertIn(expected_code, issue_codes(result), result.issues)
+                issues = []
+                _workflow_checks(changed, issues)
+                self.assertIn(expected_code, {issue.code for issue in issues}, issues)
 
         with tempfile.TemporaryDirectory() as temporary:
             fixture = copy_release_fixture(Path(temporary))
@@ -719,24 +717,18 @@ class ReleaseContractCheckerTests(unittest.TestCase):
             self.assertIn("required_file_missing", issue_codes(result))
 
     def test_ci_platform_description_wording_can_change(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            fixture = copy_release_fixture(Path(temporary))
-            fixture_workflow = fixture / ".github" / "workflows" / "ci.yml"
-            text = fixture_workflow.read_text(encoding="utf-8")
-            original = (
-                "description: Run platform checks only "
-                "(not a release candidate)"
-            )
-            self.assertIn(original, text)
-            fixture_workflow.write_text(
-                text.replace(original, "description: Initial OS smoke checks", 1),
-                encoding="utf-8",
-                newline="\n",
-            )
-
-            result = check_fixture(fixture)
-
-            self.assertTrue(result.ok, result.issues)
+        text = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        original = (
+            "description: Run platform checks only "
+            "(not a release candidate)"
+        )
+        self.assertIn(original, text)
+        issues = []
+        versions = _workflow_checks(
+            text.replace(original, "description: Initial OS smoke checks", 1), issues
+        )
+        self.assertEqual(issues, [])
+        self.assertEqual(versions, ("3.12", "3.14"))
 
     def test_ci_initial_platform_and_full_candidate_boundaries_fail_closed(self):
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
@@ -840,19 +832,11 @@ class ReleaseContractCheckerTests(unittest.TestCase):
             ),
         )
         for name, original, changed, expected_code in mutations:
-            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
-                fixture = copy_release_fixture(Path(temporary))
-                fixture_workflow = fixture / ".github" / "workflows" / "ci.yml"
-                text = fixture_workflow.read_text(encoding="utf-8")
-                self.assertIn(original, text)
-                fixture_workflow.write_text(
-                    text.replace(original, changed, 1),
-                    encoding="utf-8",
-                )
-
-                result = check_fixture(fixture)
-
-                self.assertIn(expected_code, issue_codes(result), result.issues)
+            with self.subTest(name=name):
+                self.assertIn(original, workflow)
+                issues = []
+                _workflow_checks(workflow.replace(original, changed, 1), issues)
+                self.assertIn(expected_code, {issue.code for issue in issues}, issues)
 
     def test_uninjected_runtime_facts_fail_closed_for_another_repository(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -864,6 +848,93 @@ class ReleaseContractCheckerTests(unittest.TestCase):
             )
 
             self.assertIn("runtime_owner_mismatch", issue_codes(result))
+
+    def test_workflow_validation_remains_connected_to_real_release_checker(self):
+        original = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        cases = (
+            (original.replace("- main", "- release", 1), "ci_event_policy_invalid"),
+            (original.replace("  contents: read", "  contents: write", 1), "ci_test_policy_wiring_invalid"),
+            (original.replace("github.event_name == 'workflow_dispatch'", "github.event_name == 'push'", 1), "ci_candidate_gate_invalid"),
+            (original.replace("os: [ubuntu-24.04, macos-15]", "os: [ubuntu-24.04]", 1), "ci_platform_invalid"),
+            (original.replace("description: Run platform checks only (not a release candidate)", "description: Initial OS smoke checks", 1), None),
+        )
+        for text, code in cases:
+            with self.subTest(code=code), tempfile.TemporaryDirectory() as temporary:
+                fixture = copy_release_fixture(Path(temporary))
+                (fixture / ".github/workflows/ci.yml").write_text(
+                    text, encoding="utf-8", newline="\n"
+                )
+                expected = []
+                versions = _workflow_checks(text, expected)
+                result = check_fixture(fixture)
+                self.assertEqual(result.issues, tuple(sorted(set(expected))))
+                self.assertEqual(result.ci_python_versions, versions)
+                if code is None:
+                    self.assertTrue(result.ok, result.issues)
+                else:
+                    self.assertIn(code, issue_codes(result))
+
+    def test_workflow_missing_or_invalid_encoding_is_rejected_from_real_file(self):
+        for content, code in ((None, "required_file_missing"), (b"\xff", "required_file_invalid")):
+            with self.subTest(code=code), tempfile.TemporaryDirectory() as temporary:
+                fixture = copy_release_fixture(Path(temporary))
+                workflow = fixture / ".github/workflows/ci.yml"
+                if content is None:
+                    workflow.unlink()
+                else:
+                    workflow.write_bytes(content)
+                result = check_fixture(fixture)
+                self.assertIn((code, ".github/workflows/ci.yml"),
+                              {(issue.code, issue.subject) for issue in result.issues})
+
+    def test_copies_preserve_original_manifest_corruption_and_missing_manifest(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = copy_release_fixture(root)
+            manifest = source / "task-governance-tool/release-manifest.json"
+            original = manifest.read_bytes()
+            payload = json.loads(original)
+            payload["core_files"]["SKILL.md"] = "sha256:" + "0" * 64
+            manifest.write_text(json.dumps(payload), encoding="utf-8")
+            before = file_snapshot(source)
+            (root / "corrupt").mkdir()
+            copied = copy_release_fixture(root / "corrupt", source_root=source)
+            self.assertEqual(file_snapshot(copied), before)
+            self.assertEqual(file_snapshot(source), before)
+            self.assertNotEqual(manifest.read_bytes(), original)
+            self.assertIn("package_integrity_mismatch", issue_codes(check_fixture(copied)))
+            for relative, _ in before:
+                left, right = source / relative, copied / relative
+                self.assertFalse(left.samefile(right))
+                self.assertFalse(right.is_symlink())
+                self.assertEqual(right.stat().st_nlink, 1)
+            (copied / "task-governance-tool/SKILL.md").write_bytes(b"changed copy")
+            self.assertEqual(file_snapshot(source), before)
+            manifest.unlink()
+            (root / "missing").mkdir()
+            missing = copy_release_fixture(root / "missing", source_root=source)
+            self.assertFalse((missing / "task-governance-tool/release-manifest.json").exists())
+            self.assertIn("manifest_missing", issue_codes(check_fixture(missing)))
+
+    def test_real_git_inventory_rejects_untracked_packaged_core(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = copy_release_fixture(Path(temporary))
+            for arguments in (("init", "--quiet"), ("-c", "core.autocrlf=false", "add", "--", "task-governance-tool")):
+                subprocess.run(["git", "-C", str(fixture), *arguments], check=True,
+                               stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, timeout=30)
+            result = check_release_contract(fixture, runtime_contract=RUNTIME_CONTRACT)
+            self.assertTrue(result.ok, result.issues)
+            index_before = (fixture / ".git/index").read_bytes()
+            subprocess.run(["git", "-C", str(fixture), "rm", "--cached", "--", "task-governance-tool/SKILL.md"],
+                           check=True, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE, timeout=30)
+            index_changed = (fixture / ".git/index").read_bytes()
+            self.assertNotEqual(index_before, index_changed)
+            result = check_release_contract(fixture, runtime_contract=RUNTIME_CONTRACT)
+            self.assertIn("package_tracked_inventory_mismatch", issue_codes(result))
+            self.assertNotIn("package_integrity_mismatch", issue_codes(result))
+            self.assertEqual((fixture / ".git/index").read_bytes(), index_changed)
 
 
 def _replace_manifest_origin(fixture: Path, origin: str) -> None:

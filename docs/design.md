@@ -1370,7 +1370,16 @@ well as the underlying state; shared operations accept an explicit context
 registrar when the calling test owns their lifetime.
 
 Repository release consistency uses the same offline read-only checker from
-focused unit fixtures and CI. Negative fixtures independently cover a missing
+focused unit fixtures and CI. Workflow text combinations exercise its existing
+pure workflow checks directly; representative file-backed cases keep each
+diagnostic family and the successful route connected to the complete checker.
+Missing files and invalid encoding remain real-file tests. Release fixtures
+copy the source manifest verbatim, including corruption or absence, rather
+than using the manifest-regenerating current-package basis. They share only
+the bounded Windows fresh-file read preparation above; every fixture is an
+independent physical copy and every complete checker invocation still reads
+and hashes it. Current-repository and disposable Git-index tests retain real
+tracked-inventory inspection without injected inventory. Negative fixtures independently cover a missing
 manifest or declared file, extra packaged core, digest mismatch, license or
 manifest-license mismatch, invalid Skill/agent/manifest metadata, parser-to-
 document drift, missing or incorrect command-inventory references, and tracked

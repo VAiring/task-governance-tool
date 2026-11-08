@@ -60,15 +60,22 @@ class FrozenPackage:
         for path, entry in reversed(directories):
             if os.name != "nt" or not entry.mode & stat.S_IWRITE:
                 os.chmod(path, entry.mode)
-        # On Windows, first-open latency otherwise moves from manifest
-        # preparation into the unchanged serial product inspector. Overlap
-        # these ordinary reads; they calculate no digest and authorize no
-        # cached validation. Product checks still read and hash the real copy.
-        if os.name == "nt" and files:
+        read_fresh_files(files)
+        return destination
+
+
+def read_fresh_files(files) -> None:
+    """Overlap first reads of a caller's fresh independent physical copies.
+
+    This Windows-only preparation neither regenerates a manifest nor caches
+    validation or digests. Every checker still reads and hashes the real files.
+    """
+    if os.name == "nt":
+        files = tuple(files)
+        if files:
             with ThreadPoolExecutor(max_workers=min(8, len(files))) as executor:
                 for _ in executor.map(_read_fresh_file, files):
                     pass
-        return destination
 
 
 def _read_fresh_file(path: Path) -> None:

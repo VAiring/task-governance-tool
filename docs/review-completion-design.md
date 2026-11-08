@@ -3484,6 +3484,17 @@ the existing Receipt transaction before invoking the existing Packet handler
 for pass/full, with a fresh read connection and the recorded Receipt ID.
 Success data is `receipt` plus `review_preparation`; registration errors remain
 failures, while post-commit preparation errors are explicit partial success.
+The Receipt path uses deferred Packet text, retaining the validated Packet
+before presentation. Its presentation helper formats each component once,
+isolates formatter exceptions, and preserves the Receipt ID, Packet identity,
+preparation status and warnings. A failed Packet formatter uses only the
+retained public Packet for a bounded compact-JSON text alternative; a failed
+Receipt formatter uses its saved-ID line. No database read or write is added.
+The fixed display warning and actual size rejection remain separate under the
+[public projection contract](review-completion-specification.md#public-and-read-projection).
+Packet JSON bounds remain in preparation; text bounds remain enforced after
+formatting, including the alternative display. Stream delivery is outside this
+formatter recovery boundary and keeps its existing failure behavior.
 The original mutation outcome and one outer maintenance pass are preserved.
 `verification_receipts.py` owns exact-current Receipt-ID binding using its
 existing snapshot validator. `review_packet.py` applies it in both existing

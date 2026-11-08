@@ -3965,6 +3965,21 @@ errors. Warnings remain in the outer envelope. A preparation failure never
 undoes or duplicates the committed Receipt. No reviewer, verification process,
 review registration, completion, or extra persistence is launched by this step.
 
+Display formatting runs after the preparation result is retained. A formatting
+exception does not change a ready Packet into a preparation failure or hide the
+saved Receipt. Both input modes and JSON/text output retain the Receipt ID and
+actual preparation state, with the fixed outer warning
+`verification_receipt_display_failed`: `Verification receipt recorded; text display unavailable. Do not resubmit.`
+Exception details are never included. If the Receipt formatter fails, text
+retains its recorded-ID line; if the Packet formatter fails, text supplies the
+same validated public Packet as compact ASCII JSON, subject to its existing
+complete-envelope JSON budget and the text byte cap. A measured overflow still
+returns `failed`, null Packet and `review_packet_too_large`; the display warning
+never waives a bound. Available Packet text and preparation errors remain visible.
+The warning requires neither resubmission nor another preparation/query. Output
+serialization or stream delivery failure itself retains the existing failure
+behavior and does not promise that a success response can reach the caller.
+
 Preparation is bound to that immutable Receipt ID. Both existing Packet reads
 validate the selected Task's exact-current Receipt snapshot, including Task and
 project identity, Contract revision, expectation/subject, and target kind,
@@ -4024,7 +4039,7 @@ stored target or Receipt uses
 rechecked under the writer lock in the same semantic order; no failed call
 publishes backup or Viewer maintenance.
 
-Successful text starts with the unchanged three LF-separated Receipt lines,
+Normally successful text starts with the unchanged three LF-separated Receipt lines,
 then `Review preparation: <status>` and either the existing Packet text or
 sanitized code/message lines. There is no event line:
 

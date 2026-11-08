@@ -1639,6 +1639,15 @@ code without preparing. Post-commit preparation failure returns `failed`, null
 Packet and sanitized errors, while preserving the Receipt and outer warnings.
 Give a ready Packet directly to reviewers; do not prepare it again.
 
+`verification_receipt_display_failed` means only text formatting failed after
+registration. The response retains the saved Receipt ID and actual preparation
+state; a ready Packet remains usable. Text falls back to the recorded-ID line
+and, when needed, the same public Packet as bounded compact JSON. Do not repeat
+registration or preparation for this warning. Actual Packet overflow remains
+`failed` with `review_packet_too_large`, and actual preparation failure retains
+the recovery below. Exception details are excluded; stream delivery failure is
+not covered by the formatting fallback.
+
 For preparation-only failure, retry only the read-only operation against the
 same saved Receipt:
 
@@ -2884,7 +2893,7 @@ kind `legacy_caller_label`, both IDs null, and the preserved label. The audit
 Receipt rows use the same union. These are tool-owned bindings, not caller
 identity authentication or permission to reuse historical evidence.
 
-Successful text starts with this unchanged Receipt prefix:
+Normal successful text starts with this unchanged Receipt prefix:
 
 ```text
 Verification receipt recorded: <verification_receipt_id>
@@ -2895,6 +2904,7 @@ Source: <kind>/generation <generation>
 It is followed by `Review preparation: <ready|blocked|failed>` and the Packet
 text or sanitized code/message lines. JSON additionally returns
 `data.review_preparation` as described under [Receipt rules](#verification-receipt-rules).
+Those rules also define the saved-ID and Packet alternatives when formatting fails.
 The Packet component keeps the standalone 32,768-byte envelope check; the
 combined output also includes the bounded Receipt/status and is not subject
 to a new combined 32,768-byte cap.

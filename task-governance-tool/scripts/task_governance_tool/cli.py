@@ -2795,6 +2795,56 @@ def verification_receipt_failure_result(
     )
 
 
+def _verification_receipt_presentation(
+    context: CommandContext, receipt: dict, preparation: dict, warnings: list,
+) -> str:
+    """Render committed results without confusing presentation and preparation."""
+    display_failed = False
+    packet_text = None
+    if preparation["packet"] is not None:
+        packet = preparation["packet"]
+        try:
+            packet_text = format_review_packet_text(packet)
+        except Exception:
+            # Use only the already validated public Packet, never exception
+            # details or another read/preparation. Its JSON envelope keeps the
+            # existing budget even when the text formatter cannot run.
+            display_failed = True
+            packet_result = CommandResult(
+                ok=True, command="review.prepare",
+                project_id=receipt["project_id"], data=packet,
+            )
+            if serialized_json_size(packet_result, packet) <= REVIEW_PACKET_MAX_BYTES:
+                packet_text = json.dumps(packet, ensure_ascii=True, separators=(",", ":"))
+        if packet_text is None or (
+            not context.json_output
+            and len((packet_text + "\n").encode("utf-8")) > REVIEW_PACKET_MAX_BYTES
+        ):
+            # An actual measured overflow still rejects the Packet. It cannot
+            # undo the saved Receipt, and is not a formatter failure waiver.
+            preparation.update(status="failed", packet=None, errors=[{
+                "code": "review_packet_too_large", "message": OVERSIZED_PACKET_MESSAGE,
+            }])
+            packet_text = None
+    try:
+        text = verification_receipt_text(receipt)
+    except Exception:
+        display_failed = True
+        text = f"Verification receipt recorded: {receipt['verification_receipt_id']}"
+    text += f"\nReview preparation: {preparation['status']}"
+    if packet_text is not None:
+        text += "\n" + packet_text
+    else:
+        text += "\n" + "\n".join(
+            f"{error['code']}: {error['message']}" for error in preparation["errors"]
+        )
+    if display_failed:
+        message = "Verification receipt recorded; text display unavailable. Do not resubmit."
+        warnings.append({"code": "verification_receipt_display_failed", "message": message})
+        text += "\n" + message
+    return text
+
+
 def handle_verification_receipt_add(context: CommandContext) -> CommandResult:
     target = resolve_context_target(context)
     project_id = target.project.project_id
@@ -2910,30 +2960,24 @@ def handle_verification_receipt_add(context: CommandContext) -> CommandResult:
                     task_id=receipt["task_id"],
                     verification_receipt_id=receipt["verification_receipt_id"],
                 ),
-            ))
+            ), defer_text=True)
             preparation = {
                 "status": "ready" if packet_result.ok else "failed",
                 "packet": packet_result.data if packet_result.ok else None,
                 "errors": packet_result.errors,
             }
-            packet_warnings = packet_result.warnings
+            packet_warnings = list(packet_result.warnings)
         except Exception:
             preparation = {"status": "failed", "packet": None, "errors": [{
                 "code": "internal_error", "message": "could not prepare review context",
             }]}
-    preparation_text = f"Review preparation: {preparation['status']}"
-    if preparation["packet"] is not None:
-        preparation_text += "\n" + format_review_packet_text(preparation["packet"])
-    else:
-        preparation_text += "\n" + "\n".join(
-            f"{error['code']}: {error['message']}" for error in preparation["errors"]
-        )
+    text = _verification_receipt_presentation(context, receipt, preparation, packet_warnings)
     return CommandResult(
         ok=True,
         command=context.command,
         project_id=project_id,
         data={"receipt": receipt, "review_preparation": preparation},
-        text=verification_receipt_text(receipt) + "\n" + preparation_text,
+        text=text,
         warnings=packet_warnings,
         exit_code=EXIT_SUCCESS,
         mutation_outcome=MutationOutcome(

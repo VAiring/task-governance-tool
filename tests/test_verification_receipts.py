@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import io
 import json
 import os
 import sqlite3
+import sys
 import tempfile
 import unittest
 from contextlib import closing
+from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from tests.verification_receipt_test_support import (
@@ -617,6 +621,167 @@ class VerificationReceiptIntegrationTests(unittest.TestCase):
 
 
 class ReceiptPacketConnectionTests(unittest.TestCase):
+    def record_mode(self, db, repo, task_id, generation, *, structured, json_output):
+        if not structured:
+            return add_receipt(db, repo, task_id, generation, json_output=json_output)
+        document = {
+            "version": 1, "task_id": task_id, "result": "pass", "duration_ms": 25,
+            "scope_coverage": "full", "expected_target_generation": generation,
+        }
+        stream = SimpleNamespace(buffer=io.BytesIO(json.dumps(document).encode("utf-8")))
+        with mock.patch.object(sys, "stdin", stream):
+            return run_taskgov("verification", "receipt", "add", task_id,
+                "--repo", str(repo), "--db", str(db), "--from-stdin",
+                *(["--json"] if json_output else []))
+
+    def test_display_failures_keep_saved_receipt_and_exact_packet_for_all_transports(self):
+        for structured in (False, True):
+            for json_output in (False, True):
+                for failing in ("packet", "receipt", "both"):
+                    with self.subTest(structured=structured, json_output=json_output, failing=failing), \
+                         tempfile.TemporaryDirectory() as temp:
+                        repo, db = initialize_current(Path(temp))
+                        task_id = add_task(db, repo)["task_id"]
+                        generation = set_target(db, repo, task_id)
+                        original_prepare = cli_module.handle_review_prepare
+                        prepared = []
+
+                        def prepare(*args, **kwargs):
+                            value = original_prepare(*args, **kwargs)
+                            prepared.append(value.data)
+                            return replace(value, warnings=[{
+                                "code": "fixture_warning", "message": "Retain this warning",
+                            }])
+
+                        real_packet_text = cli_module.format_review_packet_text
+                        real_receipt_text = cli_module.verification_receipt_text
+                        private = RuntimeError("token=private-display-detail")
+                        with mock.patch.object(cli_module, "handle_review_prepare", side_effect=prepare) as preparation, \
+                             mock.patch.object(cli_module, "format_review_packet_text",
+                                side_effect=private if failing in {"packet", "both"} else real_packet_text) as packet_render, \
+                             mock.patch.object(cli_module, "verification_receipt_text",
+                                side_effect=private if failing in {"receipt", "both"} else real_receipt_text) as receipt_render, \
+                             mock.patch.object(cli_module, "add_verification_receipt",
+                                wraps=cli_module.add_verification_receipt) as write, \
+                             mock.patch.object(cli_module, "emit_result", wraps=cli_module.emit_result) as emit:
+                            recorded = self.record_mode(db, repo, task_id, generation,
+                                structured=structured, json_output=json_output)
+                        self.assertEqual(recorded.returncode, 0, recorded.stdout)
+                        response = emit.call_args.args[0]
+                        self.assertTrue(response.ok)
+                        self.assertEqual(response.exit_code, 0)
+                        self.assertEqual(response.errors, [])
+                        self.assertEqual((write.call_count, preparation.call_count,
+                                          packet_render.call_count, receipt_render.call_count), (1, 1, 1, 1))
+                        data = response.data
+                        receipt = data["receipt"]
+                        packet = data["review_preparation"]["packet"]
+                        self.assertIs(packet, prepared[0])
+                        self.assertEqual(data["review_preparation"]["status"], "ready")
+                        self.assertEqual(data["review_preparation"]["errors"], [])
+                        self.assertEqual(packet["task"]["task_id"], task_id)
+                        self.assertEqual(packet["contract"]["revision"], receipt["contract_revision"])
+                        for key in ("kind", "value", "generation"):
+                            self.assertEqual(packet["review_target"][key], receipt["source_revision"][key])
+                        self.assertEqual(packet["verification_evidence"]["current_receipt"]["verification_receipt_id"],
+                                         receipt["verification_receipt_id"])
+                        self.assertEqual([item["code"] for item in response.warnings],
+                            ["fixture_warning", "verification_receipt_display_failed"])
+                        self.assertNotIn("private-display-detail", recorded.stdout + recorded.stderr)
+                        self.assertIn(receipt["verification_receipt_id"], recorded.stdout)
+                        self.assertIn("Do not resubmit", recorded.stdout)
+                        if json_output:
+                            self.assertEqual(payload(recorded)["data"], data)
+                        else:
+                            self.assertIn("Review preparation: ready", recorded.stdout)
+                            if failing in {"packet", "both"}:
+                                packet_line = next(line for line in recorded.stdout.splitlines() if line.startswith("{"))
+                                self.assertEqual(json.loads(packet_line), packet)
+                                self.assertLessEqual(len((packet_line + "\n").encode("utf-8")),
+                                                     cli_module.REVIEW_PACKET_MAX_BYTES)
+                            else:
+                                self.assertIn(real_packet_text(packet), recorded.stdout)
+                        self.assertEqual(table_count(db, "verification_receipts"), 1)
+                        before = db.read_bytes()
+                        retried = self.prepare(db, repo, task_id, receipt["verification_receipt_id"])
+                        self.assertEqual(retried.returncode, 0, retried.stdout)
+                        self.assertEqual(db.read_bytes(), before)
+                        replay = add_receipt(db, repo, task_id, generation)
+                        self.assertEqual(payload(replay)["errors"][0]["code"],
+                                         "verification_receipt_already_recorded")
+                        self.assertEqual(table_count(db, "verification_receipts"), 1)
+
+    def test_display_failure_preserves_blocked_and_failed_preparation(self):
+        cases = [(result, coverage) for result in ("pass", "fail", "timeout")
+                 for coverage in ("full", "partial")]
+        for json_output in (False, True):
+            for result, coverage in cases:
+                with self.subTest(json_output=json_output, result=result, coverage=coverage), \
+                     tempfile.TemporaryDirectory() as temp:
+                    repo, db = initialize_current(Path(temp))
+                    task_id = add_task(db, repo)["task_id"]
+                    generation = set_target(db, repo, task_id)
+                    with mock.patch.object(cli_module, "prepare_review_packet",
+                            side_effect=RuntimeError("token=private-preparation")) as prepare, \
+                         mock.patch.object(cli_module, "verification_receipt_text",
+                            side_effect=ValueError("token=private-receipt")), \
+                         mock.patch.object(cli_module, "emit_result", wraps=cli_module.emit_result) as emit:
+                        recorded = add_receipt(db, repo, task_id, generation, result=result,
+                                              scope_coverage=coverage, json_output=json_output)
+                    self.assertEqual(recorded.returncode, 0, recorded.stdout)
+                    response = emit.call_args.args[0]
+                    eligible = result == "pass" and coverage == "full"
+                    expected = "failed" if eligible else "blocked"
+                    self.assertEqual(prepare.call_count, int(eligible))
+                    self.assertEqual(response.data["review_preparation"]["status"], expected)
+                    self.assertIsNone(response.data["review_preparation"]["packet"])
+                    self.assertEqual(response.data["review_preparation"]["errors"][0]["code"],
+                                     "internal_error" if eligible else "verification_receipt_blocking")
+                    self.assertNotIn("private-", recorded.stdout + recorded.stderr)
+                    self.assertIn(response.data["receipt"]["verification_receipt_id"], recorded.stdout)
+                    self.assertEqual(table_count(db, "verification_receipts"), 1)
+                    if json_output:
+                        self.assertEqual(payload(recorded)["data"], response.data)
+                    else:
+                        self.assertIn("Review preparation: " + expected, recorded.stdout)
+
+    def test_packet_overflow_is_not_disguised_as_display_failure(self):
+        for mode in ("json", "text", "fallback"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as temp:
+                repo, db = initialize_current(Path(temp))
+                task_id = add_task(db, repo)["task_id"]
+                generation = set_target(db, repo, task_id)
+                # JSON checks the real prepared envelope; text checks actual
+                # rendered bytes; fallback checks the existing JSON budget.
+                rendering = (RuntimeError("token=private-format") if mode == "fallback"
+                             else lambda packet: "x" * 1000)
+                with mock.patch.object(cli_module, "REVIEW_PACKET_MAX_BYTES", 100), \
+                     mock.patch.object(cli_module, "format_review_packet_text", side_effect=rendering), \
+                     mock.patch.object(cli_module, "emit_result", wraps=cli_module.emit_result) as emit:
+                    recorded = add_receipt(db, repo, task_id, generation, json_output=mode == "json")
+                self.assertEqual(recorded.returncode, 0, recorded.stdout)
+                response = emit.call_args.args[0]
+                preparation = response.data["review_preparation"]
+                self.assertEqual(preparation["status"], "failed")
+                self.assertIsNone(preparation["packet"])
+                self.assertEqual(preparation["errors"][0]["code"], "review_packet_too_large")
+                self.assertEqual(table_count(db, "verification_receipts"), 1)
+                self.assertNotIn("private-format", recorded.stdout + recorded.stderr)
+
+    def test_output_delivery_failure_does_not_retry_or_undo_receipt(self):
+        for json_output in (False, True):
+            with self.subTest(json_output=json_output), tempfile.TemporaryDirectory() as temp:
+                repo, db = initialize_current(Path(temp))
+                task_id = add_task(db, repo)["task_id"]
+                generation = set_target(db, repo, task_id)
+                with mock.patch.object(cli_module, "emit_result", side_effect=BrokenPipeError) as emit:
+                    with self.assertRaises(BrokenPipeError):
+                        add_receipt(db, repo, task_id, generation, json_output=json_output)
+                emit.assert_called_once()
+                self.assertEqual(table_count(db, "verification_receipts"), 1)
+                replay = add_receipt(db, repo, task_id, generation)
+                self.assertEqual(payload(replay)["errors"][0]["code"], "verification_receipt_already_recorded")
+
     def prepare(self, db, repo, task_id, receipt_id=None):
         args = ["review", "prepare", task_id, "--db", str(db), "--repo", str(repo),
                 "--read-only", "--json"]

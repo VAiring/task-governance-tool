@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from tests.git_project_fixture_support import GitProjectImage
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -325,12 +326,16 @@ class GitSnapshotTests(unittest.TestCase):
                     self.assertEqual(repository_file_state(repo), before)
 
     def test_completion_comparison_rejects_each_reviewed_tree_change(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "repo"
+            base = init_git_repo(source)
+            (source / "reviewed.txt").write_text("reviewed\n", encoding="utf-8")
+            git(source, "add", "reviewed.txt")
+            image = GitProjectImage.capture(source)
         for change in ("added", "removed", "changed", "renamed", "mode-changed"):
             with self.subTest(change=change), tempfile.TemporaryDirectory() as tmp:
                 repo = Path(tmp) / "repo"
-                base = init_git_repo(repo)
-                (repo / "reviewed.txt").write_text("reviewed\n", encoding="utf-8")
-                git(repo, "add", "reviewed.txt")
+                image.materialize(repo)
                 snapshot = capture_git_snapshot(repo)
 
                 stage_tree_change(repo, change)

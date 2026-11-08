@@ -9,7 +9,8 @@ import unittest
 from unittest.mock import patch
 from pathlib import Path
 
-from tests.test_git_snapshot import git, init_git_repo, capture_git_snapshot, commit_tree
+from tests.test_git_snapshot import git, init_git_repo, capture_git_snapshot, commit_tree, repository_file_state
+from tests.git_project_fixture_support import GitProjectImage
 from task_governance_tool.git_snapshot import (
     GIT_CAPTURE_BYTE_LIMIT, GitSnapshotError, stream_index_fingerprint,
     stream_tree_entries, verify_git_snapshot_commit,
@@ -41,8 +42,9 @@ class FinalizationGitTests(unittest.TestCase):
                 self.assertEqual(walks.call_count, 4)
 
     def test_content_reuse_never_skips_mutable_publication_checks(self):
+        project = self.project_copies()
         for changed in ("index", "base", "branch", "lock", "gate"):
-            with self.subTest(changed=changed), self.project() as (repo, binding), \
+            with self.subTest(changed=changed), project() as (repo, binding), \
                     snapshots.snapshot_commit_validation() as validation:
                 candidate = adapter.create_candidate(repo, **binding, task_id="tg_task_0123456789abcdef",
                                                      git_validation=validation)
@@ -140,10 +142,11 @@ class FinalizationGitTests(unittest.TestCase):
                 self.assertEqual(walks.call_count, before + 1)
 
     def test_source_observation_failures_use_completion_errors_and_invalidate_reuse(self):
+        project = self.project_copies()
         for failed_arguments in (["rev-parse", "--path-format=absolute", "--git-dir"],
                                  ["rev-parse", "--path-format=absolute", "--git-common-dir"],
                                  ["rev-parse", "--show-prefix"]):
-            with self.subTest(arguments=failed_arguments), self.project() as (repo, binding), \
+            with self.subTest(arguments=failed_arguments), project() as (repo, binding), \
                     snapshots.snapshot_commit_validation() as validation:
                 candidate = self.candidate(repo, binding)
                 options = dict(expected_base_revision=binding["base"], expected_fingerprint=binding["fingerprint"])
@@ -191,9 +194,10 @@ class FinalizationGitTests(unittest.TestCase):
                         self.assertEqual(walks.call_count, before + 1)
 
     def test_source_filesystem_and_encoding_failures_are_bounded_on_both_observations(self):
+        project = self.project_copies()
         for failure in ("root_resolve", "git_resolve", "root_stat", "git_stat", "encoding", "nul_path"):
             for observation in (1, 2):
-                with self.subTest(failure=failure, observation=observation), self.project() as (repo, binding), \
+                with self.subTest(failure=failure, observation=observation), project() as (repo, binding), \
                         snapshots.snapshot_commit_validation() as validation:
                     candidate = self.candidate(repo, binding)
                     options = dict(expected_base_revision=binding["base"], expected_fingerprint=binding["fingerprint"])
@@ -246,11 +250,12 @@ class FinalizationGitTests(unittest.TestCase):
                         self.assertEqual(walks.call_count, 1)
 
     def test_source_paths_preserve_unicode_separators_and_filesystem_bytes(self):
+        project = self.project_copies()
         names = ["repo-" + value + "-path" for value in ("\u0085", "\u2028", "\u2029")]
         if os.name != "nt":
             names += ["repo-with\nembedded-and-final\n", os.fsdecode(b"repo-\xff-path")]
         for name in names:
-            with self.subTest(name=name), self.project(name=name) as (repo, binding), \
+            with self.subTest(name=name), project(name=name) as (repo, binding), \
                     snapshots.snapshot_commit_validation() as validation:
                 candidate = self.candidate(repo, binding)
                 options = dict(expected_base_revision=binding["base"], expected_fingerprint=binding["fingerprint"])
@@ -359,6 +364,60 @@ class FinalizationGitTests(unittest.TestCase):
     def candidate(self, repo, binding):
         return adapter.create_candidate(repo, **binding, task_id="tg_task_0123456789abcdef")
 
+    def project_copies(self):
+        # Capture only the initial repository. Candidate objects and validation
+        # contexts are still created separately inside every consuming case.
+        with self.project() as (repo, binding):
+            image = GitProjectImage.capture(repo)
+            binding_items = tuple(binding.items())
+
+        @contextmanager
+        def project(*, name="project"):
+            with tempfile.TemporaryDirectory() as temporary:
+                repo = Path(temporary) / name
+                image.materialize(repo)
+                yield repo, dict(binding_items)
+        return project
+
+    def test_project_copies_isolate_source_index_refs_locks_and_validation(self):
+        project = self.project_copies()
+        for order in ((0, 1), (1, 0)):
+            with self.subTest(order=order), project() as left, project() as right:
+                pairs = (left, right)
+                (changed, binding), (untouched, other_binding) = (pairs[i] for i in order)
+                self.assertIsNot(binding, other_binding)
+                self.assertEqual(binding, other_binding)
+                self.assertEqual(repository_file_state(changed), repository_file_state(untouched))
+                for path in changed.rglob("*"):
+                    self.assertFalse(path.is_symlink() or path.is_junction())
+                    if path.is_file():
+                        self.assertFalse(path.samefile(untouched / path.relative_to(changed)))
+                before = repository_file_state(untouched)
+                (changed / "tracked.txt").write_text("isolated change\n", encoding="utf-8")
+                git(changed, "add", "tracked.txt")
+                git(changed, "commit", "--quiet", "-m", "isolated change")
+                (changed / ".git/index.lock").write_bytes(b"isolated lock")
+                self.assertNotEqual(git(changed, "rev-parse", "HEAD").stdout.strip(), binding["base"])
+                self.assertEqual(repository_file_state(untouched), before)
+                self.assertFalse((untouched / ".git/index.lock").exists())
+                self.assertFalse((untouched / ".git/objects/info/alternates").exists())
+                with snapshots.snapshot_commit_validation() as first, \
+                        snapshots.snapshot_commit_validation() as second:
+                    self.assertIsNot(first, second)
+                    candidate = adapter.create_candidate(untouched, **other_binding,
+                        task_id="tg_task_0123456789abcdef", git_validation=first)
+                    self.assertIsNotNone(first.snapshot)
+                    self.assertIsNone(second.snapshot)
+                    with patch.object(snapshots, "stream_tree_entries", wraps=snapshots.stream_tree_entries) as walks:
+                        verify_git_snapshot_commit(untouched, candidate,
+                            expected_base_revision=other_binding["base"],
+                            expected_fingerprint=other_binding["fingerprint"], git_validation=second)
+                        self.assertEqual(walks.call_count, 1)
+                self.assertIsNone(first.key)
+                self.assertIsNone(second.snapshot)
+            self.assertFalse(changed.exists())
+            self.assertFalse(untouched.exists())
+
     def test_fixed_tree_commit_preserves_index_and_unrelated_work(self):
         with self.project() as (repo, binding):
             (repo / "tracked.txt").write_text("unstaged\n")
@@ -375,8 +434,9 @@ class FinalizationGitTests(unittest.TestCase):
             self.assertEqual(git(repo, "rev-list", "--count", "HEAD").stdout.strip(), "2")
 
     def test_changed_index_or_base_never_publishes_candidate(self):
+        project = self.project_copies()
         for changed in ("index", "base", "branch"):
-            with self.subTest(changed=changed), self.project() as (repo, binding):
+            with self.subTest(changed=changed), project() as (repo, binding):
                 candidate = self.candidate(repo, binding)
                 if changed == "index":
                     (repo / "tracked.txt").write_text("later")

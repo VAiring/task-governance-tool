@@ -2842,6 +2842,18 @@ using saved controller state, a computed filesystem hash, another Task or a
 numerical declaration. Existing Task reads and Review Packets retain their
 shapes; this helper adds no normal-loop call or completion gate.
 
+On nonzero helper exit, a complete bounded failure with exactly those fields,
+types, fixed message and known code retains that code for local diagnostics.
+Invalid JSON, duplicate keys, unknown codes, extra/missing fields and success
+JSON on nonzero exit are diagnosed as `wait_basis_response_invalid`; incomplete
+capture or timeout cannot supply a known helper reason. No raw response or
+arbitrary message is retained. A confirmed failure reason survives secondary
+child-cleanup failure, while cleanup failure still prevents a successful read.
+The provider's control/public failure code remains `wait_basis_unavailable` for
+nonzero exit; diagnostic detail does not change existing fallback, notification,
+effect guards or replay policy. In particular, `wait_basis_inactive` alone
+proves neither Task completion, worker exit nor successful notification.
+
 <a id="development-review-wait-controller"></a>
 
 #### Development Event-Driven Review Wait

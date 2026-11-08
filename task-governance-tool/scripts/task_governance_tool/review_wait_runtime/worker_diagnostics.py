@@ -6,6 +6,7 @@ import threading
 from task_governance_tool import debug_log as log
 from task_governance_tool import debug_log_values as projection
 from .review_wait_direct_repository import DIRECT_REASONS
+from .review_wait_basis import BasisError, DIAGNOSTIC_REASONS
 
 
 class Stage(Enum):
@@ -49,7 +50,7 @@ class Outcome(Enum):
     NOT_STARTED = "not_started"
 
 
-_REASONS = DIRECT_REASONS | {
+_REASONS = DIRECT_REASONS | DIAGNOSTIC_REASONS | {
     "cancel_requested", "state_changed", "deadline", "dispatched", "returned",
     "receipt_seen", "receipt_already_seen", "receipt_not_eligible", "read_failed",
     "eof", "transport_error", "protocol_error", "requested", "cancelled", "unknown",
@@ -119,6 +120,14 @@ def _event(stage, outcome, *, reason=None, error=None, fields=None):
                 or type(stage) is not Stage or type(outcome) is not Outcome):
             return
         from .failure_diagnostics import REASONS
+        # Refine only a generic basis projection, never a named primary or
+        # cleanup cause. This vocabulary must not enter control reason sets.
+        if type(reason) is str and reason in {"wait_basis_unavailable", "direct_probe_unavailable", "candidate_unavailable", "unavailable"}:
+            from task_governance_tool.review_wait_basis_repository import WaitBasisError
+            detail = (error.diagnostic_reason if type(error) is BasisError else
+                      error.code if type(error) is WaitBasisError else None)
+            if type(detail) is str and detail in DIAGNOSTIC_REASONS:
+                reason = detail
         reason = reason if type(reason) is str and reason in _REASONS | REASONS else "unknown"
         fields = fields or {}
         key = (tuple(sorted(session.wait_identity.items())), stage, outcome, reason, tuple(fields.items()))
@@ -151,7 +160,10 @@ def request(diagnostic, *, result=None, error=None, outcome=Outcome.FAILED, seco
         reason = reason_for(error) if secondary else diagnostic.reason
         if reason is None:
             reason = reason_for(error) if error is not None else result.get("error") if type(result) is dict else None
-        _event(Stage.REQUEST, outcome, reason=_fixed(reason, REASONS, "unavailable"), error=error,
+        normal_return = (not secondary and error is None and diagnostic.reason is None
+            and outcome is Outcome.RETURNED and type(result) is dict and result.get("ok") is True
+            and result.get("error") is None and result.get("reason") is None)
+        _event(Stage.REQUEST, outcome, reason="returned" if normal_return else _fixed(reason, REASONS, "unavailable"), error=error,
             fields={"boundary": _fixed(diagnostic.stage, STAGES, "request"),
                 "cause": "secondary" if secondary else "primary",
                 "local_state": _fixed(diagnostic.local_state, {"not_attempted", "may_have_changed"}, "may_have_changed"),

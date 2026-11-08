@@ -2624,6 +2624,19 @@ initialization, maintenance or host process participates. The source-only
 compatibility entry `tools/review_wait_basis.py` invokes that fixed public helper and validates its
 bounded closed output into the original wait's current `WaitBinding`.
 
+The runtime provider captures EOF and exit within its existing byte/time limits
+before parsing a nonzero helper result as a closed failure. `BasisError.code`
+continues to drive the existing control/public path; its bounded
+`diagnostic_reason` separately retains a validated helper code or invalid-response
+classification. Child cleanup cannot overwrite an already observed primary
+failure and cannot turn a failed read into success. Common worker logging
+refines generic reason projections from these typed exceptions (and the internal
+`WaitBasisError`) without adding the new reasons to control/persistence sets.
+Managed completion-report fallback still requires its original bound finalizer
+and fresh guards; neither diagnostic classification nor absent failure prose
+authorizes an effect. The [logger contract](logger-design.md#wait-checkpoints)
+owns successful request-return projection and suppression.
+
 This separates structural freshness from executor identity. The current stored
 parent is compared with genuine request metadata by the service; it is never
 inserted into missing metadata. The basis includes ownership generation so a

@@ -14,7 +14,7 @@ from tests.test_review_results import FINGERPRINT
 from task_governance_tool import review_wait_basis as service
 from task_governance_tool import review_wait_basis_repository as repository
 from task_governance_tool.state_resolver import resolve_project_state
-from tools.review_wait_basis import PublicTaskBasisReader
+from tools.review_wait_basis import BasisError, PublicTaskBasisReader
 
 
 class WaitBasisHandoffTests(PreparationFixture):
@@ -89,6 +89,8 @@ class WaitBasisHandoffTests(PreparationFixture):
         self.assertNotEqual(new["basis"]["artifact_manifest_id"], old["basis"]["artifact_manifest_id"])
 
     def test_inactive_missing_and_unprepared_tasks_fail_without_any_write(self):
+        _, active = self.read()
+        parent = active["basis"]["parent_thread_id"]
         self.cli("task", "edit", self.task_id, "--status", "blocked", "--blocked-reason", "Fixture paused work")
         no_target = self.task()
         before = file_snapshot(self.root)
@@ -98,6 +100,11 @@ class WaitBasisHandoffTests(PreparationFixture):
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(value["code"], code)
             self.assertNotIn("basis", value)
+            reader = PublicTaskBasisReader(self.root, task, parent, "wait-1", helper=self.helper)
+            with self.assertRaises(BasisError) as caught:
+                reader()
+            self.assertEqual(caught.exception.code, "wait_basis_unavailable")
+            self.assertEqual(caught.exception.diagnostic_reason, code)
         self.assertEqual(before, file_snapshot(self.root))
 
     def test_no_caller_identity_packet_db_or_timer_options(self):

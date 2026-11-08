@@ -21,6 +21,9 @@ from task_governance_tool.review_wait_runtime.review_wait_controller import Wait
 
 
 MAX_RESPONSE_BYTES = 16_384
+FAILURE_CODES = frozenset({"wait_basis_invalid_arguments", "wait_basis_inactive",
+                           "wait_basis_target_required", "wait_basis_unavailable"})
+DIAGNOSTIC_REASONS = FAILURE_CODES | {"wait_basis_response_invalid"}
 _FIELDS = {"version", "project_id", "project_path_hash", "project_binding_generation",
            "task_id", "task_status", "execution_id", "ownership_generation", "parent_thread_id",
            "contract_revision", "target_kind", "target_value", "target_base_revision",
@@ -28,8 +31,12 @@ _FIELDS = {"version", "project_id", "project_path_hash", "project_binding_genera
 
 
 class BasisError(ValueError):
-    def __init__(self, code="wait_basis_unavailable"):
+    def __init__(self, code="wait_basis_unavailable", *, diagnostic_reason=None):
         self.code = code
+        # Keep the existing control/public code. More precise helper failures
+        # are observations only, never new fallback or notification authority.
+        self.diagnostic_reason = (diagnostic_reason if type(diagnostic_reason) is str
+            and diagnostic_reason in DIAGNOSTIC_REASONS else code)
         super().__init__(code)
 
 
@@ -40,6 +47,23 @@ def _unique(pairs):
             raise BasisError("wait_basis_response_invalid")
         result[key] = value
     return result
+
+
+def _failure_reason(raw):
+    """Project a complete bounded helper failure; retain no response text."""
+    try:
+        if type(raw) is not bytes or len(raw) > MAX_RESPONSE_BYTES:
+            raise ValueError()
+        value = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique,
+                           parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
+        if (type(value) is dict and set(value) == {"ok", "code", "message"}
+                and value["ok"] is False and type(value["code"]) is str
+                and value["code"] in FAILURE_CODES
+                and value["message"] == "Current review-wait basis is unavailable."):
+            return value["code"]
+    except Exception:
+        pass
+    return "wait_basis_response_invalid"
 
 
 def parse_basis(raw: bytes, *, wait_id: str, task_id: str, parent_thread_id: str) -> WaitBinding:
@@ -83,6 +107,7 @@ def _capture(command, *, cwd, timeout_seconds, cleanup_seconds):
     process = None
     captured = bytearray()
     succeeded = False
+    failure = None
     try:
         process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL, cwd=cwd, shell=False,
@@ -98,16 +123,19 @@ def _capture(command, *, cwd, timeout_seconds, cleanup_seconds):
             if chunk:
                 captured.extend(chunk)
                 if len(captured) > MAX_RESPONSE_BYTES:
-                    raise BasisError()
+                    raise BasisError(diagnostic_reason="wait_basis_response_invalid")
             elif chunk == b"":
                 ended = True
             if ended and process.poll() is not None:
                 succeeded = process.returncode == 0
+                if not succeeded:
+                    failure = BasisError(diagnostic_reason=_failure_reason(bytes(captured)))
                 break
             if not chunk:
                 time.sleep(0.005)
-    except Exception:
+    except Exception as error:
         succeeded = False
+        failure = error if type(error) is BasisError else BasisError()
     finally:
         if process is not None:
             try:
@@ -122,7 +150,7 @@ def _capture(command, *, cwd, timeout_seconds, cleanup_seconds):
                 except Exception:
                     succeeded = False
     if not succeeded:
-        raise BasisError()
+        raise failure if failure is not None else BasisError()
     return bytes(captured)
 
 

@@ -406,6 +406,12 @@ stage/reason、local_state/host_mutation/retained_effects/cleanupを投影する
 取得済みの親UUID・Task・要求sequenceで旧試行を区別し、未取得のsequence・wait・workerは
 nullのままとする。旧試行のcleanup後、新要求の保存前に旧wait/probe/workerを外し、
 旧イベントはそのまま保持する。成功の返却形や公開エラーは変えず、診断用の再読取はしない。
+正常な`ok=true`返却で失敗理由・例外がなく、primaryの`request/returned`である場合だけ、
+reasonを`returned`とする。これは応答が戻った事実であり、通知・完了の成功証拠ではない。
+既存の失敗理由がある返却やsecondaryのcleanup失敗へ成功理由を補わない。
+公開basis helperの検証済み固定失敗は[取得境界](review-completion-specification.md#review-wait-basis)に
+従って診断reasonへ残す。内部の型付きbasis失敗も同じ閉じた語彙で投影する。
+制御用の理由集合と公開エラーは変えず、`inactive`を完了・終了・通知成功と読み替えない。
 起動・準備失敗は後続のjournal保存やcleanupより先に記録し、二次cleanup失敗を別に残す。
 timer設定の既存読取はunsafe/invalid/changed/unavailableとtimezoneの固定理由を
 `timer_config`へ残す。本文・パス・設定値や追加の設定読取は保持・実行しない。

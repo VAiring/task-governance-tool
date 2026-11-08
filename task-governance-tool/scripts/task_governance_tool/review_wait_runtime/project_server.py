@@ -618,15 +618,17 @@ class ProjectReviewWaitSession:
         from .worker_diagnostics import Outcome
         diagnostic = CallDiagnostics()
         admitted = False
+        request_error = None
         try:
             result = self._handle(operation, arguments, metadata, diagnostic)
             admitted = diagnostic.stage != "executor_admission" and diagnostic.stage != "request"
         except Exception as exc:
+            request_error = exc
             result = diagnostic.failure({"ok": False, "error": "review_wait_unavailable"}, error=exc)
             admitted = diagnostic.stage not in {"request", "executor_admission"}
         if result.get("ok") is not True and "diagnostic" not in result:
             result = diagnostic.failure(result)
-        diagnostics.request(diagnostic, result=result,
+        diagnostics.request(diagnostic, result=result, error=request_error,
             outcome=Outcome.RETURNED if result.get("ok") is True else Outcome.FAILED)
         if getattr(diagnostic, "answer_collection", None) is not None:
             result = {**result, "answer_collection": diagnostic.answer_collection}

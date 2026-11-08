@@ -29,6 +29,10 @@ def response():
         "target_generation": 1, "artifact_manifest_id": "tg_artifact_manifest_0123456789abcdef"}}
 
 
+def failure(code="wait_basis_inactive"):
+    return {"ok": False, "code": code, "message": "Current review-wait basis is unavailable."}
+
+
 class BasisParserTests(unittest.TestCase):
     def parse(self, value):
         raw = value if isinstance(value, bytes) else json.dumps(value).encode()
@@ -124,6 +128,70 @@ class BasisPeerTests(unittest.TestCase):
         with self.assertRaises(provider.BasisError) as caught:
             reader()
         self.assertEqual(str(caught.exception), "wait_basis_unavailable")
+        self.assertEqual(caught.exception.diagnostic_reason, "wait_basis_response_invalid")
+
+    def test_closed_helper_failures_retain_diagnostics_without_changing_control_code(self):
+        for code in ("wait_basis_inactive", "wait_basis_target_required",
+                     "wait_basis_unavailable", "wait_basis_invalid_arguments"):
+            with self.subTest(code=code):
+                reader = self.reader("import sys\nsys.stdout.write(" + repr(json.dumps(failure(code)))
+                    + ")\nsys.stderr.write(" + repr(SECRET) + ")\nsys.exit(1)\n")
+                with self.assertRaises(provider.BasisError) as caught:
+                    reader()
+                self.assertEqual(caught.exception.code, "wait_basis_unavailable")
+                self.assertEqual(caught.exception.diagnostic_reason, code)
+                self.assertNotIn(SECRET, repr(vars(caught.exception)))
+
+    def test_nonzero_malformed_responses_never_supply_a_known_reason(self):
+        raw = json.dumps(failure())
+        values = ["", raw[:-1], raw + "{}", raw.replace('"ok": false', '"ok": false, "ok": false'),
+            raw.replace('"ok": false', '"ok": 0'), raw.replace('"ok": false', '"ok": NaN'),
+            json.dumps({**failure(), "code": SECRET}), json.dumps({**failure(), "message": SECRET}),
+            json.dumps({**failure(), "extra": SECRET}), json.dumps({"ok": False, "code": "wait_basis_inactive"}),
+            json.dumps({**failure(), "code": ["wait_basis_inactive"]}), json.dumps(response())]
+        for index, value in enumerate(values):
+            with self.subTest(case=index):
+                reader = self.reader("import sys\nsys.stdout.write(" + repr(value) + ")\nsys.exit(1)\n")
+                with self.assertRaises(provider.BasisError) as caught:
+                    reader()
+                self.assertEqual(caught.exception.code, "wait_basis_unavailable")
+                self.assertEqual(caught.exception.diagnostic_reason, "wait_basis_response_invalid")
+                self.assertNotIn(SECRET, repr(vars(caught.exception)))
+
+    def test_failure_on_zero_exit_and_non_utf8_response_are_invalid(self):
+        for payload, exit_code in [(json.dumps(failure()).encode(), 0), (b'\xff', 1)]:
+            reader = self.reader("import sys\nsys.stdout.buffer.write(" + repr(payload)
+                + ")\nsys.exit(" + str(exit_code) + ")\n")
+            with self.assertRaises(provider.BasisError) as caught:
+                reader()
+            self.assertEqual(caught.exception.diagnostic_reason, "wait_basis_response_invalid")
+
+    def test_complete_failure_text_before_timeout_or_over_limit_is_not_a_helper_failure(self):
+        for tail, expected in [("", "wait_basis_unavailable"),
+                               (" " * provider.MAX_RESPONSE_BYTES, "wait_basis_response_invalid")]:
+            reader = self.reader("import sys,time\nsys.stdout.write(" + repr(json.dumps(failure()) + tail)
+                + ")\nsys.stdout.flush()\ntime.sleep(10)\n", timeout_seconds=0.3)
+            with self.assertRaises(provider.BasisError) as caught:
+                reader()
+            self.assertEqual(caught.exception.code, "wait_basis_unavailable")
+            self.assertEqual(caught.exception.diagnostic_reason, expected)
+
+    def test_confirmed_helper_failure_survives_secondary_child_cleanup_failure(self):
+        reader = self.reader("import sys\nsys.stdout.write(" + repr(json.dumps(failure()))
+            + ")\nsys.exit(1)\n")
+        real_popen, children = subprocess.Popen, []
+        def launch(*args, **kwargs):
+            child = real_popen(*args, **kwargs)
+            child.wait = mock.Mock(side_effect=OSError(SECRET))
+            children.append(child)
+            return child
+        with mock.patch.object(provider.subprocess, "Popen", side_effect=launch), self.assertRaises(provider.BasisError) as caught:
+            reader()
+        self.assertEqual(caught.exception.code, "wait_basis_unavailable")
+        self.assertEqual(caught.exception.diagnostic_reason, "wait_basis_inactive")
+        self.assertIsNotNone(children[0].poll())
+        self.assertTrue(children[0].stdout.closed)
+        self.assertNotIn(SECRET, repr(vars(caught.exception)))
 
     def test_timeout_and_oversized_response_reap_the_owned_child(self):
         for script in ["import time\ntime.sleep(10)\n", "import sys,time\nsys.stdout.write('x'*20000)\nsys.stdout.flush()\ntime.sleep(10)\n"]:

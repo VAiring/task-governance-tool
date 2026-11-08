@@ -1,6 +1,6 @@
 """Wait diagnostics: isolated workers, safe checkpoints and primary invariance."""
 from contextlib import closing
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import timedelta
 import io
 import json
@@ -37,6 +37,116 @@ class CheckpointTests(unittest.TestCase):
     configure = debug_fixture.DebugLogTests.configure
     scope = debug_fixture.DebugLogTests.scope
     records = debug_fixture.DebugLogTests.records
+
+    def test_request_return_reason_requires_confirmed_success_without_prior_failure(self):
+        from task_governance_tool.review_wait_runtime.failure_diagnostics import CallDiagnostics
+        self.configure()
+        cases = [
+            ({'ok': True}, Outcome.RETURNED, None, None, False, 'returned'),
+            ({'ok': False}, Outcome.FAILED, None, None, False, 'unavailable'),
+            ({'ok': True}, Outcome.FAILED, None, None, False, 'unavailable'),
+            ({'ok': 1}, Outcome.RETURNED, None, None, False, 'unavailable'),
+            ({'ok': True, 'error': SECRET}, Outcome.RETURNED, None, None, False, 'unavailable'),
+            ({'ok': True, 'reason': SECRET}, Outcome.RETURNED, None, None, False, 'unavailable'),
+            ({'ok': True}, Outcome.RETURNED, 'binding_mismatch', None, False, 'binding_mismatch'),
+            ({'ok': True}, Outcome.RETURNED, 'unavailable', None, False, 'unavailable'),
+            ({'ok': True}, Outcome.RETURNED, None, OSError(SECRET), False, 'unavailable'),
+            ({'ok': True}, Outcome.RETURNED, None, None, True, 'unavailable'),
+        ]
+        for result, outcome, reason, error, secondary, expected in cases:
+            diagnostic = CallDiagnostics(reason=reason)
+            before = asdict(diagnostic)
+            with self.subTest(expected=expected, result=result), self.scope():
+                diag.bind(*IDENTITY)
+                diag.request(diagnostic, result=result, outcome=outcome, error=error, secondary=secondary)
+            self.assertEqual(asdict(diagnostic), before)
+            row = [r for r in self.records() if r.get('stage') == 'request'][-1]
+            self.assertEqual(row['reason'], expected)
+        self.assertNotIn(SECRET, json.dumps(self.records()))
+
+    def test_basis_diagnostic_refinement_preserves_control_and_named_primary_causes(self):
+        from task_governance_tool.review_wait_runtime.review_wait_basis import BasisError
+        from task_governance_tool.review_wait_basis_repository import WaitBasisError
+        from task_governance_tool.review_wait_runtime.review_wait_direct import _reason
+        from task_governance_tool.review_wait_runtime.failure_diagnostics import CallDiagnostics, reason_for
+        self.configure()
+        errors = [BasisError(diagnostic_reason='wait_basis_inactive'),
+                  BasisError(diagnostic_reason='wait_basis_target_required'),
+                  BasisError(diagnostic_reason='wait_basis_response_invalid'),
+                  BasisError(), WaitBasisError('wait_basis_inactive'),
+                  WaitBasisError('wait_basis_target_required')]
+        expected = ['wait_basis_inactive', 'wait_basis_target_required', 'wait_basis_response_invalid',
+                    'wait_basis_unavailable', 'wait_basis_inactive', 'wait_basis_target_required']
+        for error, reason in zip(errors, expected):
+            with self.scope():
+                diag.bind(*IDENTITY)
+                diag.event(Stage.OBSERVATION, Outcome.UNKNOWN, reason=_reason(error), error=error)
+                diag.request(CallDiagnostics(), error=error)
+                diag.request(CallDiagnostics(reason='binding_mismatch'), error=error)
+                diag.event(Stage.CLEANUP, Outcome.FAILED, reason='cleanup_failed', error=error)
+            rows = [r for r in self.records() if r.get('event') == 'wait.transition'][-4:]
+            self.assertEqual([r['reason'] for r in rows], [reason, reason, 'binding_mismatch', 'cleanup_failed'])
+            self.assertEqual(_reason(error), 'wait_basis_unavailable' if type(error) is BasisError else 'direct_probe_unavailable')
+            self.assertEqual(reason_for(error), 'wait_basis_unavailable' if type(error) is BasisError else 'unavailable')
+
+    def test_request_and_basis_diagnostics_keep_errors_off_readonly_and_secrets_boundary(self):
+        from task_governance_tool.review_wait_runtime.review_wait_basis import BasisError
+        from task_governance_tool.review_wait_runtime.failure_diagnostics import CallDiagnostics
+        error = BasisError(diagnostic_reason='wait_basis_inactive')
+        self.configure('errors')
+        with self.scope():
+            diag.bind(*IDENTITY)
+            diag.request(CallDiagnostics(), result={'ok': True}, outcome=Outcome.RETURNED)
+            diag.request(CallDiagnostics(), error=error)
+        rows = [r for r in self.records() if r.get('event') == 'wait.transition']
+        self.assertEqual([(r['outcome'], r['reason']) for r in rows], [('failed', 'wait_basis_inactive')])
+        before = self.records()
+        with self.scope(read_only=True):
+            diag.bind(*IDENTITY)
+            diag.request(CallDiagnostics(), error=error)
+        with mock.patch.object(log, 'admit', return_value=None), self.scope():
+            diag.bind(*IDENTITY)
+            diag.request(CallDiagnostics(), error=error)
+        self.assertEqual(self.records(), before)
+        with self.scope():
+            diag.bind(*IDENTITY)
+            diag.event(Stage.OBSERVATION, Outcome.UNKNOWN, reason='unavailable',
+                error=BasisError(diagnostic_reason=SECRET))
+            diag.event(Stage.OBSERVATION, Outcome.UNKNOWN, reason={'private': SECRET})
+        self.assertNotIn(SECRET, json.dumps(self.records()))
+
+    def test_inactive_diagnostic_does_not_replace_bound_saved_result_guards(self):
+        from tests.test_review_wait_collection_policy import CollectionPolicyPollingTests
+        from task_governance_tool.review_wait_runtime.review_wait_basis import BasisError
+        self.configure()
+        for ready, matching in [(True, True), (False, True), (True, False)]:
+            flow = CollectionPolicyPollingTests(methodName='runTest')
+            flow.setUp()
+            try:
+                _, finalizer = flow.saved_result_state(ready=ready)
+                # Same sanitized control error as the real subprocess reader;
+                # its finer diagnostic must not grant readiness or new effects.
+                flow.flow.current_binding.side_effect = BasisError(diagnostic_reason='wait_basis_inactive')
+                if not matching:
+                    finalizer.journal.read.return_value.basis['task_id'] = 'other-task'
+                with self.subTest(ready=ready, matching=matching), self.scope():
+                    diag.bind(*IDENTITY)
+                    flow.flow.run_polls(count=3)
+                if ready and matching:
+                    flow.flow.dispatch.assert_called_once()
+                    flow.flow.failure.assert_not_called()
+                else:
+                    flow.flow.dispatch.assert_not_called()
+                if not matching:
+                    flow.flow.failure.assert_called_once()
+                flow.recover.assert_not_called()
+                flow.flow.host.read_child.assert_not_called()
+            finally:
+                flow.doCleanups()
+        observations = [r for r in self.records() if r.get('stage') == 'observation']
+        self.assertTrue(observations)
+        self.assertTrue(all(r['reason'] == 'wait_basis_inactive' and r['outcome'] == 'unknown'
+                            for r in observations))
 
     def test_sequential_active_transaction_close_releases_context_after_trailing_end(self):
         self.configure()
@@ -987,6 +1097,32 @@ class ManagedLogTests(unittest.TestCase):
     call = managed_fixture.ManagedFlowTests.call
     until = managed_fixture.ManagedFlowTests.until
     ended = managed_fixture.ManagedFlowTests.ended
+
+    def test_successful_wait_request_records_return_not_unavailability(self):
+        rows = self.logging()
+        result = self.call()
+        self.assertTrue(result['ok'])
+        requests = [r for r in rows if r.get('stage') == 'request']
+        self.assertEqual([(r['outcome'], r['reason']) for r in requests], [('returned', 'returned')])
+        self.assertNotIn('diagnostic', result)
+
+    def test_helper_failure_detail_survives_request_boundary_without_public_shape_change(self):
+        from task_governance_tool.review_wait_runtime.review_wait_basis import BasisError
+        rows = self.logging()
+        def location(**kwargs):
+            log.allow_output()
+            return self.paths
+        with mock.patch.object(self.session, '_location', side_effect=location), \
+             mock.patch.object(self.session, '_reader', side_effect=BasisError(diagnostic_reason='wait_basis_inactive')):
+            result = self.session.handle('prepare', {'task_id': managed_fixture.TASK,
+                'automation_id': 'fixture', 'reviewer_ids': [CHILD]}, managed_fixture.META)
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['error'], 'review_wait_unavailable')
+        self.assertEqual(result['diagnostic']['reason'], 'wait_basis_unavailable')
+        self.assertEqual(result['diagnostic']['local_state'], 'not_attempted')
+        self.assertEqual(self.effects, [])
+        requests = [r for r in rows if r.get('stage') == 'request']
+        self.assertEqual([(r['outcome'], r['reason']) for r in requests], [('failed', 'wait_basis_inactive')])
 
     def test_failed_new_creation_cannot_reuse_previous_worker_identity(self):
         rows = self.logging()

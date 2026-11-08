@@ -626,6 +626,9 @@ Preview reports current durable state, not planned state:
 error has `status=null`; preflight/policy failures use empty write lists and
 null observed values except `schema_to=37`. A later-stage failure reports only
 the durable ordered prefix. Inspect `data.completed_writes` before retrying;
+this also preserves all confirmed stages when only the final state observation
+after relocation or predecessor legacy publication fails. That failure remains
+`setup_incomplete`, not a rollback or an unverified `setup_complete`.
 `setup_incomplete` permits a retry that recomputes from durable state rather
 than repeating an assumed failed stage; it does not guarantee automatic repair
 of unsealed preparation. Repeated failure does not authorize deletion or an
@@ -2340,7 +2343,8 @@ Text retains ordered Receipt/Finding IDs and summaries, review gate/basis and
 an omission notice. `--read-only` rejects before
 stdin is consumed. Successful registration runs existing post-commit maintenance
 once; maintenance warnings do not undo the committed evidence.
-Post-commit text failure retains successful JSON with
+For all review write commands (target set, Receipt/result add, Finding add and
+scalar/batch resolution), post-commit text failure retains successful JSON with
 `review_result_display_failed`. Emission failure returns exit 2 with a saved-
 outcome stderr diagnostic if available, never a claimed rollback. Recover
 lost/incomplete output through public state before retrying; do not resubmit

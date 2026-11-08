@@ -357,8 +357,17 @@ successful-prefix returns. Commit and connection close precede formatting and
 one changed/Viewer-relevant maintenance result. Legacy single-item callers and
 operation-scoped state admission retain their existing contracts. Replay detection uses
 the existing Task/generation/reviewer uniqueness, without a new durable ID.
-For this command only, a post-commit text rendering exception retains success
-data with a fixed display warning. Successful emission includes stdout flush
+For all five review write commands, including scalar and batch Finding
+resolution, a post-commit text rendering exception retains success data with
+the existing fixed display warning. Target preparation and its warnings are
+assembled before the guarded text rendering, including appended Packet text.
+Target-set defers Packet text rendering until that guard, instead of invoking
+the formatter once during preparation and again during presentation. The
+existing JSON-envelope and rendered-text component limits remain in force;
+a measured overflow still returns failed preparation with no Packet, whereas
+a rendering exception preserves prepared data and emits the display warning.
+The emission guard selects only successful review writes, never read-only
+`review.prepare` or rejected writes. Successful emission includes stdout flush
 inside the same guard. An emission/flush exception returns a fixed
 saved-outcome stderr diagnostic and exit 2 without another stdout attempt or
 replay. The failed stdout descriptor is redirected to the OS null sink where

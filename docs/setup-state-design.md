@@ -1048,6 +1048,13 @@ ordered partial result makes rerun resume. Initialization, migration, recovery,
 relocation, maintenance opt-in, and Evidence/Viewer publication use services directly,
 not removed CLI subprocesses.
 
+The final `inspect_setup_state` after fixed relocation or predecessor legacy
+publication is a protected observation boundary. If it raises, the coordinator
+returns `setup_incomplete` with the returned durable prefix and confirmed
+artifact statuses. Failure assembly reuses those statuses without fresh
+artifact reads. It retains confirmed maintenance/binding updates, but never
+substitutes planned work for observed completion or changes the write order.
+
 When canonical DB is absent, setup scans only canonical managed backups:
 
 - no managed name => fresh initialization;

@@ -2581,7 +2581,9 @@ def _run_setup_from_inspection(
     reported_interval = plan.interval_minutes
     reported_generations = plan.generations
 
-    def failure_after_write(code: str) -> SetupServiceResult:
+    def failure_after_write(
+        code: str, *, confirmed_artifacts: tuple[str, str] | None = None,
+    ) -> SetupServiceResult:
         failure_target = target
         failure_relocation = relocation_projection
         failure_maintenance = (
@@ -2589,6 +2591,7 @@ def _run_setup_from_inspection(
             or "maintenance_configure" in completed
         )
         failure_evidence_status = (
+            confirmed_artifacts[0] if confirmed_artifacts is not None else
             "published"
             if "evidence_projection_publish" in completed
             else (
@@ -2602,6 +2605,7 @@ def _run_setup_from_inspection(
             )
         )
         failure_viewer_status = (
+            confirmed_artifacts[1] if confirmed_artifacts is not None else
             "published"
             if "viewer_publish" in completed
             else (
@@ -2663,6 +2667,12 @@ def _run_setup_from_inspection(
                     SETUP_ERROR_MESSAGES["setup_incomplete"],
                 )
             ),
+            text=(
+                "Setup final state observation failed; completed writes: "
+                + ", ".join(completed)
+                + ". Do not assume rollback; inspect these results before retrying."
+                if confirmed_artifacts is not None else ""
+            ),
         )
 
     if (
@@ -2709,7 +2719,14 @@ def _run_setup_from_inspection(
                     else exc.code
                 )
             )
-        final_state = inspect_setup_state(target)
+        try:
+            final_state = inspect_setup_state(target)
+        except Exception:
+            # Publication already returned its durable prefix. Observation is
+            # not a rollback and must not trigger another artifact inspection.
+            return failure_after_write("setup_incomplete", confirmed_artifacts=(
+                final_evidence_status, final_viewer_status,
+            ))
         assert resolution.stored_project is not None
         return SetupServiceResult(
             ok=True,
@@ -2779,7 +2796,12 @@ def _run_setup_from_inspection(
                 )
             )
             return failure_after_write(code)
-        final_state = inspect_setup_state(target)
+        try:
+            final_state = inspect_setup_state(target)
+        except Exception:
+            return failure_after_write(
+                "setup_incomplete", confirmed_artifacts=("published", "published"),
+            )
         return SetupServiceResult(
             ok=True,
             project_id=target.project.project_id,

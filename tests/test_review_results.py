@@ -1210,6 +1210,112 @@ class ReviewResultsTests(unittest.TestCase):
             self.assertFalse((install.skill_root / "config" / "verification-runner.json").exists())
 
 
+class ReviewWriteOutcomeTests(unittest.TestCase):
+    # Reuse fixture helpers, not the inherited test methods/array matrix.
+    setUp = ReviewResultsTests.setUp
+    success = ReviewResultsTests.success
+
+    def write_case(self, kind, label):
+        def receipt_args(key):
+            return ["review", "receipt", "add", self.task_id, "--reviewer", key,
+                "--kind", "independent", "--verdict", "pass", "--summary", "Observed review",
+                "--reviewer-class", "human", "--model-state", "not_applicable",
+                "--skill-state", "not_applicable", "--context-relation", "external_context",
+                "--review-profile", "general", "--review-lens", "correctness",
+                "--review-method", "review_packet_inspection"]
+
+        if kind == "target":
+            with closing(sqlite3.connect(self.db)) as connection:
+                generation = connection.execute("SELECT review_target_generation FROM tasks WHERE task_id=?", (self.task_id,)).fetchone()[0]
+            return (["review", "target", "set", self.task_id, "--kind", "diff_fingerprint", "--revision", FINGERPRINT], None,
+                    "SELECT review_target_generation FROM tasks WHERE task_id=?", (self.task_id,), [(generation + 1,)])
+        if kind == "receipt":
+            return (receipt_args(label), None, "SELECT reviewer_key FROM review_receipts WHERE reviewer_key=?", (label,), [(label,)])
+        receipt_id = self.success(*receipt_args(label))["receipt"]["review_receipt_id"]
+        add = ["review", "finding", "add", self.task_id, "--receipt-id", receipt_id, "--severity", "low", "--summary", "Observed finding"]
+        if kind == "finding":
+            return (add, None, "SELECT status FROM review_findings WHERE review_receipt_id=?", (receipt_id,), [("open",)])
+        finding_id = self.success(*add)["finding"]["review_finding_id"]
+        if kind == "resolve":
+            return (["review", "finding", "resolve", finding_id, "--resolution", "Checked and corrected"], None,
+                    "SELECT status FROM review_findings WHERE review_finding_id=?", (finding_id,), [("resolved",)])
+        other = self.success(*add)["finding"]["review_finding_id"]
+        payload = {"version": 1, "task_id": self.task_id, "resolutions": [
+            {"finding_ids": [finding_id, other], "resolution": "Checked together"}]}
+        return (["review", "finding", "resolve", "--from-stdin"], payload,
+                "SELECT status FROM review_findings WHERE review_receipt_id=?", (receipt_id,), [("resolved",), ("resolved",)])
+
+    def invoke_write(self, arguments, payload, *, json_output):
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr), mock.patch.object(sys, "stdin", BinaryInput(encode(payload))):
+            code = cli_service.main(["--repo", str(self.repo), *arguments, *(["--json"] if json_output else [])],
+                                    _target_override=self.target, _maintenance_enabled=False)
+        return code, stdout.getvalue(), stderr.getvalue()
+
+    @ordinary_current_database
+    def test_all_review_writes_preserve_saved_rows_after_text_or_emission_failure(self):
+        for fault in ("review_text", "emit_result"):
+            for json_output in (True, False):
+                for kind in ("target", "receipt", "finding", "resolve", "batch"):
+                    label = f"{fault}-{json_output}-{kind}"
+                    with self.subTest(label=label):
+                        arguments, payload, query, parameters, expected = self.write_case(kind, label)
+                        with mock.patch.object(cli_service, fault, side_effect=ValueError("token=private-presentation")) as failed:
+                            code, stdout, stderr = self.invoke_write(arguments, payload, json_output=json_output)
+                        failed.assert_called_once()
+                        self.assertNotIn("private-presentation", stdout + stderr)
+                        if fault == "review_text":
+                            self.assertEqual((code, stderr), (0, ""), stdout)
+                            if json_output:
+                                envelope = json.loads(stdout)
+                                self.assertTrue(envelope["ok"])
+                                self.assertTrue(envelope["data"])
+                                self.assertEqual(envelope["errors"], [])
+                                self.assertEqual(envelope["warnings"][0]["code"], "review_result_display_failed")
+                                if kind == "target":
+                                    self.assertEqual(envelope["data"]["review_preparation"]["status"], "ready")
+                            self.assertIn("Do not resubmit", stdout)
+                        else:
+                            self.assertEqual((code, stdout), (2, ""))
+                            self.assertIn("Review results recorded, but output failed", stderr)
+                        with closing(sqlite3.connect(self.db)) as connection:
+                            self.assertEqual(connection.execute(query, parameters).fetchall(), expected)
+
+    @ordinary_current_database
+    def test_precommit_failure_is_not_reported_as_saved(self):
+        arguments, payload, query, parameters, _ = self.write_case("receipt", "not-saved")
+        with mock.patch.object(cli_service, "add_review_receipt", side_effect=sqlite3.OperationalError("token=private-save")), \
+             mock.patch.object(cli_service, "review_text") as render:
+            code, stdout, stderr = self.invoke_write(arguments, payload, json_output=True)
+        self.assertEqual((code, stderr), (2, ""))
+        envelope = json.loads(stdout)
+        self.assertFalse(envelope["ok"])
+        self.assertEqual(envelope["data"], {"receipt": None, "event": None})
+        self.assertEqual(envelope["warnings"], [])
+        self.assertNotIn("private-save", stdout)
+        render.assert_not_called()
+        with closing(sqlite3.connect(self.db)) as connection:
+            self.assertEqual(connection.execute(query, parameters).fetchall(), [])
+
+    @ordinary_current_database
+    def test_single_receipt_flush_failure_keeps_saved_outcome(self):
+        class FailedFlush(io.StringIO):
+            def flush(self):
+                raise OSError("token=private-flush")
+
+        for json_output in (True, False):
+            arguments, _, query, parameters, expected = self.write_case("receipt", f"flush-{json_output}")
+            stdout, stderr = FailedFlush(), io.StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                code = cli_service.main(["--repo", str(self.repo), *arguments,
+                    *(["--json"] if json_output else [])], _target_override=self.target, _maintenance_enabled=False)
+            self.assertEqual(code, 2)
+            self.assertIn("Review results recorded, but output failed", stderr.getvalue())
+            self.assertNotIn("private-flush", stdout.getvalue() + stderr.getvalue())
+            with closing(sqlite3.connect(self.db)) as connection:
+                self.assertEqual(connection.execute(query, parameters).fetchall(), expected)
+
+
 class ReviewResultOutputProcessTests(unittest.TestCase):
     def test_installed_closed_stdout_exits_two_without_shutdown_traceback_or_replay(self):
         with tempfile.TemporaryDirectory() as temporary:

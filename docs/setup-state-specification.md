@@ -776,6 +776,16 @@ array. Failures report the durable ordered completed prefix. Common preflight
 and invalid policy failures have status null, empty arrays, null observed
 scalars except required schema; later failures retain safe/effective values.
 
+A final state-observation failure after confirmed relocation or predecessor
+legacy publication returns `setup_incomplete`, preserving that operation's
+complete confirmed write prefix and publication outcomes. It does not report
+rollback or `setup_complete`, infer an unobserved value from the planned
+writes, repeat the observation, or retry a write. Maintenance and binding
+claims use the earlier observed state and confirmed stages. An explicit later
+Setup still recomputes from durable state under the existing permission rules.
+Text identifies the final observation failure and lists confirmed stages with
+guidance not to assume rollback or blindly replay the operation.
+
 Core setup outcomes are:
 
 | Stage/result | Stable error |

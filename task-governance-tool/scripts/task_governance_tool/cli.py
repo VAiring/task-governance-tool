@@ -2365,7 +2365,16 @@ def _is_transient_sqlite_lock(exc: sqlite3.Error) -> bool:
     return is_sqlite_busy_or_locked(exc)
 
 
-def handle_review_prepare(context: CommandContext) -> CommandResult:
+def _bounded_packet_text(context: CommandContext, data: dict) -> str:
+    text = format_review_packet_text(data)
+    if not context.json_output and len((text + "\n").encode("utf-8")) > REVIEW_PACKET_MAX_BYTES:
+        raise ReviewPacketError("review_packet_too_large", OVERSIZED_PACKET_MESSAGE)
+    return text
+
+
+def handle_review_prepare(
+    context: CommandContext, *, defer_text: bool = False,
+) -> CommandResult:
     target = resolve_context_target(context)
     project_id = target.project.project_id
     try:
@@ -2376,7 +2385,9 @@ def handle_review_prepare(context: CommandContext) -> CommandResult:
             verification_receipt_id=getattr(context.args, "verification_receipt_id", None),
             expected_binding=getattr(context.args, "expected_binding", None),
         )
-        text = format_review_packet_text(data)
+        # A committed target retains validated Packet data before attempting
+        # presentation. Standalone preparation keeps its existing text path.
+        text = "" if defer_text else _bounded_packet_text(context, data)
         result = CommandResult(
             ok=True,
             command=context.command,
@@ -2385,12 +2396,8 @@ def handle_review_prepare(context: CommandContext) -> CommandResult:
             text=text,
             exit_code=EXIT_SUCCESS,
         )
-        text_size = len((text + "\n").encode("utf-8"))
         json_size = serialized_json_size(result, data)
-        if (
-            (context.json_output and json_size > REVIEW_PACKET_MAX_BYTES)
-            or (not context.json_output and text_size > REVIEW_PACKET_MAX_BYTES)
-        ):
+        if context.json_output and json_size > REVIEW_PACKET_MAX_BYTES:
             raise ReviewPacketError(
                 "review_packet_too_large",
                 OVERSIZED_PACKET_MESSAGE,
@@ -2698,15 +2705,6 @@ def handle_review_command(context: CommandContext, *, submission=None, finalizat
         )
 
     warnings = list(collection_warnings)
-    try:
-        text = review_text(context.command, data)
-    except Exception:
-        if context.command != "review.result.add":
-            raise
-        # The transaction has already committed; keep the saved results and
-        # never turn a rendering fault into an apparent registration failure.
-        text = "Review results recorded; text display unavailable. Do not resubmit; inspect recorded evidence if needed."
-        warnings.append({"code": "review_result_display_failed", "message": text})
     if context.command == "review.target.set":
         preparation = {"status": "not_applicable", "binding": None, "packet": None, "errors": []}
         if result.verification_route in {"not_required", "runner_pass"}:
@@ -2720,27 +2718,46 @@ def handle_review_command(context: CommandContext, *, submission=None, finalizat
                         task_id=result.task["task_id"],
                         expected_binding=result.preparation_binding,
                     ),
-                ))
+                ), defer_text=True)
                 preparation.update(
                     status="ready" if packet_result.ok else "failed",
                     packet=packet_result.data if packet_result.ok else None,
                     errors=packet_result.errors,
                 )
-                warnings = packet_result.warnings
+                warnings.extend(packet_result.warnings)
             except Exception:
                 preparation.update(status="failed", errors=[{
                     "code": "internal_error", "message": "could not prepare review context",
                 }])
         data["review_preparation"] = preparation
-        text += f"\nReview preparation: {preparation['status']}"
-        if preparation["packet"] is not None:
-            text += "\n" + format_review_packet_text(preparation["packet"])
-        elif preparation["status"] == "failed":
-            text += "\n" + "\n".join(
-                f"{error['code']}: {error['message']}" for error in preparation["errors"]
-            )
-            if preparation["binding"] is not None:
-                text += f"\nPreparation binding: {preparation['binding']}"
+    try:
+        packet_text = None
+        if context.command == "review.target.set" and preparation["packet"] is not None:
+            try:
+                packet_text = _bounded_packet_text(context, preparation["packet"])
+            except ReviewPacketError as exc:
+                # A measured size rejection is still a preparation failure.
+                # Other rendering failures leave the already prepared data
+                # intact and reach the saved-outcome display warning below.
+                preparation.update(status="failed", packet=None, errors=[{
+                    "code": exc.code, "message": exc.message,
+                }])
+        text = review_text(context.command, data)
+        if context.command == "review.target.set":
+            text += f"\nReview preparation: {preparation['status']}"
+            if packet_text is not None:
+                text += "\n" + packet_text
+            elif preparation["status"] == "failed":
+                text += "\n" + "\n".join(
+                    f"{error['code']}: {error['message']}" for error in preparation["errors"]
+                )
+                if preparation["binding"] is not None:
+                    text += f"\nPreparation binding: {preparation['binding']}"
+    except Exception:
+        # Every handler above has committed before presentation. Preserve the
+        # saved data and any preparation outcome; never invite a blind replay.
+        text = "Review results recorded; text display unavailable. Do not resubmit; inspect recorded evidence if needed."
+        warnings.append({"code": "review_result_display_failed", "message": text})
     return CommandResult(
         ok=True,
         command=context.command,
@@ -3004,6 +3021,13 @@ def apply_post_commit_maintenance(
     )
 
 
+def _committed_review_result(result: CommandResult) -> bool:
+    return result.ok and result.command in {
+        "review.target.set", "review.receipt.add", "review.result.add",
+        "review.finding.add", "review.finding.resolve",
+    }
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -3137,11 +3161,11 @@ def main(
                     json_output=context.json_output,
                     max_json_bytes=bounded_json_limit_from_args(args),
                 )
-                if result.command == "review.result.add" and result.ok:
+                if _committed_review_result(result):
                     sys.stdout.flush()
                 return exit_code
             except Exception:
-                if result.command != "review.result.add" or not result.ok:
+                if not _committed_review_result(result):
                     raise
                 # Even serialization/stream failure cannot roll back saved rows.
                 # Do not attempt another stdout response or invite blind replay.

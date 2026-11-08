@@ -86,6 +86,42 @@ class TargetReviewPreparationTests(unittest.TestCase):
             self.assertEqual(payload["data"]["review_preparation"],
                              {"status": "not_applicable", "binding": None, "packet": None, "errors": []})
 
+    def test_packet_presentation_failure_preserves_preparation_and_warnings(self):
+        for json_output in (True, False):
+            with self.subTest(json_output=json_output), tempfile.TemporaryDirectory() as tmp:
+                self.assert_packet_presentation_failure(Path(tmp), json_output=json_output)
+
+    def assert_packet_presentation_failure(self, root, *, json_output):
+        db, repo, task_id = self.create(root)
+        original = cli.handle_review_prepare
+
+        def prepared(context, **kwargs):
+            result = original(context, **kwargs)
+            return replace(result, warnings=[{"code": "fixture_warning", "message": "Retain this warning"}])
+
+        with mock.patch.object(cli, "handle_review_prepare", side_effect=prepared), \
+             mock.patch.object(cli, "format_review_packet_text", side_effect=ValueError("token=private-format")) as render, \
+             mock.patch.object(cli, "emit_result", wraps=cli.emit_result) as emit:
+            result = run_taskgov_internal("review", "target", "set", task_id,
+                "--kind", "diff_fingerprint", "--revision", FINGERPRINT_A,
+                "--repo", str(repo), "--db", str(db),
+                *(["--json"] if json_output else []), maintenance_enabled=False)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        render.assert_called_once()
+        response = emit.call_args.args[0]
+        self.assertTrue(response.ok)
+        self.assertEqual([item["code"] for item in response.warnings],
+                         ["fixture_warning", "review_result_display_failed"])
+        prepared_data = response.data["review_preparation"]
+        self.assertEqual(prepared_data["status"], "ready")
+        self.assertEqual(prepared_data["packet"]["review_target"]["generation"], 1)
+        self.assertNotIn("private-format", result.stdout + result.stderr)
+        self.assertIn("Do not resubmit", result.stdout)
+        if json_output:
+            self.assertEqual(json.loads(result.stdout)["data"], response.data)
+        _, observed = self.invoke(db, repo, "task", "show", task_id)
+        self.assertEqual(observed["data"]["task"]["review_target_generation"], 1)
+
     @ordinary_current_database
     def test_persisted_runner_pass_and_blocked_routes(self):
         from tests.test_m242_runner_service import RunnerServiceFixture
@@ -128,6 +164,25 @@ class TargetReviewPreparationTests(unittest.TestCase):
             self.assertEqual(preparation["status"], "failed")
             self.assertEqual(preparation["errors"][0]["code"], "review_packet_too_large")
             self.assertEqual(payload["data"]["task"]["review_target_generation"], 1)
+
+    def test_text_packet_limit_is_still_a_preparation_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db, repo, task_id = self.create(Path(tmp))
+            with mock.patch.object(cli, "REVIEW_PACKET_MAX_BYTES", 1), \
+                 mock.patch.object(cli, "emit_result", wraps=cli.emit_result) as emit:
+                result = run_taskgov_internal("review", "target", "set", task_id,
+                    "--kind", "diff_fingerprint", "--revision", FINGERPRINT_A,
+                    "--repo", str(repo), "--db", str(db), maintenance_enabled=False)
+            self.assertEqual(result.returncode, 0, result.stdout)
+            response = emit.call_args.args[0]
+            prepared = response.data["review_preparation"]
+            self.assertEqual(prepared["status"], "failed")
+            self.assertIsNone(prepared["packet"])
+            self.assertEqual(prepared["errors"][0]["code"], "review_packet_too_large")
+            self.assertEqual(response.warnings, [])
+            self.assertEqual(response.data["task"]["review_target_generation"], 1)
+            self.assertIn("Review preparation: failed", result.stdout)
+            self.assertIn("review_packet_too_large", result.stdout)
 
     def test_task_contract_and_target_drift_fail_before_first_read_and_during_prepare(self):
         for phase in ("before", "during"):

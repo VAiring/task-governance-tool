@@ -151,6 +151,18 @@ Audit collection bounds
 do not alter the complete validated inventory or the current gate. Neither mode
 emits raw review content or changes Receipt/Finding storage and gate evaluation.
 
+For `review.target.set`, `review.receipt.add`, `review.result.add`,
+`review.finding.add`, and scalar or batch `review.finding.resolve`, a text
+formatting failure after commit retains successful JSON data and adds
+`review_result_display_failed`. The fixed fallback states that results were
+saved and must not be resubmitted blindly. Target preparation still runs and
+retains its separately observed outcome, packet and warnings; failing to render
+that packet does not discard the saved target or a ready preparation.
+Serialization, stream and flush failures use the saved-outcome emission
+boundary in [Structured Review Results](#structured-review-results).
+These protections do not turn pre-commit failures or read-only preparation
+into successful writes, and introduce no automatic replay or extra state read.
+
 ## Structured Finding Resolutions
 
 `review finding resolve --from-stdin` applies caller-confirmed resolutions to

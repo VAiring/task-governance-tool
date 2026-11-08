@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import sqlite3
 import stat
 import tempfile
 import unittest
-from contextlib import closing, contextmanager
+from contextlib import closing, contextmanager, redirect_stdout, redirect_stderr
 from dataclasses import replace
 from pathlib import Path
 from unittest import mock
@@ -263,6 +264,142 @@ def assert_viewer_presentation_contract(
 
 
 class M17RelocationSetupTests(unittest.TestCase):
+    def assert_final_failure_output(self, result, install):
+        from task_governance_tool import cli
+        for json_output in (True, False):
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.object(setup_service, "run_setup", return_value=result) as service, \
+                 redirect_stdout(stdout), redirect_stderr(stderr):
+                code = cli.main(["--repo", str(install.project_root), "setup",
+                                 *(["--json"] if json_output else [])], _maintenance_enabled=False)
+            self.assertEqual((code, stderr.getvalue()), (2, ""))
+            service.assert_called_once()
+            if json_output:
+                envelope = json.loads(stdout.getvalue())
+                self.assertFalse(envelope["ok"])
+                self.assertEqual(envelope["data"], result.data)
+                self.assertEqual(envelope["warnings"], [])
+                self.assertEqual(envelope["errors"][0]["code"], "setup_incomplete")
+            else:
+                self.assertIn("final state observation failed", stdout.getvalue())
+                self.assertIn(", ".join(result.data["completed_writes"]), stdout.getvalue())
+                self.assertIn("Do not assume rollback", stdout.getvalue())
+            self.assertNotIn("token=private", stdout.getvalue())
+
+    def test_final_relocation_observation_failure_preserves_completed_writes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            install = make_moved_unconfigured_fixed_install(Path(temporary))
+            preview = run_service_setup(install, read_only=True, now=ISSUED_AT)
+            token = preview.data["relocation"]["confirmation_token"]
+            execute = setup_service._execute_fixed_relocation
+            inspect = setup_service.inspect_setup_state
+            completed = None
+            failed_observations = 0
+
+            def execute_and_remember(**kwargs):
+                nonlocal completed
+                outcome = execute(**kwargs)
+                completed = outcome
+                return outcome
+
+            def fail_after_return(target):
+                nonlocal failed_observations
+                if completed is not None:
+                    failed_observations += 1
+                    raise OSError("token=private-final-observation")
+                return inspect(target)
+
+            with mock.patch.object(setup_service, "_execute_fixed_relocation", side_effect=execute_and_remember), \
+                 mock.patch.object(setup_service, "inspect_setup_state", side_effect=fail_after_return), \
+                 mock.patch.object(setup_service, "_failure_evidence_status", side_effect=AssertionError("no retry")), \
+                 mock.patch.object(setup_service, "_failure_viewer_status", side_effect=AssertionError("no retry")):
+                result = run_service_setup(install, read_only=False, confirmation_token=token, now=CONFIRMED_AT)
+            self.assertIsNotNone(completed)
+            self.assertFalse(result.ok)
+            self.assertEqual(result.error_code, "setup_incomplete")
+            self.assertEqual(result.data["completed_writes"], UNCONFIGURED_FIXED_WRITES)
+            self.assertEqual(failed_observations, 1)
+            self.assertIsNone(result.data["status"])
+            self.assertTrue(result.data["maintenance_enabled"])
+            self.assertEqual((result.data["evidence_status"], result.data["viewer_status"]), ("published", "published"))
+            self.assertEqual(result.data["relocation"]["binding_generation"], 2)
+            self.assertNotIn("private-final-observation", repr(result))
+            self.assert_final_failure_output(result, install)
+            actual = resolve_setup_project_state(skill_root=install.skill_root, repo=install.project_root)
+            self.assertEqual(actual.binding, "matching")
+            self.assertEqual(actual.stored_project.binding_generation, 2)
+            self.assertTrue(inspect(actual.target).maintenance_enabled)
+
+    def test_predecessor_legacy_final_observation_keeps_publication_prefix(self):
+        # Exercise the retained predecessor publication branch explicitly.
+        # Normal new legacy sources still use state separation, unchanged.
+        # The predecessor stage inventory predates the incremental Viewer cache;
+        # use the existing schema/runtime and real old-Viewer fixture together.
+        from tests.test_review_session_migration import candidate_runtime
+        from tests.fixtures.pre_incremental_viewer_maintenance import publish_setup_viewer
+        from task_governance_tool import storage
+        self.enterContext(candidate_runtime(33))
+        self.enterContext(mock.patch.object(setup_service, "publish_setup_viewer", publish_setup_viewer))
+        required_objects = storage.required_schema_objects_missing
+        self.enterContext(mock.patch.object(storage, "required_schema_objects_missing",
+            side_effect=lambda connection, *, schema_version=33: required_objects(connection, schema_version=schema_version)))
+        with tempfile.TemporaryDirectory() as temporary:
+            install = make_physical_install(Path(temporary))
+            create_v14_target(install.legacy_target)
+            from task_governance_tool.state_resolver import resolve_package_project_state
+            publish = setup_service._publish_legacy
+            backup = setup_service.publish_setup_backup
+            inspect = setup_service.inspect_setup_state
+            completed = None
+            failed_observations = 0
+
+            def predecessor_resolution(**kwargs):
+                return resolve_package_project_state(**kwargs)
+
+            def publish_and_remember(**kwargs):
+                nonlocal completed
+                completed = publish(**kwargs)
+                return completed
+
+            def predecessor_backup(target, *args, **kwargs):
+                metadata = backup(target, *args, **kwargs)
+                # Model the retained record-less backup format, not the new
+                # nested validation-record layout. Keep the real SQLite backup
+                # and move its record outside the predecessor stage. Readers
+                # must perform their full record-less validation; no validator
+                # or publication assertion is mocked out.
+                records = target.resolved_backups_path / "validation"
+                self.assertTrue(records.resolve().is_relative_to(Path(temporary).resolve()))
+                records.rename(Path(temporary) / "retained-validation-records")
+                return metadata
+
+            def fail_after_return(target):
+                nonlocal failed_observations
+                if completed is not None:
+                    failed_observations += 1
+                    raise OSError("token=private-legacy-observation")
+                return inspect(target)
+
+            with mock.patch.object(setup_service, "resolve_setup_project_state", side_effect=predecessor_resolution), \
+                 mock.patch.object(setup_service, "publish_setup_backup", side_effect=predecessor_backup), \
+                 mock.patch.object(setup_service, "_publish_legacy", side_effect=publish_and_remember), \
+                 mock.patch.object(setup_service, "inspect_setup_state", side_effect=fail_after_return):
+                result = run_service_setup(install, read_only=False, now=CONFIRMED_AT)
+            self.assertIsNotNone(completed, repr(result))
+            self.assertFalse(result.ok)
+            self.assertEqual(result.error_code, "setup_incomplete")
+            self.assertEqual(result.data["completed_writes"], ["legacy_state_publish",
+                "migration_backup", "database_migrate", "maintenance_configure",
+                "evidence_projection_publish", "viewer_publish", "legacy_state_cleanup"])
+            self.assertEqual(failed_observations, 1)
+            self.assertIsNone(result.data["status"])
+            self.assertEqual((result.data["evidence_status"], result.data["viewer_status"]), ("published", "published"))
+            self.assertNotIn("private-legacy-observation", repr(result))
+            self.assert_final_failure_output(result, install)
+            state = inspect(completed[0])
+            self.assertEqual(state.schema_version, 33)
+            self.assertTrue(state.maintenance_enabled)
+
     def assert_cli_error(
         self,
         payload: dict,

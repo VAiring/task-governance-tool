@@ -126,7 +126,27 @@ class ContinuationTransitionTests(unittest.TestCase):
                         dict(phase="prepared"), dict(old_request_phase="unknown")):
             with self.subTest(changes=changes), self.assertRaises(RepositoryError):
                 replace(pending(), **changes)
-        self.assertEqual(encode(pending()), encode(pending()))
+        # Expected structure is authored independently of the encoder and
+        # dataclass serialization, including omitted legacy optional fields.
+        for index in (1, 2):
+            with self.subTest(index=index):
+                self.assertEqual(json.loads(encode(pending(index))), {
+                    "preparation_id": "tg_review_preparation_0000000000000001",
+                    "continuation_id": f"tg_review_continuation_{index:016x}",
+                    "continuation_sequence": index,
+                    "basis_digest": "a" * 64,
+                    "wait_basis_digest": "d" * 64,
+                    "selection_digest": "b" * 64,
+                    "expected_attempt": 0,
+                    "expected_request_digest": None,
+                    "old_automation_id": None,
+                    "old_request_phase": None,
+                    "phase": "fenced",
+                    "worker_stop_identity": None,
+                    "packet_path": f"reviews/round-{index}/packet.json",
+                    "packet_digest": None,
+                    "result_paths": [f"reviews/round-{index}/a.json"],
+                })
 
 
 if __name__ == "__main__":

@@ -476,7 +476,7 @@ class ReviewResultsInputTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, "review_receipt_already_recorded")
 
 
-class ReviewResultsTests(unittest.TestCase):
+class ReviewResultsFixture:
     document_array = False
 
     def setUp(self):
@@ -556,6 +556,10 @@ class ReviewResultsTests(unittest.TestCase):
         self.assertEqual({key: gate[key] for key in shown}, shown)
         checked = self.success("task", "complete", self.task_id, "--verification-complete", "--review-complete", "--commit-not-required", "--check", "--read-only")
         self.assertEqual(checked["blocking_codes"], [] if blocking_code is None else [blocking_code])
+
+
+class ReviewResultsCases(ReviewResultsFixture):
+    """Storage and semantic cases exercised through both object and array input."""
 
     @ordinary_current_database
     def test_gate_is_observed_once_inside_writer_without_git(self):
@@ -1114,30 +1118,6 @@ class ReviewResultsTests(unittest.TestCase):
         self.assertEqual(file_snapshot(self.root), before)
 
     @ordinary_current_database
-    def test_read_only_and_parse_rejection_never_consume_stdin_or_open_writer(self):
-        before = file_snapshot(self.root)
-        with mock.patch.object(cli_service, "connect_initialized", side_effect=AssertionError("must not open writer")):
-            self.assert_failure(self.invoke(None, "--read-only", stdin=BinaryInput(readable=False)), "invalid_argument")
-            code, stdout, stderr = self.invoke(None, "--user-approved", stdin=BinaryInput(readable=False))
-            self.assertEqual((code, stderr), (1, ""))
-            rejected = json.loads(stdout)
-            self.assertFalse(rejected["ok"])
-            self.assertEqual(rejected["command"], "parse")
-            self.assertEqual(rejected["errors"][0]["code"], "invalid_argument")
-        self.assertEqual(file_snapshot(self.root), before)
-
-    @ordinary_current_database
-    def test_malformed_or_oversized_stdin_is_bounded_and_rejected_before_connection(self):
-        before = file_snapshot(self.root)
-        for raw in (b"{", b" " * 262145, b"\xff"):
-            stream = BinaryInput(raw)
-            with self.subTest(raw_length=len(raw)), mock.patch.object(cli_service, "connect_initialized", side_effect=AssertionError("decode must precede connection")):
-                self.assert_failure(self.invoke(stdin=stream), "invalid_review_evidence")
-                self.assertEqual(stream.read_sizes, [262145])
-                self.assertEqual(file_snapshot(self.root), before)
-        self.assert_failure(self.invoke(stdin=io.StringIO("{}")), "invalid_review_evidence")
-
-    @ordinary_current_database
     def test_text_retains_ids_findings_and_gate_and_error_is_sanitized(self):
         candidate = self.payload(receipts=[receipt("reviewer-a", findings=[{"severity": "low", "summary": "Private work description"}]), receipt("reviewer-b")])
         code, stdout, stderr = self.invoke(candidate, json_output=False)
@@ -1212,6 +1192,34 @@ class ReviewResultsTests(unittest.TestCase):
             self.assertEqual([row["receipt"]["summary"] for row in result_data["receipts"]], [item["summary"] for item in payload["receipts"]])
             self.assertEqual(file_snapshot(install.project_root, exclude_state=True), before)
             self.assertFalse((install.skill_root / "config" / "verification-runner.json").exists())
+
+
+class ReviewResultsTests(ReviewResultsCases, unittest.TestCase):
+    # These raw-input failures do not pass through wire_payload, so exercising
+    # them again via the array subclass would repeat the identical boundary.
+    @ordinary_current_database
+    def test_read_only_and_parse_rejection_never_consume_stdin_or_open_writer(self):
+        before = file_snapshot(self.root)
+        with mock.patch.object(cli_service, "connect_initialized", side_effect=AssertionError("must not open writer")):
+            self.assert_failure(self.invoke(None, "--read-only", stdin=BinaryInput(readable=False)), "invalid_argument")
+            code, stdout, stderr = self.invoke(None, "--user-approved", stdin=BinaryInput(readable=False))
+            self.assertEqual((code, stderr), (1, ""))
+            rejected = json.loads(stdout)
+            self.assertFalse(rejected["ok"])
+            self.assertEqual(rejected["command"], "parse")
+            self.assertEqual(rejected["errors"][0]["code"], "invalid_argument")
+        self.assertEqual(file_snapshot(self.root), before)
+
+    @ordinary_current_database
+    def test_malformed_or_oversized_stdin_is_bounded_and_rejected_before_connection(self):
+        before = file_snapshot(self.root)
+        for raw in (b"{", b" " * 262145, b"\xff"):
+            stream = BinaryInput(raw)
+            with self.subTest(raw_length=len(raw)), mock.patch.object(cli_service, "connect_initialized", side_effect=AssertionError("decode must precede connection")):
+                self.assert_failure(self.invoke(stdin=stream), "invalid_review_evidence")
+                self.assertEqual(stream.read_sizes, [262145])
+                self.assertEqual(file_snapshot(self.root), before)
+        self.assert_failure(self.invoke(stdin=io.StringIO("{}")), "invalid_review_evidence")
 
 
 class ReviewWriteOutcomeTests(unittest.TestCase):
@@ -1347,7 +1355,7 @@ class ReviewResultOutputProcessTests(unittest.TestCase):
                 cli("task", "edit", task, "--status", "ready")
 
 
-class ReviewResultsDocumentArrayTests(ReviewResultsTests):
+class ReviewResultsDocumentArrayTests(ReviewResultsCases, unittest.TestCase):
     # Exercise the same storage, gate, race, privacy, approval, replay and
     # physical-CLI oracles with one complete original per Receipt as well.
     document_array = True

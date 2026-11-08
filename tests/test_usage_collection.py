@@ -37,7 +37,7 @@ def usage(response="resp_1", *, thread=THREAD, turn=TURN, counts=None):
                  response_id=response, usage=COUNTS if counts is None else counts)
 
 
-class UsageCollectionTests(unittest.TestCase):
+class UsageCollectionFixture:
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -68,6 +68,8 @@ class UsageCollectionTests(unittest.TestCase):
         self.assertNotEqual(result["status"], "unknown", result)
         return result
 
+
+class UsageCollectionTests(UsageCollectionFixture, unittest.TestCase):
     def test_known_totals_subsets_and_identical_replay(self):
         self.write(self.records(usage(), usage()))
         report = self.collect()
@@ -364,15 +366,10 @@ class UsageCollectionTests(unittest.TestCase):
             absent.summary()
         self.assertFalse(absent.path.exists())
 
-    def test_initialization_reentry_and_failed_publication_replay(self):
+    def test_initialization_reentry(self):
+        # This uses each derived test's actual repository, unlike the fresh
+        # base-store failure cases in UsageInitializationTests below.
         self.assertEqual(self.repository.initialize(), "current")
-        new = UsageRepository(self.root / "new.sqlite", *self.repository.basis)
-        with mock.patch("task_governance_tool.usage_repository.rename_no_replace", side_effect=OSError):
-            with self.assertRaises(UsageError):
-                new.initialize()
-        self.assertFalse(new.path.exists())
-        self.assertFalse(list(self.root.glob(".taskgov-usage-*")))
-        self.assertEqual(new.initialize(), "initialized")
 
     def test_binding_change_and_corruption_do_not_repair(self):
         wrong = UsageRepository(self.repository.path, "other-project", "a" * 64, 1)
@@ -421,15 +418,6 @@ class UsageCollectionTests(unittest.TestCase):
                         f"SELECT {field} FROM usage_sources").fetchone()[0], invalid)
                     connection.execute(f"UPDATE usage_sources SET {field}=?", (original,))
                     connection.commit()
-
-    def test_schema_transaction_failure_leaves_no_live_partial_store(self):
-        other = UsageRepository(self.root / "other.sqlite", *self.repository.basis)
-        with mock.patch.object(other, "_validate", side_effect=UsageError):
-            with self.assertRaises(UsageError):
-                other.initialize()
-        self.assertFalse(other.path.exists())
-        self.assertFalse(list(self.root.glob(".taskgov-usage-*")))
-        self.assertEqual(other.initialize(), "initialized")
 
     def test_busy_writer_preserves_cursor_and_replays_later(self):
         self.write(self.records(usage()))
@@ -507,6 +495,28 @@ class UsageCollectionTests(unittest.TestCase):
             self.assertEqual(collect_registered(self.repository, self.source)["status"], "unknown")
         self.assertEqual(self.repository.cursor(self.source.source_id, THREAD), Cursor())
         self.assertEqual(self.collect()["models"][0]["response_count"], 2)
+
+
+class UsageInitializationTests(UsageCollectionFixture, unittest.TestCase):
+    """Base-store failure injection, independent of derived schema fixtures."""
+
+    def test_failed_publication_replays_without_partial_store(self):
+        new = UsageRepository(self.root / "new.sqlite", *self.repository.basis)
+        with mock.patch("task_governance_tool.usage_repository.rename_no_replace", side_effect=OSError):
+            with self.assertRaises(UsageError):
+                new.initialize()
+        self.assertFalse(new.path.exists())
+        self.assertFalse(list(self.root.glob(".taskgov-usage-*")))
+        self.assertEqual(new.initialize(), "initialized")
+
+    def test_schema_transaction_failure_leaves_no_live_partial_store(self):
+        other = UsageRepository(self.root / "other.sqlite", *self.repository.basis)
+        with mock.patch.object(other, "_validate", side_effect=UsageError):
+            with self.assertRaises(UsageError):
+                other.initialize()
+        self.assertFalse(other.path.exists())
+        self.assertFalse(list(self.root.glob(".taskgov-usage-*")))
+        self.assertEqual(other.initialize(), "initialized")
 
 
 if __name__ == "__main__":

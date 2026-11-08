@@ -17,7 +17,7 @@ from task_governance_tool.usage_reconciliation_turns import replay_one
 from task_governance_tool.usage_values import UsageError
 
 
-class ReconciliationInputTests(unittest.TestCase):
+class ReconciliationInputFixture:
     records = support.ResponseRepositoryTests.records
     write = support.ResponseRepositoryTests.write
     append = support.ResponseRepositoryTests.append
@@ -77,6 +77,8 @@ class ReconciliationInputTests(unittest.TestCase):
                 owners[tuple(key)].update(component["executions"])
         self.assertEqual(self.owners(), dict(owners))
 
+
+class ReconciliationInputTests(ReconciliationInputFixture, unittest.TestCase):
     def test_three_periods_same_turn_preserve_core_order_and_do_not_restage_noop(self):
         rows = []
         for task, number in ((A, 1), (B, 2), (A, 3)):
@@ -181,7 +183,7 @@ class ReconciliationInputTests(unittest.TestCase):
             self.assertIsNone(connection.execute("SELECT 1 FROM usage_reconcile_ordered_inputs").fetchone())
 
 
-class ReconciliationChangeTests(ReconciliationInputTests):
+class ReconciliationChangeTests(ReconciliationInputFixture, unittest.TestCase):
     def consume(self):
         from task_governance_tool.usage_reconciliation_changes import consume_page
         total = 0

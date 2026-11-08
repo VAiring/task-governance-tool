@@ -6,6 +6,7 @@ import multiprocessing
 import os
 import unittest
 from unittest import mock
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
 
 from tools.benchmark_usage_response_pages import policy, observe
 from tests import test_usage_reconciliation_changes_runtime as changed
@@ -59,10 +60,11 @@ class ResponsePageExperimentTests(unittest.TestCase):
 
     def fixture(self):
         fixture = changed.ChangedRuntimeTests()
-        fixture.setUp()
         self.addCleanup(fixture.doCleanups)
+        fixture.prepare_fixture(real_initialization=not uses_current_database_fixture(self))
         return fixture
 
+    @ordinary_current_database
     def test_zero_one_boundaries_and_multiple_pages_preserve_fifo_and_full_oracle(self):
         for count in (0, 1, 7, 8, 9, 127, 128, 129, 257):
             with self.subTest(count=count):
@@ -80,6 +82,7 @@ class ResponsePageExperimentTests(unittest.TestCase):
                 with fixture.repository.connection() as connection:
                     self.assertIsNone(connection.execute("SELECT 1 FROM usage_reconcile_response_work").fetchone())
 
+    @ordinary_current_database
     def test_deadline_margin_is_50ms_and_250ms_only_limits_optional_start(self):
         fixture = self.fixture()
         keys, _ = fixture.queued_responses(8)
@@ -103,6 +106,7 @@ class ResponsePageExperimentTests(unittest.TestCase):
         with policy("candidate"):
             fixture.test_response_pages_commit_a_single_key_before_optional_siblings_and_resume_fifo()
 
+    @ordinary_current_database
     def test_new_priority_work_runs_before_the_next_response_page(self):
         from tests.test_usage_collection import THREAD
         from tests.test_usage_attribution import turn

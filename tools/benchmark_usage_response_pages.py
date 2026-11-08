@@ -144,7 +144,7 @@ def response_trials(repeats):
     for count in (9, 129, 513):
         fixture = ChangedRuntimeTests()
         try:
-            fixture.setUp()
+            fixture.prepare_fixture(real_initialization=False)
             keys, expected = fixture.queued_responses(count)
             repository = fixture.repository
             saved = repository.path.read_bytes()
@@ -186,7 +186,7 @@ def writer_wait(name):
     from task_governance_tool.usage_values import UsageError
     fixture = ChangedRuntimeTests()
     try:
-        fixture.setUp()
+        fixture.prepare_fixture(real_initialization=False)
         fixture.queued_responses(129)
         entered, committing, measured = Event(), Event(), {}
         def edit():

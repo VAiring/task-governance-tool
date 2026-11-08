@@ -2540,6 +2540,141 @@
    ]
   },
   {
+   "disposition": "no-core-preparation",
+   "file": "tests/test_protection_usage_recovery.py",
+   "function": "RecoveryUsageTests.test_current_lifecycle_keeps_entry_deadline_for_deferred_reconciliation",
+   "reason": "This unchanged control does not initialize Core: the policy identity assertion needs no database; the lifecycle deadline control retains real numerical Usage preparation with its existing mocked Core target.",
+   "regression_conditions": [
+    "self.assertEqual(deadline, fixture.repo.deadline)",
+    "self.assertGreater(deadline, started)",
+    "self.assertLessEqual(deadline, time.monotonic() + usage_lifecycle.EVENT_SECONDS)"
+   ]
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_protection_usage_recovery.py",
+   "function": "RecoveryUsageTests.test_independent_capture_keeps_later_task_observation_unbound",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": [
+    "self.assert_unknown(restored, later[0])",
+    "self.assert_oracle(restored)",
+    "self.assertIsNotNone(numerical.execute('SELECT 1 FROM usage_operation_turns WHERE task_id=?', later).fetchone())",
+    "self.assertIsNone(numerical.execute('SELECT 1 FROM usage_reconcile_periods WHERE task_id=?', later).fetchone())"
+   ]
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_protection_usage_recovery.py",
+   "function": "RecoveryUsageTests.test_migration_reset_without_response_context_remains_recoverable",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": [
+    "self.assert_oracle(restored)"
+   ]
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_protection_usage_recovery.py",
+   "function": "RecoveryUsageTests.test_reestablished_display_rejects_changed_identity_epoch_schema_and_binding",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": [
+    "self.assert_oracle(restored)",
+    "self.assert_unknown(restored, fixture.fixture.task_id)",
+    "self.assertRaises(UsageError)"
+   ]
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_protection_usage_recovery.py",
+   "function": "RecoveryUsageTests.test_restore_fence_cost_does_not_replay_growing_unrelated_history",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": [
+    "self.assertEqual(measured[0]['current']['sql'], measured[1]['current']['sql'])",
+    "self.assertGreater(measured[1]['previous']['sql'], measured[0]['previous']['sql'])",
+    "self.assertEqual(current['recalculations'], 0)",
+    "self.assertEqual(current['connections'], 2)",
+    "self.assertGreater(previous['recalculations'], history)"
+   ]
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_protection_usage_recovery.py",
+   "function": "RecoveryUsageTests.test_restore_preserves_originals_and_resumes_after_deadline_and_restart",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": [
+    "self.assert_unknown(restored, fixture.fixture.task_id)",
+    "self.assertEqual(before, self.originals(repository_for(restored)))",
+    "self.assertEqual(refresh_usage(restored, deadline=time.monotonic() - 1)['publication'], 'pending')",
+    "self.assert_unknown(restored, fixture.fixture.task_id)",
+    "self.assert_oracle(restored)",
+    "self.assertEqual(refresh_usage(restored, deadline=time.monotonic() + 20)['publication'], 'current')",
+    "self.assertTrue(rows <= after[table], table)",
+    "self.assertEqual(read_task_usage(restored, core, fixture.fixture.task_id)['status'], 'pending')",
+    "self.assert_unknown(restored, fixture.fixture.task_id)",
+    "self.fail('bounded work failed to converge')"
+   ]
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_protection_usage_recovery.py",
+   "function": "RecoveryUsageTests.test_retained_change_key_types_and_shapes_are_checked_for_every_kind",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": [
+    "self.assertEqual(connection.execute('PRAGMA quick_check').fetchone()[0], 'ok')",
+    "self.assertIsNone(connection.execute('PRAGMA foreign_key_check').fetchone())",
+    "self.assertRaises(UsageError)"
+   ]
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_protection_usage_recovery.py",
+   "function": "RecoveryUsageTests.test_saved_collection_controls_resume_without_discovery_during_recovery",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": [
+    "self.assertEqual(repository.discovery_position(), before_position)",
+    "self.assertIsNotNone(repository.locator_by_id('f' * 64, pending=True))",
+    "self.assertGreater(rotated.queue_order, entry.queue_order)",
+    "self.assertEqual(repository.unattempted_sources([entry.locator.source_id], before_position[1]['attempt_floor']), set())",
+    "self.assertEqual(repository.discovery_position()[1]['cycle'], before_position[1]['cycle'] + 1)",
+    "self.assert_oracle(restored)"
+   ]
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_protection_usage_recovery.py",
+   "function": "RecoveryUsageTests.test_sql_valid_original_and_restart_corruption_prevents_protection",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": [
+    "self.assertEqual(target.resolved_usage_database.read_bytes(), before)",
+    "self.assertFalse(list(root.glob('tg_protection_*')))",
+    "self.assertFalse(list(root.rglob('manifest.json')))",
+    "self.assertGreater(changed, 0)",
+    "self.assertEqual(connection.execute('PRAGMA quick_check').fetchone()[0], 'ok')",
+    "self.assertIsNone(connection.execute('PRAGMA foreign_key_check').fetchone())",
+    "self.assertRaises(UsageError)"
+   ]
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_protection_usage_recovery.py",
+   "function": "RecoveryUsageTests.test_unknown_turn_legacy_coverage_from_normal_collection_remains_recoverable",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": [
+    "self.assert_unknown(restored, fixture.fixture.task_id)",
+    "self.assert_oracle(restored)",
+    "self.assertIn('legacy_usage', repository_for(restored).summary()['diagnostics'])",
+    "self.assertEqual(tuple(connection.execute('SELECT turn_id,modern,legacy FROM usage_scan_coverage WHERE source_id=?', (source.source_id,)).fetchone()), ('', 0, 1))"
+   ]
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_protection_usage_recovery.py",
+   "function": "RecoveryUsageTests.test_valid_changes_without_restored_anchors_can_resume",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": [
+    "self.assert_oracle(restored)"
+   ]
+  },
+  {
    "disposition": "real",
    "file": "tests/test_review_handoff_preparation.py",
    "function": "RunnerPreparationOutcomeTests.test_pre_t1_post_t1_cleanup_and_lost_response_match_persisted_state",
@@ -4299,43 +4434,354 @@
    ]
   },
   {
+   "disposition": "real",
+   "file": "tests/test_usage_reconciliation_changes_runtime.py",
+   "function": "ChangedRuntimeTests.test_bad_order_occurrence_remains_unknown_despite_an_ordered_occurrence",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": [
+    "self.assert_frozen_same()",
+    "self.assert_frozen_same(restart=True)",
+    "self.assertEqual(result['unattributed']['unknown']['response_count'], 1)",
+    "self.assert_frozen_same(restart=True)"
+   ]
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_usage_reconciliation_changes_runtime.py",
+   "function": "ChangedRuntimeTests.test_base_owner_removal_revisits_original_without_position",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": []
+  },
+  {
+   "disposition": "current-template-if-unpinned",
+   "file": "tests/test_usage_reconciliation_changes_runtime.py",
+   "function": "ChangedRuntimeTests.test_competing_task_update_can_commit_between_response_pages",
+   "reason": "Explicit ordinary caller passes its marker through every runtime helper; pinned Core and numerical Usage still initialize for real.",
+   "regression_conditions": [
+    "self.assert_same()",
+    "self.assertTrue(page_started.wait(5))",
+    "self.assertRaisesRegex(UsageError, 'usage_pending')",
+    "self.assertEqual([tuple(row) for row in connection.execute('SELECT provider,response_id FROM usage_reconcile_response_work ORDER BY rowid')], keys[-1:])",
+    "self.assertTrue(committing.wait(5))",
+    "self.assertFalse(editor.done())",
+    "self.assertEqual(runtime.advance_effects(self.repository, self.reader)['phase'], 'response')"
+   ]
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_usage_reconciliation_changes_runtime.py",
+   "function": "ChangedRuntimeTests.test_fallback_uses_last_thread_position_after_stop_and_restart",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": [
+    "self.assert_frozen_same()",
+    "self.assert_frozen_same(restart=True)"
+   ]
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_usage_reconciliation_changes_runtime.py",
+   "function": "ChangedRuntimeTests.test_late_duplicate_key_in_other_turn_and_removal_use_actual_reverse_queue",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": [
+    "self.assert_same()",
+    "self.assert_same()",
+    "self.assert_same()"
+   ]
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_usage_reconciliation_changes_runtime.py",
+   "function": "ChangedRuntimeTests.test_missing_order_uses_global_occurrences_after_recovery_and_restart",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": []
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_usage_reconciliation_changes_runtime.py",
+   "function": "ChangedRuntimeTests.test_missing_order_uses_other_thread_occurrences",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": []
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_usage_reconciliation_changes_runtime.py",
+   "function": "ChangedRuntimeTests.test_moving_stop_position_revisits_unchanged_original_turn",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": [
+    "self.assert_frozen_same()",
+    "self.assert_frozen_same(restart=True)",
+    "self.assertNotEqual(before['current_snapshot_ids'], after['current_snapshot_ids'])"
+   ]
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_usage_reconciliation_changes_runtime.py",
+   "function": "ChangedRuntimeTests.test_partial_split_retains_predecessors_across_input_change_and_restores",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": [
+    "self.assert_same()",
+    "self.assertEqual(snapshots.advance(self.repository, self.reader)['phase'], 'snapshot')",
+    "self.assert_same()",
+    "self.assertEqual(len(latest['current_snapshot_ids']), 2)",
+    "self.assertEqual(self.repository.publication_snapshot(identity)['predecessors'], original['current_snapshot_ids'])"
+   ]
+  },
+  {
+   "disposition": "current-template-if-unpinned",
+   "file": "tests/test_usage_reconciliation_changes_runtime.py",
+   "function": "ChangedRuntimeTests.test_pause_and_resume_keep_unassigned_gap_and_old_execution",
+   "reason": "Explicit ordinary caller passes its marker through every runtime helper; pinned Core and numerical Usage still initialize for real.",
+   "regression_conditions": [
+    "self.assert_same()",
+    "self.assert_same()",
+    "self.assertEqual(paused['unattributed']['unassigned']['response_count'], 1)",
+    "self.assert_same()",
+    "self.assertEqual(resumed['unattributed'], paused['unattributed'])"
+   ]
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_usage_reconciliation_changes_runtime.py",
+   "function": "ChangedRuntimeTests.test_response_pages_commit_a_single_key_before_optional_siblings_and_resume_fifo",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": [
+    "self.assertEqual(visited, keys[:3])",
+    "self.assertEqual(pages, [keys[:1]])",
+    "self.assertEqual(visited, keys[1:])",
+    "self.assertEqual([len(page) for page in pages], [1, runtime._RESPONSE_PAGE_SIZE, runtime._RESPONSE_PAGE_SIZE - 1])",
+    "self.assertEqual([tuple(row) for row in connection.execute('SELECT provider,response_id FROM usage_reconcile_response_work ORDER BY rowid')], keys[1:])",
+    "self.assertEqual(derived_rows.intersection(keys), {keys[0]})",
+    "self.assertEqual(self.assert_same(), expected)",
+    "self.assertRaisesRegex(UsageError, 'usage_unavailable')",
+    "self.assert_same()"
+   ]
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_usage_reconciliation_changes_runtime.py",
+   "function": "ChangedRuntimeTests.test_schema9_base_owner_reappearance_keeps_full_replay_correctness",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": []
+  },
+  {
+   "disposition": "current-template-if-unpinned",
+   "file": "tests/test_usage_reconciliation_changes_runtime.py",
+   "function": "ChangedRuntimeTests.test_short_response_page_commits_and_fresh_guard_rejects_changed_core",
+   "reason": "Explicit ordinary caller passes its marker through every runtime helper; pinned Core and numerical Usage still initialize for real.",
+   "regression_conditions": [
+    "self.assert_same()",
+    "self.assertEqual(runtime.advance_effects(self.repository, self.reader)['key'], keys[1])",
+    "self.assertRaisesRegex(UsageError, 'usage_pending')",
+    "self.assertEqual([tuple(row) for row in connection.execute('SELECT provider,response_id FROM usage_reconcile_response_work ORDER BY rowid')], keys[2:])",
+    "self.assertEqual(runtime.advance_effects(self.repository, self.reader), {'phase': 'response', 'key': keys[0]})",
+    "self.assertRaisesRegex(UsageError, 'usage_pending')"
+   ]
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_usage_reconciliation_changes_runtime.py",
+   "function": "ChangedRuntimeTests.test_source_replacement_and_diagnostic_removal_reconcile_without_rewriting_history",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": [
+    "self.assert_same()",
+    "self.assert_same()",
+    "self.assertNotEqual(before['current_snapshot_ids'], gap['current_snapshot_ids'])",
+    "self.assert_same()",
+    "self.assertGreater(self.repository.cursor(self.fixture.source.source_id, THREAD).incarnation, 0)",
+    "self.assert_same()",
+    "self.assertTrue(set(before['snapshots']) <= set(after['snapshots']))"
+   ]
+  },
+  {
+   "disposition": "current-template-if-unpinned",
+   "file": "tests/test_usage_reconciliation_pages.py",
+   "function": "PhasePageTests.test_core_writer_progresses_between_pages_and_next_page_rejects_stale_basis",
+   "reason": "Explicit ordinary caller passes its marker through every runtime helper; pinned Core and numerical Usage still initialize for real.",
+   "regression_conditions": [
+    "self.assertEqual(self.remaining(), 2)",
+    "self.assertEqual(self.remaining(), 2)",
+    "self.assertTrue(entered.wait(5))",
+    "self.assertRaisesRegex(UsageError, 'usage_pending')",
+    "self.assertTrue(committing.wait(5))",
+    "self.assertFalse(writer.done())"
+   ]
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_usage_reconciliation_pages.py",
+   "function": "PhasePageTests.test_failure_rolls_back_entire_page_but_retains_first_commit",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": [
+    "self.assertEqual(len(visited), 100)",
+    "self.assertEqual(self.reconciliation_state(), before)",
+    "self.assertEqual(self.remaining(), 0)",
+    "self.assertEqual(connection.execute('SELECT COUNT(*) FROM usage_reconcile_turn_allocations').fetchone()[0], 101)",
+    "self.assertEqual(connection.execute('SELECT COUNT(*) FROM usage_reconcile_turn_queue').fetchone()[0], 29)",
+    "self.assertTrue(all((row['changed'] for row in visited)))",
+    "self.assertTrue(all((any((members for _, members in json.loads(row[0])['owners'])) for row in connection.execute('SELECT document FROM usage_reconcile_turn_allocations'))))",
+    "self.assertRaisesRegex(UsageError, 'usage_pending')"
+   ]
+  },
+  {
+   "disposition": "current-template-if-unpinned",
+   "file": "tests/test_usage_reconciliation_pages.py",
+   "function": "PhasePageTests.test_page_time_and_deadline_margin_stop_optional_unit_start",
+   "reason": "Explicit ordinary caller passes its marker through every runtime helper; pinned Core and numerical Usage still initialize for real.",
+   "regression_conditions": [
+    "self.assertEqual(self.remaining(), 2 if len(ticks) == 3 else 3)"
+   ]
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_usage_reconciliation_pages.py",
+   "function": "PhasePageTests.test_process_exit_keeps_uncommitted_page_pending",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": [
+    "self.assertEqual(result.returncode, 23, result.stderr)",
+    "self.assertEqual(self.reconciliation_state(), before)"
+   ]
+  },
+  {
+   "disposition": "current-template-if-unpinned",
+   "file": "tests/test_usage_reconciliation_pages.py",
+   "function": "PhasePageTests.test_real_129_turns_all_four_phases_and_independent_full_replay",
+   "reason": "Explicit ordinary caller passes its marker through every runtime helper; pinned Core and numerical Usage still initialize for real.",
+   "regression_conditions": [
+    "self.assertNotEqual(self.support.assert_same(), expected)",
+    "self.assertEqual(self.support.assert_same(), replay)",
+    "self.assertEqual(pages[phase][0], 1, phase)",
+    "self.assertIn(128, pages[phase], phase)",
+    "self.assertTrue(all((1 <= count <= 128 for count in pages[phase])), pages)",
+    "self.assertEqual({key for key in units if units[key] != before[key]}, {phase})"
+   ]
+  },
+  {
+   "disposition": "current-template-if-unpinned",
+   "file": "tests/test_usage_reconciliation_pages.py",
+   "function": "PhasePageTests.test_zero_one_127_128_129_and_multiple_pages",
+   "reason": "Explicit ordinary caller passes its marker through every runtime helper; pinned Core and numerical Usage still initialize for real.",
+   "regression_conditions": [
+    "self.assertEqual(pages, expected)",
+    "self.assertEqual(visited, [(THREAD, turn(n)) for n in range(1, count + 1)])"
+   ]
+  },
+  {
+   "disposition": "current-template-if-unpinned",
+   "file": "tests/test_usage_reconciliation_publication.py",
+   "function": "PublicationTests.test_capture_audit_and_fresh_guard_without_history_reclassification",
+   "reason": "Explicit ordinary caller passes its marker through every runtime helper; pinned Core and numerical Usage still initialize for real.",
+   "regression_conditions": [
+    "self.assertEqual(len(index['current_snapshot_ids']), 1)",
+    "self.assertEqual(same, index)"
+   ]
+  },
+  {
+   "disposition": "current-template-if-unpinned",
+   "file": "tests/test_usage_reconciliation_publication.py",
+   "function": "PublicationTests.test_fresh_guard_rejects_input_change_and_keeps_previous_snapshot",
+   "reason": "Explicit ordinary caller passes its marker through every runtime helper; pinned Core and numerical Usage still initialize for real.",
+   "regression_conditions": [
+    "self.assertEqual(len(newer['snapshots']), 2)",
+    "self.assertNotEqual(newer['current_snapshot_ids'], index['current_snapshot_ids'])",
+    "self.assertEqual(item['predecessors'], index['current_snapshot_ids'])",
+    "self.assertIn('partial_tail', item['gaps'])",
+    "self.assertRaisesRegex(UsageError, 'usage_pending')",
+    "self.fail('stale guard yielded')"
+   ]
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_usage_reconciliation_publication.py",
+   "function": "PublicationTests.test_intervening_input_keeps_committed_candidate_as_history_and_reconciles_again",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": [
+    "self.assertEqual(snapshots.advance(self.repository, self.reader)['phase'], 'snapshot')",
+    "self.assertEqual(len(recovered['snapshots']), 3)",
+    "self.assertEqual(len(recovered['current_snapshot_ids']), 1)",
+    "self.assertNotIn('partial_tail', current['gaps'])",
+    "self.assertNotEqual(current['snapshot_id'], original['current_snapshot_ids'][0])",
+    "self.assertRaisesRegex(UsageError, 'usage_pending')"
+   ]
+  },
+  {
+   "disposition": "current-template-if-unpinned",
+   "file": "tests/test_usage_reconciliation_publication.py",
+   "function": "PublicationTests.test_read_only_display_uses_fresh_capture_without_reloading_all_relations",
+   "reason": "Explicit ordinary caller passes its marker through every runtime helper; pinned Core and numerical Usage still initialize for real.",
+   "regression_conditions": [
+    "self.assertEqual(result['total']['response_count'], 1)",
+    "self.assertEqual(self.repository.read(core)['unattributed'], index['unattributed'])",
+    "self.assertRaisesRegex(UsageError, 'usage_pending')"
+   ]
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_usage_reconciliation_publication.py",
+   "function": "PublicationTests.test_snapshot_failure_rolls_back_candidate_and_keeps_work_for_next_event",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": [
+    "self.assertEqual(len(recovered['snapshots']), 2)",
+    "self.assertEqual(self.repository.publication_snapshot(recovered['current_snapshot_ids'][0])['predecessors'], original['current_snapshot_ids'])",
+    "self.assertEqual(connection.execute('SELECT COUNT(*) FROM usage_snapshots').fetchone()[0], 1)",
+    "self.assertIsNotNone(connection.execute('SELECT 1 FROM usage_reconcile_component_work').fetchone())",
+    "self.assertRaisesRegex(UsageError, 'usage_pending')"
+   ]
+  },
+  {
+   "disposition": "current-template-if-unpinned",
+   "file": "tests/test_usage_reconciliation_publication.py",
+   "function": "PublicationTests.test_unchanged_eof_collection_preserves_incomplete_publication_audit",
+   "reason": "Explicit ordinary caller passes its marker through every runtime helper; pinned Core and numerical Usage still initialize for real.",
+   "regression_conditions": [
+    "self.assertGreater(len(index['snapshots']), 1)",
+    "self.assertEqual(same, index)",
+    "self.assertEqual(later['position'], state['position'])",
+    "self.assertGreater(connection.execute(\"SELECT revision FROM usage_scan_state WHERE lane='ingest'\").fetchone()[0], revision)",
+    "self.assertEqual(self.repository.reconciliation_revision(connection), before)"
+   ]
+  },
+  {
    "disposition": "current-template-if-unpinned",
    "file": "tests/test_usage_reconciliation_runtime.py",
    "function": "RuntimeTests.test_actual_task_acknowledgement_reaches_base_membership_without_claiming_publication",
-   "reason": "Explicit ordinary operation using current schema as a prerequisite; predecessor runtime still initializes for real.",
+   "reason": "Explicit ordinary caller passes its marker through every runtime helper; pinned Core and numerical Usage still initialize for real.",
    "regression_conditions": [
     "self.assertTrue({'core', 'baseline', 'operations', 'intervals', 'turn_inputs', 'allocation', 'base_effects'} <= set(phases))",
     "self.assertEqual(owners, [self.execution])",
-    "self.assertIsNotNone(connection.execute('SELECT 1 FROM usage_reconcile_overlay_turn_work').fetchone())"
+    "self.assertIsNotNone(connection.execute('SELECT 1 FROM usage_reconcile_overlay_turn_work').fetchone())",
+    "self.assertIsNone(connection.execute('SELECT 1 FROM usage_capture').fetchone())"
    ]
   },
   {
    "disposition": "current-template-if-unpinned",
    "file": "tests/test_usage_reconciliation_runtime.py",
    "function": "RuntimeTests.test_base_owner_dependency_fences_publication_with_equal_uncertainty",
-   "reason": "Explicit ordinary operation using current schema as a prerequisite; predecessor runtime still initializes for real.",
+   "reason": "Explicit ordinary caller passes its marker through every runtime helper; pinned Core and numerical Usage still initialize for real.",
    "regression_conditions": [
     "self.assertEqual(advance_effects(self.repository, self.reader)['phase'], 'turn_overlays')",
     "self.assertFalse(replace_contribution(connection, 'base', 'owner-recovery-fixture', owners=owners))",
-    "self.assertIsNone(connection.execute('SELECT 1 FROM usage_reconcile_overlay_turn_work').fetchone())"
+    "self.assertIsNone(connection.execute('SELECT 1 FROM usage_reconcile_overlay_turn_work').fetchone())",
+    "self.assertRaisesRegex(UsageError, 'usage_pending')"
    ]
   },
   {
    "disposition": "real",
    "file": "tests/test_usage_reconciliation_runtime.py",
    "function": "RuntimeTests.test_baseline_does_not_manufacture_input_generations",
-   "reason": "No ordinary opt-in: preserve real preparation for this inspected fault, rollback, initialization, recovery, identity or fixed-schema case.",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
    "regression_conditions": [
     "self.fail('baseline did not finish')",
     "self.assertEqual(self.repository.reconciliation_revision(connection).generation, 0)",
-    "self.assertIsNone(connection.execute('SELECT 1 FROM usage_reconcile_changes').fetchone())"
+    "self.assertIsNone(connection.execute('SELECT 1 FROM usage_reconcile_changes').fetchone())",
+    "self.assertIsNotNone(connection.execute('SELECT 1 FROM usage_reconcile_source_epochs').fetchone())",
+    "self.assertIsNotNone(connection.execute('SELECT 1 FROM usage_reconcile_input_turn_work').fetchone())"
    ]
   },
   {
    "disposition": "current-template-if-unpinned",
    "file": "tests/test_usage_reconciliation_runtime.py",
    "function": "RuntimeTests.test_effects_finish_with_fresh_input_guard_and_full_geometry",
-   "reason": "Explicit ordinary operation using current schema as a prerequisite; predecessor runtime still initializes for real.",
+   "reason": "Explicit ordinary caller passes its marker through every runtime helper; pinned Core and numerical Usage still initialize for real.",
    "regression_conditions": [
     "self.assertEqual(actual, expected['components'])",
     "self.assertEqual(basis['numerical'][1], self.repository.reconciliation_revision(connection).generation)"
@@ -4345,18 +4791,19 @@
    "disposition": "current-template-if-unpinned",
    "file": "tests/test_usage_reconciliation_runtime.py",
    "function": "RuntimeTests.test_event_budget_stop_keeps_committed_frontier_for_new_repository",
-   "reason": "Explicit ordinary operation using current schema as a prerequisite; predecessor runtime still initializes for real.",
+   "reason": "Explicit ordinary caller passes its marker through every runtime helper; pinned Core and numerical Usage still initialize for real.",
    "regression_conditions": [
     "self.assertEqual(len(phases), 5)",
     "self.assertEqual(len(index['current_snapshot_ids']), 1)",
-    "self.assertGreater(before, 0)"
+    "self.assertGreater(before, 0)",
+    "self.assertRaisesRegex(UsageError, 'usage_pending')"
    ]
   },
   {
    "disposition": "real",
    "file": "tests/test_usage_reconciliation_runtime.py",
    "function": "RuntimeTests.test_fresh_guard_rejects_new_core_change_before_effects",
-   "reason": "No ordinary opt-in: preserve real preparation for this inspected fault, rollback, initialization, recovery, identity or fixed-schema case.",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
    "regression_conditions": [
     "self.assertRaisesRegex(UsageError, 'usage_pending')"
    ]
@@ -4365,7 +4812,7 @@
    "disposition": "real",
    "file": "tests/test_usage_reconciliation_runtime.py",
    "function": "RuntimeTests.test_fresh_guard_rejects_new_numerical_change_before_effects",
-   "reason": "No ordinary opt-in: preserve real preparation for this inspected fault, rollback, initialization, recovery, identity or fixed-schema case.",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
    "regression_conditions": [
     "self.assertRaisesRegex(UsageError, 'usage_pending')"
    ]
@@ -4374,7 +4821,7 @@
    "disposition": "real",
    "file": "tests/test_usage_reconciliation_runtime.py",
    "function": "RuntimeTests.test_interrupted_base_key_reduction_cannot_certify_current_inputs",
-   "reason": "No ordinary opt-in: preserve real preparation for this inspected fault, rollback, initialization, recovery, identity or fixed-schema case.",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
    "regression_conditions": [
     "self.assertEqual(advance_initial(self.repository, self.reader), {'phase': 'base_effects', 'provider': 'openai', 'response_id': 'r1'})",
     "self.assertEqual(advance_initial(self.repository, self.reader), {'phase': 'effects_pending'})",
@@ -4385,7 +4832,7 @@
    "disposition": "real",
    "file": "tests/test_usage_reconciliation_runtime.py",
    "function": "RuntimeTests.test_numerical_physical_replacement_requires_reestablishment",
-   "reason": "No ordinary opt-in: preserve real preparation for this inspected fault, rollback, initialization, recovery, identity or fixed-schema case.",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
    "regression_conditions": [
     "self.assertEqual(advance_initial(self.repository, self.reader)['phase'], 'core')",
     "self.assertIsNone(connection.execute('SELECT 1 FROM usage_reconcile_membership').fetchone())",
@@ -4396,40 +4843,44 @@
    "disposition": "current-template-if-unpinned",
    "file": "tests/test_usage_reconciliation_runtime.py",
    "function": "RuntimeTests.test_owner_effects_keep_ambiguity_seen_before_removal_and_later_readdition",
-   "reason": "Explicit ordinary operation using current schema as a prerequisite; predecessor runtime still initializes for real.",
+   "reason": "Explicit ordinary caller passes its marker through every runtime helper; pinned Core and numerical Usage still initialize for real.",
    "regression_conditions": [
     "self.assertTrue(apply_actions(owners, (('add', 'new'), ('check', None), ('remove', 'old'))))",
     "self.assertEqual(owners, {'new'})",
-    "self.assertFalse(apply_actions(owners, (('add', 'old'),)))"
+    "self.assertFalse(apply_actions(owners, (('add', 'old'),)))",
+    "self.assertEqual(owners, {'old', 'new'})"
    ]
   },
   {
    "disposition": "real",
    "file": "tests/test_usage_reconciliation_runtime.py",
    "function": "RuntimeTests.test_period_membership_replacement_uses_existing_old_set",
-   "reason": "No ordinary opt-in: preserve real preparation for this inspected fault, rollback, initialization, recovery, identity or fixed-schema case.",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
    "regression_conditions": [
     "self.assertEqual(advance_initial(self.repository, self.reader)['phase'], 'core')",
     "self.assertEqual(bool(connection.execute('SELECT 1 FROM usage_reconcile_period_executions').fetchone()), old_present)",
-    "self.assertEqual(sum((item.startswith('DELETE FROM usage_reconcile_period_executions') for item in sql)), int(old_present))"
+    "self.assertEqual(sum((item.startswith('DELETE FROM usage_reconcile_period_executions') for item in sql)), int(old_present))",
+    "self.assertEqual({row[0] for row in connection.execute('SELECT execution_id FROM usage_reconcile_period_executions')}, {self.execution} if new_present else set())",
+    "self.assertIsNotNone(connection.execute('SELECT 1 FROM usage_reconcile_execution_work WHERE execution_id=?', (self.execution,)).fetchone())"
    ]
   },
   {
    "disposition": "real",
    "file": "tests/test_usage_reconciliation_runtime.py",
    "function": "RuntimeTests.test_restore_epoch_discards_derived_work_but_not_original_responses",
-   "reason": "No ordinary opt-in: preserve real preparation for this inspected fault, rollback, initialization, recovery, identity or fixed-schema case.",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
    "regression_conditions": [
     "self.assertTrue(advance_initial(self.repository, self.reader)['reset'])",
     "self.assertIsNone(connection.execute('SELECT 1 FROM usage_reconcile_membership').fetchone())",
-    "self.assertEqual(connection.execute('SELECT COUNT(*) FROM usage_responses').fetchone()[0], 1)"
+    "self.assertEqual(connection.execute('SELECT COUNT(*) FROM usage_responses').fetchone()[0], 1)",
+    "self.assertEqual([row[0] for row in connection.execute('SELECT DISTINCT execution_id FROM usage_reconcile_membership')], [self.execution])"
    ]
   },
   {
    "disposition": "real",
    "file": "tests/test_usage_reconciliation_runtime.py",
    "function": "RuntimeTests.test_review_endpoint_policy_change_requires_reestablishment",
-   "reason": "No ordinary opt-in: preserve real preparation for this inspected fault, rollback, initialization, recovery, identity or fixed-schema case.",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
    "regression_conditions": [
     "self.assertTrue(advance_initial(self.repository, self.reader)['reset'])"
    ]
@@ -4438,7 +4889,7 @@
    "disposition": "current-template-if-unpinned",
    "file": "tests/test_usage_reconciliation_runtime.py",
    "function": "RuntimeTests.test_selected_snapshot_capture_and_unchanged_reentry",
-   "reason": "Explicit ordinary operation using current schema as a prerequisite; predecessor runtime still initializes for real.",
+   "reason": "Explicit ordinary caller passes its marker through every runtime helper; pinned Core and numerical Usage still initialize for real.",
    "regression_conditions": [
     "self.assertEqual(sorted(actual, key=component_identity), sorted(expected, key=component_identity))",
     "self.assertEqual(advance(self.repository, self.reader)['phase'], 'captured')"
@@ -4448,7 +4899,7 @@
    "disposition": "current-template-if-unpinned",
    "file": "tests/test_usage_reconciliation_runtime.py",
    "function": "RuntimeTests.test_uncertainty_dependency_survives_restart_and_fences_publication",
-   "reason": "Explicit ordinary operation using current schema as a prerequisite; predecessor runtime still initializes for real.",
+   "reason": "Explicit ordinary caller passes its marker through every runtime helper; pinned Core and numerical Usage still initialize for real.",
    "regression_conditions": [
     "self.assertEqual(advance_effects(self.repository, self.reader)['phase'], 'turn_overlays')",
     "self.assertEqual(row[0], int(uncertain))",
@@ -4459,9 +4910,156 @@
    "disposition": "current-template-if-unpinned",
    "file": "tests/test_usage_reconciliation_runtime.py",
    "function": "RuntimeTests.test_unchanged_initial_phase_reentry_never_reloads_history",
-   "reason": "Explicit ordinary operation using current schema as a prerequisite; predecessor runtime still initializes for real.",
+   "reason": "Explicit ordinary caller passes its marker through every runtime helper; pinned Core and numerical Usage still initialize for real.",
    "regression_conditions": [
     "self.assertEqual(advance_initial(self.repository, self.reader), {'phase': 'effects_pending'})"
+   ]
+  },
+  {
+   "disposition": "current-template-if-unpinned",
+   "file": "tests/test_usage_reconciliation_scale.py",
+   "function": "ScaleTests.test_actual_response_pages_reuse_component_without_changing_publication",
+   "reason": "Explicit ordinary caller passes its marker through every runtime helper; pinned Core and numerical Usage still initialize for real.",
+   "regression_conditions": [
+    "self.assertEqual(measurements[0][:2], (len(keys) + 1, 2 * len(keys)))",
+    "self.assertEqual(measurements[1][:2], (4, 6))",
+    "self.assertEqual(fixture.assert_same(), expected)",
+    "self.assertEqual(index, expected)"
+   ]
+  },
+  {
+   "disposition": "current-template-if-unpinned",
+   "file": "tests/test_usage_reconciliation_scale.py",
+   "function": "ScaleTests.test_same_response_keys_use_fewer_core_admissions_and_sql",
+   "reason": "Explicit ordinary caller passes its marker through every runtime helper; pinned Core and numerical Usage still initialize for real.",
+   "regression_conditions": [
+    "self.assertLess(after[0], before[0], measurements)",
+    "self.assertLess(after[1], before[1], measurements)",
+    "self.assertLess(after[2], before[2], measurements)",
+    "self.assertEqual(fixture.assert_same(), expected)",
+    "self.assertEqual(index, expected)",
+    "self.assertEqual([call.args[1:] for call in classify.call_args_list], keys)"
+   ]
+  },
+  {
+   "disposition": "current-template-if-unpinned",
+   "file": "tests/test_usage_reconciliation_scale.py",
+   "function": "ScaleTests.test_unchanged_and_fixed_changeset_counts_ignore_unrelated_same_thread_history",
+   "reason": "Explicit ordinary caller passes its marker through every runtime helper; pinned Core and numerical Usage still initialize for real.",
+   "regression_conditions": [
+    "self.assertEqual({k: v for k, v in small.items() if k != 'seconds'}, {k: v for k, v in large.items() if k != 'seconds'})",
+    "self.assertEqual(large['core_histories'], 0)",
+    "self.assertLessEqual(large['turns'], 2)",
+    "self.assertLessEqual(large['responses'], 4)",
+    "self.assertEqual({k: v for k, v in value['unchanged'].items() if k != 'seconds'}, dict(core_histories=0, turns=0, responses=0, original_keys=0))"
+   ]
+  },
+  {
+   "disposition": "no-core-preparation",
+   "file": "tests/test_usage_response_page_experiment.py",
+   "function": "ResponsePageExperimentTests.test_candidate_uses_unmodified_product_function_and_adopted_policy",
+   "reason": "This unchanged control does not initialize Core: the policy identity assertion needs no database; the lifecycle deadline control retains real numerical Usage preparation with its existing mocked Core target.",
+   "regression_conditions": [
+    "self.assertIs(runtime.advance_effects, advance)",
+    "self.assertEqual((runtime._RESPONSE_PAGE_SIZE, runtime._RESPONSE_PAGE_SECONDS, runtime._RESPONSE_COMMIT_MARGIN_SECONDS), (128, 0.25, 0.05))"
+   ]
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_usage_response_page_experiment.py",
+   "function": "ResponsePageExperimentTests.test_changed_core_late_input_partial_diagnostics_and_publication_recovery",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": []
+  },
+  {
+   "disposition": "current-template-if-unpinned",
+   "file": "tests/test_usage_response_page_experiment.py",
+   "function": "ResponsePageExperimentTests.test_deadline_margin_is_50ms_and_250ms_only_limits_optional_start",
+   "reason": "Explicit ordinary caller passes its marker through every runtime helper; pinned Core and numerical Usage still initialize for real.",
+   "regression_conditions": [
+    "self.assertEqual(pages[0]['units'], 3)",
+    "self.assertEqual(pages[0]['units'], 1)"
+   ]
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_usage_response_page_experiment.py",
+   "function": "ResponsePageExperimentTests.test_later_hook_recovers_process_death_to_identical_public_json",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": [
+    "self.assertEqual(child.exitcode, 74)",
+    "self.assertEqual(recovered['projection'], expected)",
+    "self.assertTrue(recovered['frozen_oracle_equal'])",
+    "self.assertEqual(fixture.target.db_path.read_bytes(), core)",
+    "self.fail('isolated Hook did not reach crash point')",
+    "self.assertEqual(connection.execute('SELECT COUNT(*) FROM usage_reconcile_response_result').fetchone()[0], 1)",
+    "self.assertEqual(connection.execute('SELECT COUNT(*) FROM usage_reconcile_response_work').fetchone()[0], 128)"
+   ]
+  },
+  {
+   "disposition": "current-template-if-unpinned",
+   "file": "tests/test_usage_response_page_experiment.py",
+   "function": "ResponsePageExperimentTests.test_new_priority_work_runs_before_the_next_response_page",
+   "reason": "Explicit ordinary caller passes its marker through every runtime helper; pinned Core and numerical Usage still initialize for real.",
+   "regression_conditions": [
+    "self.assertEqual(runtime.advance_effects(fixture.repository, fixture.reader, single_response=True)['key'], keys[0])",
+    "self.assertEqual(fixture.assert_frozen_same(), expected)",
+    "self.assertEqual(runtime.advance_effects(fixture.repository, fixture.reader)['phase'], 'turn_overlays')"
+   ]
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_usage_response_page_experiment.py",
+   "function": "ResponsePageExperimentTests.test_process_death_preserves_first_key_and_rolls_back_uncommitted_page",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": [
+    "self.assertEqual(child.exitcode, 73)",
+    "self.fail('isolated child did not reach crash point')",
+    "self.assertEqual(list(map(tuple, connection.execute('SELECT provider,response_id FROM usage_reconcile_response_work ORDER BY rowid'))), keys[1:])",
+    "self.assertEqual(actual.intersection(keys), {keys[0]})",
+    "self.assertEqual(fixture.assert_frozen_same(), expected)"
+   ]
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_usage_response_page_experiment.py",
+   "function": "ResponsePageExperimentTests.test_shared_partition_full_replay_and_final_input_guard",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": [
+    "self.assertTrue(any((fixture.repository.publication_snapshot(identity)['assignment'] == 'shared' for identity in index['current_snapshot_ids'])))",
+    "self.assertRaisesRegex(UsageError, 'usage_pending')",
+    "self.fail('stale publication allowed')"
+   ]
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_usage_response_page_experiment.py",
+   "function": "ResponsePageExperimentTests.test_single_first_commit_exception_rollback_and_later_resume",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": []
+  },
+  {
+   "disposition": "current-template-if-unpinned",
+   "file": "tests/test_usage_response_page_experiment.py",
+   "function": "ResponsePageExperimentTests.test_zero_one_boundaries_and_multiple_pages_preserve_fifo_and_full_oracle",
+   "reason": "Explicit ordinary caller passes its marker through every runtime helper; pinned Core and numerical Usage still initialize for real.",
+   "regression_conditions": [
+    "self.assertEqual([page['units'] for page in pages], sizes)",
+    "self.assertEqual(fixture.assert_frozen_same(), expected)",
+    "self.assertIsNone(connection.execute('SELECT 1 FROM usage_reconcile_response_work').fetchone())"
+   ]
+  },
+  {
+   "disposition": "real",
+   "file": "tests/test_usage_snapshot_reappearance.py",
+   "function": "PublicationRollbackTests.test_capture_failure_keeps_last_good_files_and_retries_atomic_relations",
+   "reason": "Retain real preparation for this original recovery, corruption, rollback, physical replacement, schema-pin or initialization control; no helper infers an opt-in.",
+   "regression_conditions": [
+    "self.assertGreater(len(latest['snapshots']), 1)",
+    "self.assertEqual(json.loads(target.resolved_usage_index.read_bytes()), latest)",
+    "self.assertEqual(service.refresh_usage(target)['publication'], 'pending')",
+    "self.assertEqual(CandidateTests.evidence(connection), before)",
+    "self.assertEqual(path.read_bytes(), data)"
    ]
   },
   {
@@ -14555,6 +15153,7 @@
   "tests.test_task_show.TaskShowTests.test_task_show_unknown_task_returns_structured_not_found",
   "tests.test_task_show.add_task",
   "tests.test_usage_reconciliation.CoreReconciliationPageTests.setUp",
+  "tests.test_usage_reconciliation_runtime.RuntimeTests.prepare_fixture",
   "tests.test_usage_reconciliation_runtime.RuntimeTests.setUp",
   "tests.test_verification_results.VerificationResultCliTests.test_existing_runner_fallback_allows_receipt_but_pass_and_blocking_refuse",
   "tests.test_viewer_capture_admission.ViewerCaptureAdmissionTests.test_capture_counts_and_outputs_for_due_force_current_disabled",
@@ -16246,8 +16845,11 @@
   "tests.test_usage_reconciliation.CoreReconciliationPageTests.setUp": [
    "tests.test_viewer_maintenance.make_target"
   ],
-  "tests.test_usage_reconciliation_runtime.RuntimeTests.setUp": [
+  "tests.test_usage_reconciliation_runtime.RuntimeTests.prepare_fixture": [
    "tests.test_viewer_maintenance.make_target"
+  ],
+  "tests.test_usage_reconciliation_runtime.RuntimeTests.setUp": [
+   "tests.test_usage_reconciliation_runtime.RuntimeTests.prepare_fixture"
   ],
   "tests.test_verification_results.VerificationResultCliTests.test_existing_runner_fallback_allows_receipt_but_pass_and_blocking_refuse": [
    "tests.test_m242_runner_service.RunnerServiceFixture.__init__"
@@ -16672,6 +17274,223 @@
   "tests.test_viewer_renderer.TemplateAuditParser": [
    "HTMLParser"
   ]
+ },
+ "nested_usage_preparation": {
+  "tests.test_protection_usage_recovery.RecoveryUsageTests": {
+   "helper_chain": [
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.prepare_fixture",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.prepare_fixture",
+    "tests.test_viewer_maintenance.make_target"
+   ],
+   "regression_source_refs": [
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.assert_oracle",
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.assert_unknown",
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.collection_controls",
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.recover",
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.test_current_lifecycle_keeps_entry_deadline_for_deferred_reconciliation",
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.test_independent_capture_keeps_later_task_observation_unbound",
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.test_migration_reset_without_response_context_remains_recoverable",
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.test_reestablished_display_rejects_changed_identity_epoch_schema_and_binding",
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.test_restore_fence_cost_does_not_replay_growing_unrelated_history",
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.test_restore_preserves_originals_and_resumes_after_deadline_and_restart",
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.test_retained_change_key_types_and_shapes_are_checked_for_every_kind",
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.test_saved_collection_controls_resume_without_discovery_during_recovery",
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.test_sql_valid_original_and_restart_corruption_prevents_protection",
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.test_unknown_turn_legacy_coverage_from_normal_collection_remains_recoverable",
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.test_valid_changes_without_restored_anchors_can_resume"
+   ],
+   "selection": "retained real unnamed setUp; protected recovery/rollback cases"
+  },
+  "tests.test_protection_usage_recovery.RecoveryUsageTests.test_current_lifecycle_keeps_entry_deadline_for_deferred_reconciliation": {
+   "helper_chain": [
+    "tests.test_usage_locator_lifecycle.LocatorLifecycleTests.setUp",
+    "tests.test_usage_lifecycle.UsageLifecycleTests.setUp"
+   ],
+   "regression_source_refs": [
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.test_current_lifecycle_keeps_entry_deadline_for_deferred_reconciliation"
+   ],
+   "selection": "retained real numerical Usage initialization with mocked Core admission; no Core database"
+  },
+  "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests": {
+   "helper_chain": [
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.prepare_fixture",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.prepare_fixture",
+    "tests.test_viewer_maintenance.make_target"
+   ],
+   "regression_source_refs": [
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.assert_frozen_geometry",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.assert_frozen_same",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.assert_same",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.check_base_owner_reappearance",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.check_global_order",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.publish_same",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.queued_responses",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.remove_and_restore_position",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_bad_order_occurrence_remains_unknown_despite_an_ordered_occurrence",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_competing_task_update_can_commit_between_response_pages",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_fallback_uses_last_thread_position_after_stop_and_restart",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_late_duplicate_key_in_other_turn_and_removal_use_actual_reverse_queue",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_moving_stop_position_revisits_unchanged_original_turn",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_partial_split_retains_predecessors_across_input_change_and_restores",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_pause_and_resume_keep_unassigned_gap_and_old_execution",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_response_pages_commit_a_single_key_before_optional_siblings_and_resume_fifo",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_short_response_page_commits_and_fresh_guard_rejects_changed_core",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_source_replacement_and_diagnostic_removal_reconcile_without_rewriting_history"
+   ],
+   "selection": "per-method marker; unmarked and unknown callers remain real"
+  },
+  "tests.test_usage_reconciliation_pages.PhasePageTests": {
+   "helper_chain": [
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.prepare_fixture",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.prepare_fixture",
+    "tests.test_viewer_maintenance.make_target"
+   ],
+   "regression_source_refs": [
+    "tests.test_usage_reconciliation_pages.PhasePageTests.real_allocations_after_first_commit",
+    "tests.test_usage_reconciliation_pages.PhasePageTests.test_core_writer_progresses_between_pages_and_next_page_rejects_stale_basis",
+    "tests.test_usage_reconciliation_pages.PhasePageTests.test_failure_rolls_back_entire_page_but_retains_first_commit",
+    "tests.test_usage_reconciliation_pages.PhasePageTests.test_page_time_and_deadline_margin_stop_optional_unit_start",
+    "tests.test_usage_reconciliation_pages.PhasePageTests.test_process_exit_keeps_uncommitted_page_pending",
+    "tests.test_usage_reconciliation_pages.PhasePageTests.test_real_129_turns_all_four_phases_and_independent_full_replay",
+    "tests.test_usage_reconciliation_pages.PhasePageTests.test_zero_one_127_128_129_and_multiple_pages"
+   ],
+   "selection": "per-method marker; unmarked and unknown callers remain real"
+  },
+  "tests.test_usage_reconciliation_publication.PublicationTests": {
+   "helper_chain": [
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.prepare_fixture",
+    "tests.test_viewer_maintenance.make_target"
+   ],
+   "regression_source_refs": [
+    "tests.test_usage_reconciliation_publication.PublicationTests.test_capture_audit_and_fresh_guard_without_history_reclassification",
+    "tests.test_usage_reconciliation_publication.PublicationTests.test_fresh_guard_rejects_input_change_and_keeps_previous_snapshot",
+    "tests.test_usage_reconciliation_publication.PublicationTests.test_intervening_input_keeps_committed_candidate_as_history_and_reconciles_again",
+    "tests.test_usage_reconciliation_publication.PublicationTests.test_read_only_display_uses_fresh_capture_without_reloading_all_relations",
+    "tests.test_usage_reconciliation_publication.PublicationTests.test_snapshot_failure_rolls_back_candidate_and_keeps_work_for_next_event",
+    "tests.test_usage_reconciliation_publication.PublicationTests.test_unchanged_eof_collection_preserves_incomplete_publication_audit"
+   ],
+   "selection": "per-method marker; unmarked and unknown callers remain real"
+  },
+  "tests.test_usage_reconciliation_runtime.RuntimeTests": {
+   "helper_chain": [
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.prepare_fixture",
+    "tests.test_viewer_maintenance.make_target"
+   ],
+   "regression_source_refs": [
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.drain_effects",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.drain_initial",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.drain_snapshots",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_actual_task_acknowledgement_reaches_base_membership_without_claiming_publication",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_base_owner_dependency_fences_publication_with_equal_uncertainty",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_baseline_does_not_manufacture_input_generations",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_effects_finish_with_fresh_input_guard_and_full_geometry",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_event_budget_stop_keeps_committed_frontier_for_new_repository",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_fresh_guard_rejects_new_core_change_before_effects",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_fresh_guard_rejects_new_numerical_change_before_effects",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_interrupted_base_key_reduction_cannot_certify_current_inputs",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_numerical_physical_replacement_requires_reestablishment",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_owner_effects_keep_ambiguity_seen_before_removal_and_later_readdition",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_period_membership_replacement_uses_existing_old_set",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_restore_epoch_discards_derived_work_but_not_original_responses",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_review_endpoint_policy_change_requires_reestablishment",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_selected_snapshot_capture_and_unchanged_reentry",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_uncertainty_dependency_survives_restart_and_fences_publication",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_unchanged_initial_phase_reentry_never_reloads_history"
+   ],
+   "selection": "per-method marker; unmarked and unknown callers remain real"
+  },
+  "tests.test_usage_reconciliation_scale.ScaleTests": {
+   "helper_chain": [
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.prepare_fixture",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.prepare_fixture",
+    "tests.test_viewer_maintenance.make_target"
+   ],
+   "regression_source_refs": [
+    "tests.test_usage_reconciliation_scale.ScaleTests.test_actual_response_pages_reuse_component_without_changing_publication",
+    "tests.test_usage_reconciliation_scale.ScaleTests.test_same_response_keys_use_fewer_core_admissions_and_sql",
+    "tests.test_usage_reconciliation_scale.ScaleTests.test_unchanged_and_fixed_changeset_counts_ignore_unrelated_same_thread_history"
+   ],
+   "selection": "per-method marker; unmarked and unknown callers remain real"
+  },
+  "tests.test_usage_response_page_experiment.ResponsePageExperimentTests": {
+   "helper_chain": [
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.prepare_fixture",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.prepare_fixture",
+    "tests.test_viewer_maintenance.make_target"
+   ],
+   "regression_source_refs": [
+    "tests.test_usage_response_page_experiment.ResponsePageExperimentTests.test_candidate_uses_unmodified_product_function_and_adopted_policy",
+    "tests.test_usage_response_page_experiment.ResponsePageExperimentTests.test_deadline_margin_is_50ms_and_250ms_only_limits_optional_start",
+    "tests.test_usage_response_page_experiment.ResponsePageExperimentTests.test_later_hook_recovers_process_death_to_identical_public_json",
+    "tests.test_usage_response_page_experiment.ResponsePageExperimentTests.test_new_priority_work_runs_before_the_next_response_page",
+    "tests.test_usage_response_page_experiment.ResponsePageExperimentTests.test_process_death_preserves_first_key_and_rolls_back_uncommitted_page",
+    "tests.test_usage_response_page_experiment.ResponsePageExperimentTests.test_shared_partition_full_replay_and_final_input_guard",
+    "tests.test_usage_response_page_experiment.ResponsePageExperimentTests.test_zero_one_boundaries_and_multiple_pages_preserve_fifo_and_full_oracle"
+   ],
+   "selection": "per-method marker; unmarked and unknown callers remain real"
+  },
+  "tests.test_usage_response_page_experiment.ResponsePageExperimentTests.test_later_hook_recovers_process_death_to_identical_public_json": {
+   "helper_chain": [
+    "tests.test_usage_lifecycle_install.UsageLifecycleInstallTests.setUp"
+   ],
+   "regression_source_refs": [
+    "tests.test_usage_response_page_experiment.ResponsePageExperimentTests.test_later_hook_recovers_process_death_to_identical_public_json"
+   ],
+   "selection": "retained physical Setup; optional ChangedRuntimeTests instance is checker-only and performs no preparation"
+  },
+  "tests.test_usage_response_page_experiment.ResponsePageExperimentTests.test_shared_partition_full_replay_and_final_input_guard": {
+   "helper_chain": [
+    "tests.test_usage_lifecycle_install.UsageLifecycleInstallTests.setUp"
+   ],
+   "regression_source_refs": [
+    "tests.test_usage_response_page_experiment.ResponsePageExperimentTests.test_shared_partition_full_replay_and_final_input_guard"
+   ],
+   "selection": "retained physical Setup; optional ChangedRuntimeTests instance is checker-only and performs no preparation"
+  },
+  "tests.test_usage_snapshot_reappearance.PublicationRollbackTests": {
+   "helper_chain": [
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.prepare_fixture",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.prepare_fixture",
+    "tests.test_viewer_maintenance.make_target"
+   ],
+   "regression_source_refs": [
+    "tests.test_usage_snapshot_reappearance.PublicationRollbackTests.test_capture_failure_keeps_last_good_files_and_retries_atomic_relations"
+   ],
+   "selection": "retained real unnamed setUp; protected recovery/rollback cases"
+  },
+  "tools.benchmark_usage_reconciliation_pages.writer_wait": {
+   "helper_chain": [
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.setUp"
+   ],
+   "regression_source_refs": [],
+   "selection": "retained real RuntimeTests.setUp: supports historical source checkouts without the explicit preparation API"
+  },
+  "tools.benchmark_usage_response_pages.hook_fixture": {
+   "helper_chain": [
+    "tests.test_usage_lifecycle_install.UsageLifecycleInstallTests.setUp"
+   ],
+   "regression_source_refs": [],
+   "selection": "retained physical Setup and real numerical initialization"
+  },
+  "tools.benchmark_usage_response_pages.hook_worker": {
+   "helper_chain": [],
+   "regression_source_refs": [],
+   "selection": "checker-only attachment to existing physical fixture; no initialization"
+  },
+  "tools.benchmark_usage_response_pages.response_trials": {
+   "helper_chain": [
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.prepare_fixture"
+   ],
+   "regression_source_refs": [],
+   "selection": "explicit real_initialization=False; current Core only"
+  },
+  "tools.benchmark_usage_response_pages.writer_wait": {
+   "helper_chain": [
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.prepare_fixture"
+   ],
+   "regression_source_refs": [],
+   "selection": "explicit real_initialization=False; current Core only"
+  }
  },
  "original_candidates": [
   {
@@ -25886,6 +26705,30 @@
     "tests.test_protection.ProtectionTests.test_usage_restore_admits_one_core_read_without_reconciliation"
    ]
   },
+  "tests.test_protection_usage_recovery.RecoveryUsageTests.fixture": {
+   "disposition": "real",
+   "preparation_boundaries": [
+    "tests.test_viewer_maintenance.make_target"
+   ],
+   "reason": "retained real unnamed setUp; protected recovery/rollback cases",
+   "regression_source_refs": [
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.assert_oracle",
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.assert_unknown",
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.collection_controls",
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.recover",
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.test_current_lifecycle_keeps_entry_deadline_for_deferred_reconciliation",
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.test_independent_capture_keeps_later_task_observation_unbound",
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.test_migration_reset_without_response_context_remains_recoverable",
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.test_reestablished_display_rejects_changed_identity_epoch_schema_and_binding",
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.test_restore_fence_cost_does_not_replay_growing_unrelated_history",
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.test_restore_preserves_originals_and_resumes_after_deadline_and_restart",
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.test_retained_change_key_types_and_shapes_are_checked_for_every_kind",
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.test_saved_collection_controls_resume_without_discovery_during_recovery",
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.test_sql_valid_original_and_restart_corruption_prevents_protection",
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.test_unknown_turn_legacy_coverage_from_normal_collection_remains_recoverable",
+    "tests.test_protection_usage_recovery.RecoveryUsageTests.test_valid_changes_without_restored_anchors_can_resume"
+   ]
+  },
   "tests.test_review_answer_continuation_preparation.ContinuedAnswerPublicationTests.test_new_round_under_legacy_root_freezes_collection_before_publication": {
    "disposition": "real",
    "preparation_boundaries": [
@@ -30533,6 +31376,91 @@
     "tests.test_usage_reconciliation.CoreReconciliationPageTests.test_unchanged_core_never_reads_task_histories_and_nonsemantic_mark_changes_no_inputs"
    ]
   },
+  "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.prepare_fixture": {
+   "disposition": "explicit-branch-policy",
+   "preparation_boundaries": [
+    "tests.test_viewer_maintenance.make_target"
+   ],
+   "reason": "per-method marker; unmarked and unknown callers remain real",
+   "regression_source_refs": [
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.assert_frozen_geometry",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.assert_frozen_same",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.assert_same",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.check_base_owner_reappearance",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.check_global_order",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.publish_same",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.queued_responses",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.remove_and_restore_position",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_bad_order_occurrence_remains_unknown_despite_an_ordered_occurrence",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_competing_task_update_can_commit_between_response_pages",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_fallback_uses_last_thread_position_after_stop_and_restart",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_late_duplicate_key_in_other_turn_and_removal_use_actual_reverse_queue",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_moving_stop_position_revisits_unchanged_original_turn",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_partial_split_retains_predecessors_across_input_change_and_restores",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_pause_and_resume_keep_unassigned_gap_and_old_execution",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_response_pages_commit_a_single_key_before_optional_siblings_and_resume_fifo",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_short_response_page_commits_and_fresh_guard_rejects_changed_core",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_source_replacement_and_diagnostic_removal_reconcile_without_rewriting_history"
+   ]
+  },
+  "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.setUp": {
+   "disposition": "explicit-branch-policy",
+   "preparation_boundaries": [
+    "tests.test_viewer_maintenance.make_target"
+   ],
+   "reason": "per-method marker; unmarked and unknown callers remain real",
+   "regression_source_refs": [
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.assert_frozen_geometry",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.assert_frozen_same",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.assert_same",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.check_base_owner_reappearance",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.check_global_order",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.publish_same",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.queued_responses",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.remove_and_restore_position",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_bad_order_occurrence_remains_unknown_despite_an_ordered_occurrence",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_competing_task_update_can_commit_between_response_pages",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_fallback_uses_last_thread_position_after_stop_and_restart",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_late_duplicate_key_in_other_turn_and_removal_use_actual_reverse_queue",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_moving_stop_position_revisits_unchanged_original_turn",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_partial_split_retains_predecessors_across_input_change_and_restores",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_pause_and_resume_keep_unassigned_gap_and_old_execution",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_response_pages_commit_a_single_key_before_optional_siblings_and_resume_fifo",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_short_response_page_commits_and_fresh_guard_rejects_changed_core",
+    "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_source_replacement_and_diagnostic_removal_reconcile_without_rewriting_history"
+   ]
+  },
+  "tests.test_usage_reconciliation_pages.PhasePageTests.setUp": {
+   "disposition": "explicit-branch-policy",
+   "preparation_boundaries": [
+    "tests.test_viewer_maintenance.make_target"
+   ],
+   "reason": "per-method marker; unmarked and unknown callers remain real",
+   "regression_source_refs": [
+    "tests.test_usage_reconciliation_pages.PhasePageTests.real_allocations_after_first_commit",
+    "tests.test_usage_reconciliation_pages.PhasePageTests.test_core_writer_progresses_between_pages_and_next_page_rejects_stale_basis",
+    "tests.test_usage_reconciliation_pages.PhasePageTests.test_failure_rolls_back_entire_page_but_retains_first_commit",
+    "tests.test_usage_reconciliation_pages.PhasePageTests.test_page_time_and_deadline_margin_stop_optional_unit_start",
+    "tests.test_usage_reconciliation_pages.PhasePageTests.test_process_exit_keeps_uncommitted_page_pending",
+    "tests.test_usage_reconciliation_pages.PhasePageTests.test_real_129_turns_all_four_phases_and_independent_full_replay",
+    "tests.test_usage_reconciliation_pages.PhasePageTests.test_zero_one_127_128_129_and_multiple_pages"
+   ]
+  },
+  "tests.test_usage_reconciliation_publication.PublicationTests.setUp": {
+   "disposition": "explicit-branch-policy",
+   "preparation_boundaries": [
+    "tests.test_viewer_maintenance.make_target"
+   ],
+   "reason": "per-method marker; unmarked and unknown callers remain real",
+   "regression_source_refs": [
+    "tests.test_usage_reconciliation_publication.PublicationTests.test_capture_audit_and_fresh_guard_without_history_reclassification",
+    "tests.test_usage_reconciliation_publication.PublicationTests.test_fresh_guard_rejects_input_change_and_keeps_previous_snapshot",
+    "tests.test_usage_reconciliation_publication.PublicationTests.test_intervening_input_keeps_committed_candidate_as_history_and_reconciles_again",
+    "tests.test_usage_reconciliation_publication.PublicationTests.test_read_only_display_uses_fresh_capture_without_reloading_all_relations",
+    "tests.test_usage_reconciliation_publication.PublicationTests.test_snapshot_failure_rolls_back_candidate_and_keeps_work_for_next_event",
+    "tests.test_usage_reconciliation_publication.PublicationTests.test_unchanged_eof_collection_preserves_incomplete_publication_audit"
+   ]
+  },
   "tests.test_usage_reconciliation_reviews.ReviewTests.setUp": {
    "disposition": "recorded-direct-boundary",
    "preparation_boundaries": [
@@ -30543,13 +31471,16 @@
     "tests.registration_output_support.registration_body"
    ]
   },
-  "tests.test_usage_reconciliation_runtime.RuntimeTests.setUp": {
+  "tests.test_usage_reconciliation_runtime.RuntimeTests.prepare_fixture": {
    "disposition": "explicit-branch-policy",
    "preparation_boundaries": [
     "tests.test_viewer_maintenance.make_target"
    ],
-   "reason": "The listed boundaries select real creation by default or an explicit current-schema opt-in. Preserve the actual caller arguments and runtime pins; this helper does not grant an unconditional clone.",
+   "reason": "per-method marker; unmarked and unknown callers remain real",
    "regression_source_refs": [
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.drain_effects",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.drain_initial",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.drain_snapshots",
     "tests.test_usage_reconciliation_runtime.RuntimeTests.test_actual_task_acknowledgement_reaches_base_membership_without_claiming_publication",
     "tests.test_usage_reconciliation_runtime.RuntimeTests.test_base_owner_dependency_fences_publication_with_equal_uncertainty",
     "tests.test_usage_reconciliation_runtime.RuntimeTests.test_baseline_does_not_manufacture_input_generations",
@@ -30566,6 +31497,62 @@
     "tests.test_usage_reconciliation_runtime.RuntimeTests.test_selected_snapshot_capture_and_unchanged_reentry",
     "tests.test_usage_reconciliation_runtime.RuntimeTests.test_uncertainty_dependency_survives_restart_and_fences_publication",
     "tests.test_usage_reconciliation_runtime.RuntimeTests.test_unchanged_initial_phase_reentry_never_reloads_history"
+   ]
+  },
+  "tests.test_usage_reconciliation_runtime.RuntimeTests.setUp": {
+   "disposition": "explicit-branch-policy",
+   "preparation_boundaries": [
+    "tests.test_viewer_maintenance.make_target"
+   ],
+   "reason": "per-method marker; unmarked and unknown callers remain real",
+   "regression_source_refs": [
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.drain_effects",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.drain_initial",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.drain_snapshots",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_actual_task_acknowledgement_reaches_base_membership_without_claiming_publication",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_base_owner_dependency_fences_publication_with_equal_uncertainty",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_baseline_does_not_manufacture_input_generations",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_effects_finish_with_fresh_input_guard_and_full_geometry",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_event_budget_stop_keeps_committed_frontier_for_new_repository",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_fresh_guard_rejects_new_core_change_before_effects",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_fresh_guard_rejects_new_numerical_change_before_effects",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_interrupted_base_key_reduction_cannot_certify_current_inputs",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_numerical_physical_replacement_requires_reestablishment",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_owner_effects_keep_ambiguity_seen_before_removal_and_later_readdition",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_period_membership_replacement_uses_existing_old_set",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_restore_epoch_discards_derived_work_but_not_original_responses",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_review_endpoint_policy_change_requires_reestablishment",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_selected_snapshot_capture_and_unchanged_reentry",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_uncertainty_dependency_survives_restart_and_fences_publication",
+    "tests.test_usage_reconciliation_runtime.RuntimeTests.test_unchanged_initial_phase_reentry_never_reloads_history"
+   ]
+  },
+  "tests.test_usage_reconciliation_scale.ScaleTests.measure": {
+   "disposition": "explicit-branch-policy",
+   "preparation_boundaries": [
+    "tests.test_viewer_maintenance.make_target"
+   ],
+   "reason": "per-method marker; unmarked and unknown callers remain real",
+   "regression_source_refs": [
+    "tests.test_usage_reconciliation_scale.ScaleTests.test_actual_response_pages_reuse_component_without_changing_publication",
+    "tests.test_usage_reconciliation_scale.ScaleTests.test_same_response_keys_use_fewer_core_admissions_and_sql",
+    "tests.test_usage_reconciliation_scale.ScaleTests.test_unchanged_and_fixed_changeset_counts_ignore_unrelated_same_thread_history"
+   ]
+  },
+  "tests.test_usage_response_page_experiment.ResponsePageExperimentTests.fixture": {
+   "disposition": "explicit-branch-policy",
+   "preparation_boundaries": [
+    "tests.test_viewer_maintenance.make_target"
+   ],
+   "reason": "per-method marker; unmarked and unknown callers remain real",
+   "regression_source_refs": [
+    "tests.test_usage_response_page_experiment.ResponsePageExperimentTests.test_candidate_uses_unmodified_product_function_and_adopted_policy",
+    "tests.test_usage_response_page_experiment.ResponsePageExperimentTests.test_deadline_margin_is_50ms_and_250ms_only_limits_optional_start",
+    "tests.test_usage_response_page_experiment.ResponsePageExperimentTests.test_later_hook_recovers_process_death_to_identical_public_json",
+    "tests.test_usage_response_page_experiment.ResponsePageExperimentTests.test_new_priority_work_runs_before_the_next_response_page",
+    "tests.test_usage_response_page_experiment.ResponsePageExperimentTests.test_process_death_preserves_first_key_and_rolls_back_uncommitted_page",
+    "tests.test_usage_response_page_experiment.ResponsePageExperimentTests.test_shared_partition_full_replay_and_final_input_guard",
+    "tests.test_usage_response_page_experiment.ResponsePageExperimentTests.test_zero_one_boundaries_and_multiple_pages_preserve_fifo_and_full_oracle"
    ]
   },
   "tests.test_verification_declaration.VerificationDeclarationWorkflowTests.setUp": {
@@ -36775,6 +37762,91 @@
    "self.assertTrue(self.protect(target, root)['completed'])",
    "self.assertRaises(sqlite3.ProgrammingError)"
   ],
+  "tests.test_protection_usage_recovery.RecoveryUsageTests.assert_oracle": [
+   "self.assertEqual(comparable(actual), comparable(expected))",
+   "self.assertEqual(index['unattributed'], {kind: repository._totals(connection, full[field]) for kind, field in (('unknown', 'unknown_response_keys'), ('unassigned', 'unassigned_response_keys'))})"
+  ],
+  "tests.test_protection_usage_recovery.RecoveryUsageTests.assert_unknown": [
+   "self.assertEqual(result['status'], 'unknown')",
+   "self.assertEqual(result['periods'], [])",
+   "self.assertNotIn('total', result)"
+  ],
+  "tests.test_protection_usage_recovery.RecoveryUsageTests.collection_controls": [
+   "self.assertIsNotNone(locator)"
+  ],
+  "tests.test_protection_usage_recovery.RecoveryUsageTests.recover": [
+   "self.assertEqual(proof['usage_aggregation'], 'pending')",
+   "self.assertEqual(numerical.read_bytes(), restored.resolved_usage_database.read_bytes())"
+  ],
+  "tests.test_protection_usage_recovery.RecoveryUsageTests.test_current_lifecycle_keeps_entry_deadline_for_deferred_reconciliation": [
+   "self.assertEqual(deadline, fixture.repo.deadline)",
+   "self.assertGreater(deadline, started)",
+   "self.assertLessEqual(deadline, time.monotonic() + usage_lifecycle.EVENT_SECONDS)"
+  ],
+  "tests.test_protection_usage_recovery.RecoveryUsageTests.test_independent_capture_keeps_later_task_observation_unbound": [
+   "self.assert_unknown(restored, later[0])",
+   "self.assert_oracle(restored)",
+   "self.assertIsNotNone(numerical.execute('SELECT 1 FROM usage_operation_turns WHERE task_id=?', later).fetchone())",
+   "self.assertIsNone(numerical.execute('SELECT 1 FROM usage_reconcile_periods WHERE task_id=?', later).fetchone())"
+  ],
+  "tests.test_protection_usage_recovery.RecoveryUsageTests.test_migration_reset_without_response_context_remains_recoverable": [
+   "self.assert_oracle(restored)"
+  ],
+  "tests.test_protection_usage_recovery.RecoveryUsageTests.test_reestablished_display_rejects_changed_identity_epoch_schema_and_binding": [
+   "self.assert_oracle(restored)",
+   "self.assert_unknown(restored, fixture.fixture.task_id)",
+   "self.assertRaises(UsageError)"
+  ],
+  "tests.test_protection_usage_recovery.RecoveryUsageTests.test_restore_fence_cost_does_not_replay_growing_unrelated_history": [
+   "self.assertEqual(measured[0]['current']['sql'], measured[1]['current']['sql'])",
+   "self.assertGreater(measured[1]['previous']['sql'], measured[0]['previous']['sql'])",
+   "self.assertEqual(current['recalculations'], 0)",
+   "self.assertEqual(current['connections'], 2)",
+   "self.assertGreater(previous['recalculations'], history)"
+  ],
+  "tests.test_protection_usage_recovery.RecoveryUsageTests.test_restore_preserves_originals_and_resumes_after_deadline_and_restart": [
+   "self.assert_unknown(restored, fixture.fixture.task_id)",
+   "self.assertEqual(before, self.originals(repository_for(restored)))",
+   "self.assertEqual(refresh_usage(restored, deadline=time.monotonic() - 1)['publication'], 'pending')",
+   "self.assert_unknown(restored, fixture.fixture.task_id)",
+   "self.assert_oracle(restored)",
+   "self.assertEqual(refresh_usage(restored, deadline=time.monotonic() + 20)['publication'], 'current')",
+   "self.assertTrue(rows <= after[table], table)",
+   "self.assertEqual(read_task_usage(restored, core, fixture.fixture.task_id)['status'], 'pending')",
+   "self.assert_unknown(restored, fixture.fixture.task_id)",
+   "self.fail('bounded work failed to converge')"
+  ],
+  "tests.test_protection_usage_recovery.RecoveryUsageTests.test_retained_change_key_types_and_shapes_are_checked_for_every_kind": [
+   "self.assertEqual(connection.execute('PRAGMA quick_check').fetchone()[0], 'ok')",
+   "self.assertIsNone(connection.execute('PRAGMA foreign_key_check').fetchone())",
+   "self.assertRaises(UsageError)"
+  ],
+  "tests.test_protection_usage_recovery.RecoveryUsageTests.test_saved_collection_controls_resume_without_discovery_during_recovery": [
+   "self.assertEqual(repository.discovery_position(), before_position)",
+   "self.assertIsNotNone(repository.locator_by_id('f' * 64, pending=True))",
+   "self.assertGreater(rotated.queue_order, entry.queue_order)",
+   "self.assertEqual(repository.unattempted_sources([entry.locator.source_id], before_position[1]['attempt_floor']), set())",
+   "self.assertEqual(repository.discovery_position()[1]['cycle'], before_position[1]['cycle'] + 1)",
+   "self.assert_oracle(restored)"
+  ],
+  "tests.test_protection_usage_recovery.RecoveryUsageTests.test_sql_valid_original_and_restart_corruption_prevents_protection": [
+   "self.assertEqual(target.resolved_usage_database.read_bytes(), before)",
+   "self.assertFalse(list(root.glob('tg_protection_*')))",
+   "self.assertFalse(list(root.rglob('manifest.json')))",
+   "self.assertGreater(changed, 0)",
+   "self.assertEqual(connection.execute('PRAGMA quick_check').fetchone()[0], 'ok')",
+   "self.assertIsNone(connection.execute('PRAGMA foreign_key_check').fetchone())",
+   "self.assertRaises(UsageError)"
+  ],
+  "tests.test_protection_usage_recovery.RecoveryUsageTests.test_unknown_turn_legacy_coverage_from_normal_collection_remains_recoverable": [
+   "self.assert_unknown(restored, fixture.fixture.task_id)",
+   "self.assert_oracle(restored)",
+   "self.assertIn('legacy_usage', repository_for(restored).summary()['diagnostics'])",
+   "self.assertEqual(tuple(connection.execute('SELECT turn_id,modern,legacy FROM usage_scan_coverage WHERE source_id=?', (source.source_id,)).fetchone()), ('', 0, 1))"
+  ],
+  "tests.test_protection_usage_recovery.RecoveryUsageTests.test_valid_changes_without_restored_anchors_can_resume": [
+   "self.assert_oracle(restored)"
+  ],
   "tests.test_review_answer_continuation_preparation.ContinuedAnswerPublicationTests.test_new_round_under_legacy_root_freezes_collection_before_publication": [
    "self.assertEqual(p.PreparationRepository(fixture.root / 'preparation.sqlite').read()[1].version, 1)",
    "self.assertTrue(result['ok'], result)",
@@ -42298,12 +43370,209 @@
    "self.assertEqual(self.cached(), before)",
    "self.assertEqual([row[0] for row in connection.execute('SELECT task_id FROM usage_reconcile_core_work')], [self.tasks[1]])"
   ],
+  "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.assert_frozen_geometry": [
+   "self.assertEqual(sorted(actual, key=component_identity), sorted(expected['components'], key=component_identity))",
+   "self.assertEqual(keys, sorted(expected[column]))"
+  ],
+  "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.assert_frozen_same": [
+   "self.assert_same()"
+  ],
+  "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.assert_same": [
+   "self.assertEqual(comparable(actual), comparable(expected))",
+   "self.assertEqual(index['unattributed'], {kind: self.repository._totals(connection, full[field]) for kind, field in (('unknown', 'unknown_response_keys'), ('unassigned', 'unassigned_response_keys'))})"
+  ],
+  "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.check_base_owner_reappearance": [
+   "self.assertEqual(self.publish_same(restart=True), index)",
+   "self.assertEqual(len(index['current_snapshot_ids']), 2)",
+   "self.assertFalse(retired.intersection(index['current_snapshot_ids']))",
+   "self.assertEqual(path.read_bytes(), data)",
+   "self.assertTrue(rows <= set(map(tuple, connection.execute('SELECT * FROM ' + table))))"
+  ],
+  "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.check_global_order": [
+   "self.assert_frozen_same()",
+   "self.assert_frozen_same(restart=True)"
+  ],
+  "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.publish_same": [
+   "self.assert_frozen_same(restart=restart)",
+   "self.assertEqual(json.loads(self.fixture.target.resolved_usage_index.read_bytes()), index)",
+   "self.assertEqual(service.refresh_usage(self.fixture.target)['publication'], 'current')",
+   "self.assertEqual(json.loads((self.fixture.target.resolved_usage_snapshots / (identity + '.json')).read_bytes()), self.repository.publication_snapshot(identity))"
+  ],
+  "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.queued_responses": [
+   "self.assert_same()"
+  ],
+  "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.remove_and_restore_position": [
+   "self.assert_frozen_same(restart=True)",
+   "self.assert_frozen_same(restart=True)"
+  ],
+  "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_bad_order_occurrence_remains_unknown_despite_an_ordered_occurrence": [
+   "self.assert_frozen_same()",
+   "self.assert_frozen_same(restart=True)",
+   "self.assertEqual(result['unattributed']['unknown']['response_count'], 1)",
+   "self.assert_frozen_same(restart=True)"
+  ],
+  "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_competing_task_update_can_commit_between_response_pages": [
+   "self.assert_same()",
+   "self.assertTrue(page_started.wait(5))",
+   "self.assertRaisesRegex(UsageError, 'usage_pending')",
+   "self.assertEqual([tuple(row) for row in connection.execute('SELECT provider,response_id FROM usage_reconcile_response_work ORDER BY rowid')], keys[-1:])",
+   "self.assertTrue(committing.wait(5))",
+   "self.assertFalse(editor.done())",
+   "self.assertEqual(runtime.advance_effects(self.repository, self.reader)['phase'], 'response')"
+  ],
+  "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_fallback_uses_last_thread_position_after_stop_and_restart": [
+   "self.assert_frozen_same()",
+   "self.assert_frozen_same(restart=True)"
+  ],
+  "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_late_duplicate_key_in_other_turn_and_removal_use_actual_reverse_queue": [
+   "self.assert_same()",
+   "self.assert_same()",
+   "self.assert_same()"
+  ],
+  "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_moving_stop_position_revisits_unchanged_original_turn": [
+   "self.assert_frozen_same()",
+   "self.assert_frozen_same(restart=True)",
+   "self.assertNotEqual(before['current_snapshot_ids'], after['current_snapshot_ids'])"
+  ],
+  "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_partial_split_retains_predecessors_across_input_change_and_restores": [
+   "self.assert_same()",
+   "self.assertEqual(snapshots.advance(self.repository, self.reader)['phase'], 'snapshot')",
+   "self.assert_same()",
+   "self.assertEqual(len(latest['current_snapshot_ids']), 2)",
+   "self.assertEqual(self.repository.publication_snapshot(identity)['predecessors'], original['current_snapshot_ids'])"
+  ],
+  "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_pause_and_resume_keep_unassigned_gap_and_old_execution": [
+   "self.assert_same()",
+   "self.assert_same()",
+   "self.assertEqual(paused['unattributed']['unassigned']['response_count'], 1)",
+   "self.assert_same()",
+   "self.assertEqual(resumed['unattributed'], paused['unattributed'])"
+  ],
+  "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_response_pages_commit_a_single_key_before_optional_siblings_and_resume_fifo": [
+   "self.assertEqual(visited, keys[:3])",
+   "self.assertEqual(pages, [keys[:1]])",
+   "self.assertEqual(visited, keys[1:])",
+   "self.assertEqual([len(page) for page in pages], [1, runtime._RESPONSE_PAGE_SIZE, runtime._RESPONSE_PAGE_SIZE - 1])",
+   "self.assertEqual([tuple(row) for row in connection.execute('SELECT provider,response_id FROM usage_reconcile_response_work ORDER BY rowid')], keys[1:])",
+   "self.assertEqual(derived_rows.intersection(keys), {keys[0]})",
+   "self.assertEqual(self.assert_same(), expected)",
+   "self.assertRaisesRegex(UsageError, 'usage_unavailable')",
+   "self.assert_same()"
+  ],
+  "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_short_response_page_commits_and_fresh_guard_rejects_changed_core": [
+   "self.assert_same()",
+   "self.assertEqual(runtime.advance_effects(self.repository, self.reader)['key'], keys[1])",
+   "self.assertRaisesRegex(UsageError, 'usage_pending')",
+   "self.assertEqual([tuple(row) for row in connection.execute('SELECT provider,response_id FROM usage_reconcile_response_work ORDER BY rowid')], keys[2:])",
+   "self.assertEqual(runtime.advance_effects(self.repository, self.reader), {'phase': 'response', 'key': keys[0]})",
+   "self.assertRaisesRegex(UsageError, 'usage_pending')"
+  ],
+  "tests.test_usage_reconciliation_changes_runtime.ChangedRuntimeTests.test_source_replacement_and_diagnostic_removal_reconcile_without_rewriting_history": [
+   "self.assert_same()",
+   "self.assert_same()",
+   "self.assertNotEqual(before['current_snapshot_ids'], gap['current_snapshot_ids'])",
+   "self.assert_same()",
+   "self.assertGreater(self.repository.cursor(self.fixture.source.source_id, THREAD).incarnation, 0)",
+   "self.assert_same()",
+   "self.assertTrue(set(before['snapshots']) <= set(after['snapshots']))"
+  ],
+  "tests.test_usage_reconciliation_pages.PhasePageTests.real_allocations_after_first_commit": [
+   "self.fail('real allocation work did not become ready')",
+   "self.assertEqual(connection.execute('SELECT COUNT(*) FROM usage_reconcile_turn_queue').fetchone()[0], count - 1)",
+   "self.assertEqual(len(documents), 1)",
+   "self.assertTrue(any((members for _, members in documents[0]['owners'])))"
+  ],
+  "tests.test_usage_reconciliation_pages.PhasePageTests.test_core_writer_progresses_between_pages_and_next_page_rejects_stale_basis": [
+   "self.assertEqual(self.remaining(), 2)",
+   "self.assertEqual(self.remaining(), 2)",
+   "self.assertTrue(entered.wait(5))",
+   "self.assertRaisesRegex(UsageError, 'usage_pending')",
+   "self.assertTrue(committing.wait(5))",
+   "self.assertFalse(writer.done())"
+  ],
+  "tests.test_usage_reconciliation_pages.PhasePageTests.test_failure_rolls_back_entire_page_but_retains_first_commit": [
+   "self.assertEqual(len(visited), 100)",
+   "self.assertEqual(self.reconciliation_state(), before)",
+   "self.assertEqual(self.remaining(), 0)",
+   "self.assertEqual(connection.execute('SELECT COUNT(*) FROM usage_reconcile_turn_allocations').fetchone()[0], 101)",
+   "self.assertEqual(connection.execute('SELECT COUNT(*) FROM usage_reconcile_turn_queue').fetchone()[0], 29)",
+   "self.assertTrue(all((row['changed'] for row in visited)))",
+   "self.assertTrue(all((any((members for _, members in json.loads(row[0])['owners'])) for row in connection.execute('SELECT document FROM usage_reconcile_turn_allocations'))))",
+   "self.assertRaisesRegex(UsageError, 'usage_pending')"
+  ],
+  "tests.test_usage_reconciliation_pages.PhasePageTests.test_page_time_and_deadline_margin_stop_optional_unit_start": [
+   "self.assertEqual(self.remaining(), 2 if len(ticks) == 3 else 3)"
+  ],
+  "tests.test_usage_reconciliation_pages.PhasePageTests.test_process_exit_keeps_uncommitted_page_pending": [
+   "self.assertEqual(result.returncode, 23, result.stderr)",
+   "self.assertEqual(self.reconciliation_state(), before)"
+  ],
+  "tests.test_usage_reconciliation_pages.PhasePageTests.test_real_129_turns_all_four_phases_and_independent_full_replay": [
+   "self.assertNotEqual(self.support.assert_same(), expected)",
+   "self.assertEqual(self.support.assert_same(), replay)",
+   "self.assertEqual(pages[phase][0], 1, phase)",
+   "self.assertIn(128, pages[phase], phase)",
+   "self.assertTrue(all((1 <= count <= 128 for count in pages[phase])), pages)",
+   "self.assertEqual({key for key in units if units[key] != before[key]}, {phase})"
+  ],
+  "tests.test_usage_reconciliation_pages.PhasePageTests.test_zero_one_127_128_129_and_multiple_pages": [
+   "self.assertEqual(pages, expected)",
+   "self.assertEqual(visited, [(THREAD, turn(n)) for n in range(1, count + 1)])"
+  ],
+  "tests.test_usage_reconciliation_publication.PublicationTests.test_capture_audit_and_fresh_guard_without_history_reclassification": [
+   "self.assertEqual(len(index['current_snapshot_ids']), 1)",
+   "self.assertEqual(same, index)"
+  ],
+  "tests.test_usage_reconciliation_publication.PublicationTests.test_fresh_guard_rejects_input_change_and_keeps_previous_snapshot": [
+   "self.assertEqual(len(newer['snapshots']), 2)",
+   "self.assertNotEqual(newer['current_snapshot_ids'], index['current_snapshot_ids'])",
+   "self.assertEqual(item['predecessors'], index['current_snapshot_ids'])",
+   "self.assertIn('partial_tail', item['gaps'])",
+   "self.assertRaisesRegex(UsageError, 'usage_pending')",
+   "self.fail('stale guard yielded')"
+  ],
+  "tests.test_usage_reconciliation_publication.PublicationTests.test_intervening_input_keeps_committed_candidate_as_history_and_reconciles_again": [
+   "self.assertEqual(snapshots.advance(self.repository, self.reader)['phase'], 'snapshot')",
+   "self.assertEqual(len(recovered['snapshots']), 3)",
+   "self.assertEqual(len(recovered['current_snapshot_ids']), 1)",
+   "self.assertNotIn('partial_tail', current['gaps'])",
+   "self.assertNotEqual(current['snapshot_id'], original['current_snapshot_ids'][0])",
+   "self.assertRaisesRegex(UsageError, 'usage_pending')"
+  ],
+  "tests.test_usage_reconciliation_publication.PublicationTests.test_read_only_display_uses_fresh_capture_without_reloading_all_relations": [
+   "self.assertEqual(result['total']['response_count'], 1)",
+   "self.assertEqual(self.repository.read(core)['unattributed'], index['unattributed'])",
+   "self.assertRaisesRegex(UsageError, 'usage_pending')"
+  ],
+  "tests.test_usage_reconciliation_publication.PublicationTests.test_snapshot_failure_rolls_back_candidate_and_keeps_work_for_next_event": [
+   "self.assertEqual(len(recovered['snapshots']), 2)",
+   "self.assertEqual(self.repository.publication_snapshot(recovered['current_snapshot_ids'][0])['predecessors'], original['current_snapshot_ids'])",
+   "self.assertEqual(connection.execute('SELECT COUNT(*) FROM usage_snapshots').fetchone()[0], 1)",
+   "self.assertIsNotNone(connection.execute('SELECT 1 FROM usage_reconcile_component_work').fetchone())",
+   "self.assertRaisesRegex(UsageError, 'usage_pending')"
+  ],
+  "tests.test_usage_reconciliation_publication.PublicationTests.test_unchanged_eof_collection_preserves_incomplete_publication_audit": [
+   "self.assertGreater(len(index['snapshots']), 1)",
+   "self.assertEqual(same, index)",
+   "self.assertEqual(later['position'], state['position'])",
+   "self.assertGreater(connection.execute(\"SELECT revision FROM usage_scan_state WHERE lane='ingest'\").fetchone()[0], revision)",
+   "self.assertEqual(self.repository.reconciliation_revision(connection), before)"
+  ],
   "tests.test_usage_reconciliation_reviews.ReviewTests.test_delayed_receipt_reconciles_without_new_numerical_records": [
    "self.assert_same()",
    "self.assertNotEqual(before['current_snapshot_ids'], after['current_snapshot_ids'])"
   ],
   "tests.test_usage_reconciliation_reviews.ReviewTests.test_reviewer_only_stream_does_not_inherit_nonexistent_owner_stream_gap": [
    "self.assert_same()"
+  ],
+  "tests.test_usage_reconciliation_runtime.RuntimeTests.drain_effects": [
+   "self.fail('effects did not converge')"
+  ],
+  "tests.test_usage_reconciliation_runtime.RuntimeTests.drain_initial": [
+   "self.fail('initial phase did not converge')"
+  ],
+  "tests.test_usage_reconciliation_runtime.RuntimeTests.drain_snapshots": [
+   "self.fail('snapshots did not converge')"
   ],
   "tests.test_usage_reconciliation_runtime.RuntimeTests.test_actual_task_acknowledgement_reaches_base_membership_without_claiming_publication": [
    "self.assertTrue({'core', 'baseline', 'operations', 'intervals', 'turn_inputs', 'allocation', 'base_effects'} <= set(phases))",
@@ -42383,6 +43652,73 @@
   ],
   "tests.test_usage_reconciliation_runtime.RuntimeTests.test_unchanged_initial_phase_reentry_never_reloads_history": [
    "self.assertEqual(advance_initial(self.repository, self.reader), {'phase': 'effects_pending'})"
+  ],
+  "tests.test_usage_reconciliation_scale.ScaleTests.test_actual_response_pages_reuse_component_without_changing_publication": [
+   "self.assertEqual(measurements[0][:2], (len(keys) + 1, 2 * len(keys)))",
+   "self.assertEqual(measurements[1][:2], (4, 6))",
+   "self.assertEqual(fixture.assert_same(), expected)",
+   "self.assertEqual(index, expected)"
+  ],
+  "tests.test_usage_reconciliation_scale.ScaleTests.test_same_response_keys_use_fewer_core_admissions_and_sql": [
+   "self.assertLess(after[0], before[0], measurements)",
+   "self.assertLess(after[1], before[1], measurements)",
+   "self.assertLess(after[2], before[2], measurements)",
+   "self.assertEqual(fixture.assert_same(), expected)",
+   "self.assertEqual(index, expected)",
+   "self.assertEqual([call.args[1:] for call in classify.call_args_list], keys)"
+  ],
+  "tests.test_usage_reconciliation_scale.ScaleTests.test_unchanged_and_fixed_changeset_counts_ignore_unrelated_same_thread_history": [
+   "self.assertEqual({k: v for k, v in small.items() if k != 'seconds'}, {k: v for k, v in large.items() if k != 'seconds'})",
+   "self.assertEqual(large['core_histories'], 0)",
+   "self.assertLessEqual(large['turns'], 2)",
+   "self.assertLessEqual(large['responses'], 4)",
+   "self.assertEqual({k: v for k, v in value['unchanged'].items() if k != 'seconds'}, dict(core_histories=0, turns=0, responses=0, original_keys=0))"
+  ],
+  "tests.test_usage_response_page_experiment.ResponsePageExperimentTests.test_candidate_uses_unmodified_product_function_and_adopted_policy": [
+   "self.assertIs(runtime.advance_effects, advance)",
+   "self.assertEqual((runtime._RESPONSE_PAGE_SIZE, runtime._RESPONSE_PAGE_SECONDS, runtime._RESPONSE_COMMIT_MARGIN_SECONDS), (128, 0.25, 0.05))"
+  ],
+  "tests.test_usage_response_page_experiment.ResponsePageExperimentTests.test_deadline_margin_is_50ms_and_250ms_only_limits_optional_start": [
+   "self.assertEqual(pages[0]['units'], 3)",
+   "self.assertEqual(pages[0]['units'], 1)"
+  ],
+  "tests.test_usage_response_page_experiment.ResponsePageExperimentTests.test_later_hook_recovers_process_death_to_identical_public_json": [
+   "self.assertEqual(child.exitcode, 74)",
+   "self.assertEqual(recovered['projection'], expected)",
+   "self.assertTrue(recovered['frozen_oracle_equal'])",
+   "self.assertEqual(fixture.target.db_path.read_bytes(), core)",
+   "self.fail('isolated Hook did not reach crash point')",
+   "self.assertEqual(connection.execute('SELECT COUNT(*) FROM usage_reconcile_response_result').fetchone()[0], 1)",
+   "self.assertEqual(connection.execute('SELECT COUNT(*) FROM usage_reconcile_response_work').fetchone()[0], 128)"
+  ],
+  "tests.test_usage_response_page_experiment.ResponsePageExperimentTests.test_new_priority_work_runs_before_the_next_response_page": [
+   "self.assertEqual(runtime.advance_effects(fixture.repository, fixture.reader, single_response=True)['key'], keys[0])",
+   "self.assertEqual(fixture.assert_frozen_same(), expected)",
+   "self.assertEqual(runtime.advance_effects(fixture.repository, fixture.reader)['phase'], 'turn_overlays')"
+  ],
+  "tests.test_usage_response_page_experiment.ResponsePageExperimentTests.test_process_death_preserves_first_key_and_rolls_back_uncommitted_page": [
+   "self.assertEqual(child.exitcode, 73)",
+   "self.fail('isolated child did not reach crash point')",
+   "self.assertEqual(list(map(tuple, connection.execute('SELECT provider,response_id FROM usage_reconcile_response_work ORDER BY rowid'))), keys[1:])",
+   "self.assertEqual(actual.intersection(keys), {keys[0]})",
+   "self.assertEqual(fixture.assert_frozen_same(), expected)"
+  ],
+  "tests.test_usage_response_page_experiment.ResponsePageExperimentTests.test_shared_partition_full_replay_and_final_input_guard": [
+   "self.assertTrue(any((fixture.repository.publication_snapshot(identity)['assignment'] == 'shared' for identity in index['current_snapshot_ids'])))",
+   "self.assertRaisesRegex(UsageError, 'usage_pending')",
+   "self.fail('stale publication allowed')"
+  ],
+  "tests.test_usage_response_page_experiment.ResponsePageExperimentTests.test_zero_one_boundaries_and_multiple_pages_preserve_fifo_and_full_oracle": [
+   "self.assertEqual([page['units'] for page in pages], sizes)",
+   "self.assertEqual(fixture.assert_frozen_same(), expected)",
+   "self.assertIsNone(connection.execute('SELECT 1 FROM usage_reconcile_response_work').fetchone())"
+  ],
+  "tests.test_usage_snapshot_reappearance.PublicationRollbackTests.test_capture_failure_keeps_last_good_files_and_retries_atomic_relations": [
+   "self.assertGreater(len(latest['snapshots']), 1)",
+   "self.assertEqual(json.loads(target.resolved_usage_index.read_bytes()), latest)",
+   "self.assertEqual(service.refresh_usage(target)['publication'], 'pending')",
+   "self.assertEqual(CandidateTests.evidence(connection), before)",
+   "self.assertEqual(path.read_bytes(), data)"
   ],
   "tests.test_verification_declaration.VerificationDeclarationWorkflowTests.test_acceptance_and_assertions_never_infer_a_declaration": [
    "self.assertEqual(result['errors'][0]['code'], 'verification_requirement_unspecified')"
@@ -43486,7 +44822,8 @@
   "No production storage, Setup, migration, verification, CI selection, assertions, scale or timeout is changed.",
   "reachable_dispositions covers the complete union of direct functions and statically reached indirect functions, not only methods selected by shared setUp detection.",
   "Every reachable disposition names its concrete preparation boundaries and regression source functions. regression_sources records the original assertion expressions at those exact functions, including assertions reached through helpers and unittest setup ownership.",
-  "A branch policy is not an ordinary opt-in: unmarked callers and predecessor runtime pins keep real initialization. The effective-factory audit resolves reexported constructors as well as direct imports."
+  "A branch policy is not an ordinary opt-in: unmarked callers and predecessor runtime pins keep real initialization. The effective-factory audit resolves reexported constructors as well as direct imports.",
+  "Usage nested-call disposition refreshed against ae763fc plus this candidate; nested_usage_preparation records source-reviewed instance and benchmark edges outside the static scanner. Other entries retain their earlier point-in-time scope."
  ],
  "shared_setup_policy": "Only ordinary_current_database-marked methods clone. Unmarked/new/unknown cases and predecessor runtime pins use real creation; explicit factory flags propagate the selected method through shared helpers. Explicit self-contained physical CLI methods in review results (including inherited arrays), verification results, Finding resolution, Task batch and Task notes own their real Setup instead of constructing an unused shared DB."
 }

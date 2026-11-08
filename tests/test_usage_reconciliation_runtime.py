@@ -30,8 +30,12 @@ class RuntimeTests(unittest.TestCase):
     ingest = response_fixture.ResponseRepositoryTests.ingest
 
     def setUp(self):
+        self.prepare_fixture(real_initialization=not uses_current_database_fixture(self))
+
+    def prepare_fixture(self, *, real_initialization=True):
+        """Nested callers pass their own selection; unnamed helpers stay real."""
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        self.target = make_target(self.root, enabled=False, real_initialization=not uses_current_database_fixture(self))
+        self.target = make_target(self.root, enabled=False, real_initialization=real_initialization)
         self.root = self.root / "project"
         from task_governance_tool.state_resolver import observe_current_root
         self.repository = UsageReconciliationRepository(self.root / "usage.sqlite", self.target.project.project_id,

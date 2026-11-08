@@ -7,6 +7,7 @@ import subprocess
 import sys
 import unittest
 from unittest import mock
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
 
 from tests import test_usage_reconciliation_changes_runtime as changed
 from tests.test_usage_attribution import turn
@@ -24,8 +25,8 @@ PHASES = ("turn_inputs", "allocation", "base_effects", "turn_overlays")
 class PhasePageTests(unittest.TestCase):
     def setUp(self):
         self.support = changed.ChangedRuntimeTests()
-        self.support.setUp()
         self.addCleanup(self.support.doCleanups)
+        self.support.prepare_fixture(real_initialization=not uses_current_database_fixture(self))
         self.fixture = self.support.fixture
         self.repository, self.reader = self.support.repository, self.support.reader
 
@@ -69,6 +70,7 @@ class PhasePageTests(unittest.TestCase):
             return {table: sorted(map(tuple, connection.execute('SELECT * FROM "' + table + '"')), key=repr)
                     for table in tables}
 
+    @ordinary_current_database
     def test_zero_one_127_128_129_and_multiple_pages(self):
         for count in (0, 1, 127, 128, 129, 258):
             with self.subTest(count=count):
@@ -93,6 +95,7 @@ class PhasePageTests(unittest.TestCase):
                 self.assertEqual(visited, [(THREAD, turn(n)) for n in range(1, count + 1)])
                 self.support.assert_same()
 
+    @ordinary_current_database
     def test_real_129_turns_all_four_phases_and_independent_full_replay(self):
         rows = []
         for number in range(2, 130):
@@ -137,6 +140,7 @@ class PhasePageTests(unittest.TestCase):
         replay = self.support.assert_same()
         self.assertEqual(self.support.assert_same(), replay)
 
+    @ordinary_current_database
     def test_page_time_and_deadline_margin_stop_optional_unit_start(self):
         from task_governance_tool import usage_incremental_repository as incremental
         for deadline, ticks in ((float("inf"), (10, 10.249, 10.250)), (10.075, (10, 10.025)),
@@ -208,6 +212,7 @@ with r.connection(write=True) as connection:
         self.support.repository = type(self.repository)(self.repository.path, *self.repository.basis)
         self.support.assert_same()
 
+    @ordinary_current_database
     def test_core_writer_progresses_between_pages_and_next_page_rejects_stale_basis(self):
         from concurrent.futures import ThreadPoolExecutor
         from threading import Event

@@ -5,6 +5,7 @@ from dataclasses import replace
 import json
 import unittest
 from unittest import mock
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
 
 from tests import test_usage_reconciliation_runtime as support
 from tests.test_usage_collection import THREAD, event, usage, COUNTS
@@ -18,9 +19,13 @@ from task_governance_tool.usage_response_repository import component_identity
 
 class ChangedRuntimeTests(unittest.TestCase):
     def setUp(self):
+        self.prepare_fixture(real_initialization=not uses_current_database_fixture(self))
+
+    def prepare_fixture(self, *, real_initialization=True):
+        """Keep selection and cleanup ownership explicit across both helpers."""
         self.fixture = support.RuntimeTests()
-        self.fixture.setUp()
         self.addCleanup(self.fixture.doCleanups)
+        self.fixture.prepare_fixture(real_initialization=real_initialization)
         self.repository, self.reader = self.fixture.repository, self.fixture.reader
 
     def assert_same(self):
@@ -102,6 +107,7 @@ class ChangedRuntimeTests(unittest.TestCase):
         self.assertEqual([len(page) for page in pages], [1, runtime._RESPONSE_PAGE_SIZE,
                                                        runtime._RESPONSE_PAGE_SIZE - 1])
 
+    @ordinary_current_database
     def test_short_response_page_commits_and_fresh_guard_rejects_changed_core(self):
         from task_governance_tool import usage_incremental_repository as incremental
         from task_governance_tool import usage_reconciliation_runtime as runtime
@@ -132,6 +138,7 @@ class ChangedRuntimeTests(unittest.TestCase):
                 "SELECT provider,response_id FROM usage_reconcile_response_work ORDER BY rowid")], keys[2:])
         self.assert_same()
 
+    @ordinary_current_database
     def test_competing_task_update_can_commit_between_response_pages(self):
         from concurrent.futures import ThreadPoolExecutor
         from threading import Event
@@ -198,6 +205,7 @@ class ChangedRuntimeTests(unittest.TestCase):
             connection.execute("DELETE FROM usage_response_positions WHERE source_id=?", (second.source_id,))
         self.assert_same()
 
+    @ordinary_current_database
     def test_pause_and_resume_keep_unassigned_gap_and_old_execution(self):
         self.assert_same()
         self.transition("paused", "pause", pause_reason="Fixture interruption")

@@ -76,6 +76,82 @@ def add_fixture_task(db, repo, task):
 
 
 class TaskStatusFixtureTests(unittest.TestCase):
+    def test_usage_nested_selection_preserves_named_inherited_and_unknown_defaults(self):
+        from tests import current_database_fixture_support as images
+        from tests.test_usage_reconciliation_runtime import RuntimeTests
+        from tests.test_usage_reconciliation_changes_runtime import ChangedRuntimeTests
+        from tests.test_usage_reconciliation_pages import PhasePageTests
+
+        class Inherited(ChangedRuntimeTests):
+            def test_unmarked_new_case(self):
+                pass
+
+        cases = [
+            (RuntimeTests('test_selected_snapshot_capture_and_unchanged_reentry'), True),
+            (ChangedRuntimeTests('test_pause_and_resume_keep_unassigned_gap_and_old_execution'), True),
+            (Inherited('test_pause_and_resume_keep_unassigned_gap_and_old_execution'), True),
+            (PhasePageTests('test_zero_one_127_128_129_and_multiple_pages'), True),
+            (RuntimeTests(), False), (ChangedRuntimeTests(), False),
+            (Inherited('test_unmarked_new_case'), False),
+        ]
+        with mock.patch.object(images, 'initialize_current_test_target',
+                               wraps=images.initialize_current_test_target) as copied:
+            for case, expected in cases:
+                with self.subTest(case=case.id()):
+                    self.addCleanup(case.doCleanups)
+                    before = copied.call_count
+                    case.setUp()
+                    self.assertEqual(copied.call_count - before, int(expected))
+                    case.doCleanups()
+
+    def test_usage_nested_explicit_default_and_pin_keep_real_initialization(self):
+        from contextlib import nullcontext
+        from tests import current_database_fixture_support as images
+        from tests.test_usage_reconciliation_changes_runtime import ChangedRuntimeTests
+        from tests.test_review_session_migration import candidate_runtime
+        for pinned in (False, True):
+            with self.subTest(pinned=pinned), (candidate_runtime(36) if pinned else nullcontext()):
+                case = ChangedRuntimeTests('test_pause_and_resume_keep_unassigned_gap_and_old_execution')
+                self.addCleanup(case.doCleanups)
+                with mock.patch.object(images, 'initialize_current_test_target',
+                                       side_effect=AssertionError('real preparation required')):
+                    if pinned:
+                        case.prepare_fixture(real_initialization=False)
+                    else:
+                        case.prepare_fixture()  # A marked helper still defaults to real here.
+                with closing(storage.connect(case.fixture.target.db_path)) as connection:
+                    self.assertEqual(storage.current_schema_version(connection), 36 if pinned else images.CURRENT_TEMPLATE_SCHEMA_VERSION)
+                case.doCleanups()
+
+    def test_usage_nested_copies_and_failed_preparation_cleanup_are_independent(self):
+        from tests import test_usage_reconciliation_runtime as runtime
+        from tests.test_usage_reconciliation_changes_runtime import ChangedRuntimeTests
+        first, second, failed, later = [ChangedRuntimeTests() for _ in range(4)]
+        for case in (first, second, failed, later):
+            self.addCleanup(case.doCleanups)
+        first.prepare_fixture(real_initialization=False)
+        second.prepare_fixture(real_initialization=False)
+        self.assertNotEqual(first.fixture.target.project.project_id, second.fixture.target.project.project_id)
+        with closing(storage.connect(first.fixture.target.db_path)) as connection:
+            connection.execute('CREATE TABLE independent_fixture_sentinel(value)')
+            connection.commit()
+        first.doCleanups()
+        self.assertFalse(first.fixture.target.db_path.exists())
+        self.assertTrue(second.fixture.target.db_path.exists())
+        with mock.patch.object(runtime, 'register_source', side_effect=RuntimeError('fixture preparation interrupted')):
+            with self.assertRaisesRegex(RuntimeError, 'fixture preparation interrupted'):
+                failed.prepare_fixture(real_initialization=False)
+        failed_root = failed.fixture.root
+        self.assertTrue(failed_root.exists())
+        failed.doCleanups()
+        self.assertFalse(failed_root.exists())
+        later.prepare_fixture(real_initialization=False)
+        for case in (second, later):
+            with closing(storage.connect(case.fixture.target.db_path)) as connection:
+                self.assertIsNone(connection.execute("SELECT name FROM sqlite_master WHERE name='independent_fixture_sentinel'").fetchone())
+            with case.repository.connection() as connection:
+                self.assertEqual(connection.execute('SELECT COUNT(*) FROM usage_responses').fetchone()[0], 1)
+
     def test_shared_setup_clones_only_explicit_ordinary_cases(self):
         from tests.current_database_fixture_support import initialize_case_database, ordinary_current_database
         from tests import m14_test_support

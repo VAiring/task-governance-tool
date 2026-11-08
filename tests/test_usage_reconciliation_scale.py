@@ -4,6 +4,7 @@ from contextlib import contextmanager
 import time
 import unittest
 from unittest import mock
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
 
 from tests import test_usage_reconciliation_changes_runtime as changed_support
 from tests.test_usage_collection import event, usage
@@ -14,14 +15,15 @@ from task_governance_tool import usage_reconciliation_membership as membership
 
 
 class ScaleTests(unittest.TestCase):
+    @ordinary_current_database
     def test_actual_response_pages_reuse_component_without_changing_publication(self):
         from contextlib import nullcontext
         import sqlite3
         from task_governance_tool import usage_component_reuse as reuse, usage_reconciliation_runtime as runtime
         from tests.test_usage_reconciliation_membership import ComponentReuseTests
         fixture = changed_support.ChangedRuntimeTests()
-        fixture.setUp()
         self.addCleanup(fixture.doCleanups)
+        fixture.prepare_fixture(real_initialization=not uses_current_database_fixture(self))
         keys, expected = fixture.queued_responses(2 * runtime._RESPONSE_PAGE_SIZE + 1)
         native = sqlite3.connect
         measurements = []
@@ -53,12 +55,13 @@ class ScaleTests(unittest.TestCase):
         self.assertEqual(fixture.assert_same(), expected)
         print(f"component_response_pages_{len(keys)}=" + repr(measurements))
 
+    @ordinary_current_database
     def test_same_response_keys_use_fewer_core_admissions_and_sql(self):
         from tests.test_integrity_consumer_closure import observe_sql
         from task_governance_tool import storage, usage_reconciliation_runtime as runtime
         fixture = changed_support.ChangedRuntimeTests()
-        fixture.setUp()
         self.addCleanup(fixture.doCleanups)
+        fixture.prepare_fixture(real_initialization=not uses_current_database_fixture(self))
         keys, expected = fixture.queued_responses(2 * runtime._RESPONSE_PAGE_SIZE + 1)
         measurements = []
         for width in (1, runtime._RESPONSE_PAGE_SIZE):
@@ -82,8 +85,8 @@ class ScaleTests(unittest.TestCase):
 
     def measure(self, size):
         fixture = changed_support.ChangedRuntimeTests()
-        fixture.setUp()
         self.addCleanup(fixture.doCleanups)
+        fixture.prepare_fixture(real_initialization=not uses_current_database_fixture(self))
         fixture.transition("paused", "pause", pause_reason="Separate historical work")
         rows = []
         for number in range(2, size + 2):
@@ -115,6 +118,7 @@ class ScaleTests(unittest.TestCase):
         fixture.assert_same()
         return {"history_turns": size, "unchanged": unchanged, "changed": changed}
 
+    @ordinary_current_database
     def test_unchanged_and_fixed_changeset_counts_ignore_unrelated_same_thread_history(self):
         measured = [self.measure(size) for size in (8, 64)]
         print("reconciliation_scale=" + repr(measured))

@@ -1337,6 +1337,19 @@ local import aliases retain their Python scope when following those routes.
 This inventory does not select, omit or change tests. Current copies still undergo production initialization,
 and all existing feature assertions and injected failures remain active.
 
+Usage reconciliation's nested runtime fixtures expose an explicit
+`prepare_fixture(real_initialization=True)` entry. Their ordinary test methods
+pass the existing marker's choice through each nesting layer; unnamed helper
+instances never infer it from a test invoked later. Inherited marked methods
+retain that choice, while unmarked methods and predecessor runtime pins retain
+real Core initialization. Numerical Usage initialization and the classification,
+FIFO, publication and independent-oracle assertions remain real. Protected
+restore, schema-pin, corruption and rollback cases retain their original
+preparation; response-page benchmark callers opt in explicitly, while physical
+Hook installs and checker-only attachments retain their existing paths. These
+explicit preparation callers register nested cleanup before preparing a child
+so failed preparation cannot strand that child's temporary state.
+
 The self-contained physical CLI cases for review results (object and array),
 verification results, Finding resolution, Task batch and Task notes bypass only
 their unused shared in-process database preparation. Their own physical install

@@ -2,6 +2,7 @@
 
 import unittest
 from unittest import mock
+from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
 
 from tests import test_usage_reconciliation_runtime as support
 from task_governance_tool.usage_values import UsageError
@@ -13,8 +14,8 @@ from task_governance_tool import usage_reconciliation_snapshots as snapshots
 class PublicationTests(unittest.TestCase):
     def setUp(self):
         self.fixture = support.RuntimeTests()
-        self.fixture.setUp()
         self.addCleanup(self.fixture.doCleanups)
+        self.fixture.prepare_fixture(real_initialization=not uses_current_database_fixture(self))
         self.repository, self.reader = self.fixture.repository, self.fixture.reader
 
     def audit(self, index, state):
@@ -23,6 +24,7 @@ class PublicationTests(unittest.TestCase):
             state = self.repository.advance_publication(state)
         return state
 
+    @ordinary_current_database
     def test_capture_audit_and_fresh_guard_without_history_reclassification(self):
         index, state = self.repository.prepare_publication(self.reader)
         state = self.audit(index, state)
@@ -35,6 +37,7 @@ class PublicationTests(unittest.TestCase):
             same, _ = self.repository.prepare_publication(self.reader)
         self.assertEqual(same, index)
 
+    @ordinary_current_database
     def test_fresh_guard_rejects_input_change_and_keeps_previous_snapshot(self):
         index, state = self.repository.prepare_publication(self.reader)
         state = self.audit(index, state)
@@ -50,6 +53,7 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(item["predecessors"], index["current_snapshot_ids"])
         self.assertIn("partial_tail", item["gaps"])
 
+    @ordinary_current_database
     def test_read_only_display_uses_fresh_capture_without_reloading_all_relations(self):
         index, _ = self.repository.prepare_publication(self.reader)
         with mock.patch.object(self.repository, "_relation_inputs", side_effect=AssertionError("all relations")), \
@@ -64,6 +68,7 @@ class PublicationTests(unittest.TestCase):
                 with self.assertRaisesRegex(UsageError, "usage_pending"):
                     self.repository.read(core, task_id=self.fixture.task_id)
 
+    @ordinary_current_database
     def test_unchanged_eof_collection_preserves_incomplete_publication_audit(self):
         self.repository.prepare_publication(self.reader)
         with self.repository.connection(write=True) as connection:

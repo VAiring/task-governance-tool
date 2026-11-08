@@ -15,8 +15,11 @@ from task_governance_tool.sqlite_transaction_trace import connect_traced
 def connection_calls(source):
     """Find direct and imported/assigned aliases, retaining only code locations."""
     tree = ast.parse(source)
+    # Reuse this input's breadth-first order across the separate passes; alias
+    # resolution still iterates to its fixed point below.
+    nodes = tuple(ast.walk(tree))
     names = {}
-    for node in ast.walk(tree):
+    for node in nodes:
         if isinstance(node, ast.Import):
             for item in node.names:
                 names[item.asname or item.name] = item.name
@@ -33,7 +36,7 @@ def connection_calls(source):
 
     # Assignment aliases may point to other aliases, including forward text
     # order in another function. Stop once the finite name mapping stabilizes.
-    assignments = [node for node in ast.walk(tree) if isinstance(node, ast.Assign)]
+    assignments = [node for node in nodes if isinstance(node, ast.Assign)]
     for _ in range(len(assignments) + 1):
         changed = False
         for node in assignments:
@@ -45,7 +48,7 @@ def connection_calls(source):
                         changed = True
         if not changed:
             break
-    return [(node.lineno, resolve(node.func)) for node in ast.walk(tree)
+    return [(node.lineno, resolve(node.func)) for node in nodes
             if isinstance(node, ast.Call) and resolve(node.func) in
             {'sqlite3.connect', 'sqlite3.dbapi2.connect'}]
 
@@ -69,6 +72,59 @@ first = db.connect
 second = first
 db.connect('a'); opener('b'); driver.connect('c'); second('d')
 ''')), 4)
+
+
+    def test_inventory_resolves_reverse_assignment_chains_and_multiple_targets(self):
+        source = (
+            "import sqlite3 as database\n"
+            "from sqlite3 import dbapi2 as api\n"
+            "from sqlite3.dbapi2 import connect as direct\n"
+            "last = middle\n"
+            "middle = first\n"
+            "first = twin = database.connect\n"
+            "last('chain'); twin('target'); api.connect('dbapi'); direct('import')\n"
+        )
+        self.assertEqual(connection_calls(source), [
+            (7, 'sqlite3.connect'), (7, 'sqlite3.connect'),
+            (7, 'sqlite3.dbapi2.connect'), (7, 'sqlite3.dbapi2.connect'),
+        ])
+
+    def test_inventory_keeps_cross_function_aliases_and_breadth_first_locations(self):
+        # This is the existing conservative inventory, not lexical dataflow.
+        # The delayed global bindings require more than one assignment pass.
+        source = (
+            "import sqlite3\n"
+            "def consume():\n"
+            "    late('nested')\n"
+            "def bind_late():\n"
+            "    global late\n"
+            "    late = early\n"
+            "def bind_early():\n"
+            "    global early\n"
+            "    from sqlite3.dbapi2 import connect as opener\n"
+            "    early = opener\n"
+            "sqlite3.connect('top')\n"
+        )
+        self.assertEqual(connection_calls(source), [
+            (11, 'sqlite3.connect'), (3, 'sqlite3.dbapi2.connect'),
+        ])
+
+    def test_inventory_preserves_assignment_order_for_competing_aliases(self):
+        for first, last in (('sqlite3.connect', 'sqlite3.dbapi2.connect'),
+                            ('sqlite3.dbapi2.connect', 'sqlite3.connect')):
+            with self.subTest(last=last):
+                source = f"import sqlite3\nopen_db = {first}\nopen_db = {last}\nopen_db('value')\n"
+                self.assertEqual(connection_calls(source), [(4, last)])
+
+    def test_inventory_does_not_retain_aliases_or_accept_malformed_new_input(self):
+        native = "from sqlite3 import connect as opener\nalias = opener\nalias('value')\n"
+        unrelated = "from service import connect as opener\nalias = opener\nalias('value')\n"
+        self.assertEqual(connection_calls(native), [(3, 'sqlite3.connect')])
+        self.assertEqual(connection_calls(unrelated), [])
+        self.assertEqual(connection_calls("alias('value')\n"), [])
+        with self.assertRaises(SyntaxError):
+            connection_calls("from sqlite3 import")
+        self.assertEqual(connection_calls(native), [(3, 'sqlite3.connect')])
 
 
 class TransactionCoverageTests(unittest.TestCase):

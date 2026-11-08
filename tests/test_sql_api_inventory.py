@@ -85,5 +85,6 @@ def inventory():
 
 class SQLInventoryTests(unittest.TestCase):
     def test_application_sql_inventory_has_no_unreviewed_paths(self):
-        self.assertEqual(inventory(), json.loads(FIXTURE.read_text(encoding='utf-8')))
-        self.assertEqual(inventory()['dispatch_requiring_review'], [])
+        actual = inventory()
+        self.assertEqual(actual, json.loads(FIXTURE.read_text(encoding='utf-8')))
+        self.assertEqual(actual['dispatch_requiring_review'], [])

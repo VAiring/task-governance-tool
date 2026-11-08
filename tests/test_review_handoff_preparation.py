@@ -841,8 +841,9 @@ class ReviewerMaterialTests(PreparationFixture):
         self.assertEqual(result.returncode, 0, result.stdout)
         return json.loads(result.stdout)
 
-    def material_document(self, command):
-        chunks, position, identity, digest = [], 0, None, None
+    def material_document(self, command, *, expected_identity=None):
+        chunks, position, identity, digest, total = [], 0, expected_identity, None, None
+        self.assertTrue(command)
         while command:
             result = self.material_read(command, decode_text=False)
             self.assertEqual(result.returncode, 0, result.stdout)
@@ -850,15 +851,68 @@ class ReviewerMaterialTests(PreparationFixture):
             self.assertEqual(page["start"], position)
             if identity is not None:
                 self.assertEqual(page["identity"], identity)
+            if digest is not None:
                 self.assertEqual(page["content_sha256"], digest)
+                self.assertEqual(page["total_bytes"], total)
             identity, digest = page["identity"], page["content_sha256"]
+            total = page["total_bytes"]
             chunks.append(page["text"].encode())
+            self.assertEqual(page["end"], position + len(chunks[-1]))
+            self.assertLessEqual(page["end"], total)
+            more = page["end"] < total
+            self.assertEqual(page["status"], "partial" if position or more else "complete")
+            self.assertEqual(page["next_start"], page["end"] if more else None)
+            self.assertEqual(bool(page["next_command"]), more)
+            if more:
+                self.assertGreater(page["end"], position)
             position = page["end"]
             command = page["next_command"]
         complete = b"".join(chunks)
         self.assertEqual(len(complete), page["total_bytes"])
         self.assertEqual(hashlib.sha256(complete).hexdigest(), digest)
         return complete
+
+    def material_for_content(self, result, packet, *, repo=None):
+        """Opt-in content oracle; protocol/limit tests keep their raw responses."""
+        self.assertEqual(result.returncode, 0, result.stdout)
+        view = json.loads(result.stdout)
+        raw = ((repo or self.root) / packet).read_bytes()
+        target = json.loads(raw)["review_target"]
+        self.assertEqual(view["review_target"], target)
+        if view.get("status") != "partial":
+            return view["review_material"]
+        digest = hashlib.sha256(raw).hexdigest()
+        self.assertEqual(view["packet_sha256"], digest)
+        material = json.loads(self.material_document(
+            view["material_command"], expected_identity={"packet_sha256": digest, "section": "material"}))
+        entries, total = [], None
+        command = material["changes_command"]
+        while command:
+            response = self.material_read(command, decode_text=False)
+            self.assertEqual(response.returncode, 0, response.stdout)
+            page = json.loads(response.stdout)
+            self.assertEqual(page["status"], "list")
+            self.assertEqual(page["packet_sha256"], digest)
+            self.assertEqual(page["review_target"], target)
+            self.assertEqual(page["dependency_revision"], material["dependency_revision"])
+            self.assertEqual(page["start"], len(entries))
+            if total is not None:
+                self.assertEqual(page["total"], total)
+            total = page["total"]
+            entries.extend(page["entries"])
+            self.assertEqual(page["end"], len(entries))
+            self.assertLessEqual(page["end"], total)
+            self.assertEqual(page["remaining"], total - len(entries))
+            more = len(entries) < total
+            self.assertEqual(page["next_start"], len(entries) if more else None)
+            self.assertEqual(bool(page["next_command"]), more)
+            if more:
+                self.assertTrue(page["entries"])
+            command = page["next_command"]
+        self.assertEqual(len(entries), total)
+        self.assertEqual([row["ordinal"] for row in entries], list(range(len(entries))))
+        material["changes"] = entries
+        return material
 
     def test_complete_matching_authority_is_reused_without_detail_lookup_before_save(self):
         base = self.committed_fixture()
@@ -1051,7 +1105,8 @@ class ReviewerMaterialTests(PreparationFixture):
         self.git("add", "--", "source.py")
         _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"])
         (self.root / "checks/behavior.py").write_bytes(b"unreviewed ambient replacement\n")
-        material = json.loads(self.displayed(prepared["handoff"]["packet_path"], details=True).stdout)["review_material"]
+        packet = prepared["handoff"]["packet_path"]
+        material = self.material_for_content(self.displayed(packet, details=True), packet)
         inventory = self.inventory(material)
         self.assertEqual(inventory["status"], "list")
         self.assertEqual(material["dependency_revision"], base)
@@ -1240,7 +1295,7 @@ class ReviewerMaterialTests(PreparationFixture):
         self.git("add", "--", "source.py")
         _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"])
         packet = prepared["handoff"]["packet_path"]
-        material = json.loads(self.displayed(packet, details=True).stdout)["review_material"]
+        material = self.material_for_content(self.displayed(packet, details=True), packet)
         object_path = self.root / ".git" / "objects" / missing[:2] / missing[2:]
         object_path.chmod(stat.S_IWRITE | stat.S_IREAD)
         object_path.unlink()
@@ -1406,22 +1461,8 @@ class ReviewerMaterialTests(PreparationFixture):
             self.assertEqual(unsupported.exception.code, "review_workspace_nested_git_unsupported")
             read = invoke("read", "--packet", packet, "--material-details")
             self.assertEqual(read.returncode, 0, read.stdout)
-            view = json.loads(read.stdout)
-            if view.get("status") == "partial":
-                # Optional workspace guidance may push this nested-path read
-                # over the delivery bound. Recover its exact material section
-                # and complete change list instead of assuming one response.
-                material = json.loads(self.material_document(view["material_command"]))
-                changes = self.material_read(material["changes_command"], decode_text=False)
-                self.assertEqual(changes.returncode, 0, changes.stdout)
-                page = json.loads(changes.stdout)
-                self.assertEqual(page["status"], "list")
-                self.assertEqual((page["start"], page["total"], page["remaining"]), (0, 3, 0))
-                self.assertIsNone(page["next_command"])
-                self.assertEqual(page["packet_sha256"], hashlib.sha256((project / packet).read_bytes()).hexdigest())
-                material["changes"] = page["entries"]
-            else:
-                material = view["review_material"]
+            material = self.material_for_content(read, packet, repo=project)
+            self.assertEqual(len(material["changes"]), 3)
             self.assertEqual({(row["kind"], row["old_path"], row["new_path"]) for row in material["changes"]},
                              {("modify", "source.py", "source.py"), ("delete", "remove.py", None),
                               ("rename", "old.py", "new.py")})
@@ -1489,7 +1530,7 @@ class ReviewerMaterialTests(PreparationFixture):
         self.git("add", "--", "source.py")
         _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"])
         packet = prepared["handoff"]["packet_path"]
-        material = json.loads(self.displayed(packet).stdout)["review_material"]
+        material = self.material_for_content(self.displayed(packet), packet)
         self.assertNotIn("unchanged_inventory", material)
         self.assertEqual(material["dependency_revision"], revision)
         # A known path is usable before any inventory or discovery operation;
@@ -1505,7 +1546,7 @@ class ReviewerMaterialTests(PreparationFixture):
         self.assertEqual(delivery["bodies"][dependency["body_id"]]["text"], "required = True\n")
         detailed = self.material_read(material["recovery_command"])
         self.assertEqual(detailed.returncode, 0, detailed.stderr)
-        material = json.loads(detailed.stdout)["review_material"]
+        material = self.material_for_content(detailed, packet)
         inventory = self.inventory(material)
         self.assertGreater(inventory["remaining"], 0)
         self.assertLess(inventory["end"], inventory["total"])
@@ -1539,12 +1580,15 @@ class ReviewerMaterialTests(PreparationFixture):
         self.git("rm", "--", "SPEC.md")
         self.git("update-index", "--chmod=+x", "AGENTS.md")
         _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"])
-        material = json.loads(self.displayed(prepared["handoff"]["packet_path"], details=True).stdout)["review_material"]
-        rows = {row["path"]: row for row in self.inventory(material)["entries"]}
-        self.assertEqual(rows["link-text"]["mode"], "120000")
-        self.assertEqual(rows["submodule"]["mode"], "160000")
-        self.assertTrue(set(rows).isdisjoint({"source.py", "renamed.py", "SPEC.md", "AGENTS.md"}))
-        self.assertEqual({entry["kind"] for entry in material["changes"]}, {"delete", "rename", "modify"})
+        packet = prepared["handoff"]["packet_path"]
+        for details in (False, True):
+            with self.subTest(details=details):
+                material = self.material_for_content(self.displayed(packet, details=details), packet)
+                rows = {row["path"]: row for row in self.inventory(material)["entries"]}
+                self.assertEqual(rows["link-text"]["mode"], "120000")
+                self.assertEqual(rows["submodule"]["mode"], "160000")
+                self.assertTrue(set(rows).isdisjoint({"source.py", "renamed.py", "SPEC.md", "AGENTS.md"}))
+                self.assertEqual({entry["kind"] for entry in material["changes"]}, {"delete", "rename", "modify"})
 
     def test_snapshot_material_uses_immutable_objects_and_excludes_ambient_files(self):
         base = self.committed_fixture()
@@ -1558,7 +1602,7 @@ class ReviewerMaterialTests(PreparationFixture):
         result = self.displayed(packet, details=True)
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertEqual(file_snapshot(self.root), before)
-        material = json.loads(result.stdout)["review_material"]
+        material = self.material_for_content(result, packet)
         self.assertEqual(material["status"], "git_objects_verified")
         self.assertEqual(material["dependency_revision"], base)
         self.assertEqual(len(material["changes"]), 1)
@@ -1593,7 +1637,8 @@ class ReviewerMaterialTests(PreparationFixture):
         (self.root / "source.py").write_text("value = 2\n", encoding="utf-8")
         self.git("add", "--", "source.py")
         _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"])
-        material = json.loads(self.displayed(prepared["handoff"]["packet_path"], details=True).stdout)["review_material"]
+        packet = prepared["handoff"]["packet_path"]
+        material = self.material_for_content(self.displayed(packet, details=True), packet)
         environment = dict(os.environ, GIT_DIR=str(self.root / "absent.git"),
                            GIT_OBJECT_DIRECTORY=str(self.root / "absent-objects"),
                            GIT_NO_LAZY_FETCH="0", GIT_OPTIONAL_LOCKS="1",
@@ -1639,7 +1684,7 @@ class ReviewerMaterialTests(PreparationFixture):
         object_path.unlink()
         result = self.displayed(prepared["handoff"]["packet_path"], details=True)
         self.assertEqual(result.returncode, 0, result.stdout)
-        material = json.loads(result.stdout)["review_material"]
+        material = self.material_for_content(result, prepared["handoff"]["packet_path"])
         before = file_snapshot(self.root)
         actual = self.material_read(material["dependency_command"].replace("<project-relative-path>", "SPEC.md"),
                                     environment=dict(os.environ, GIT_NO_LAZY_FETCH="0"))
@@ -1777,7 +1822,7 @@ class ReviewerMaterialTests(PreparationFixture):
             self.git("commit", "--quiet", "-m", "Later commit")
             result = self.displayed(prepared["handoff"]["packet_path"])
             self.assertEqual(result.returncode, 0, result.stdout)
-            material = json.loads(result.stdout)["review_material"]
+            material = self.material_for_content(result, prepared["handoff"]["packet_path"])
             self.assertEqual(material["dependency_revision"], root)
             self.assertTrue(all(e["kind"] == "add" for e in material["changes"]))
             collected = self.material_read(material["collect_command"].replace(
@@ -1790,13 +1835,14 @@ class ReviewerMaterialTests(PreparationFixture):
                                    directory="reviews/second")
         result = self.displayed(prepared["handoff"]["packet_path"])
         self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertEqual(json.loads(result.stdout)["review_material"]["comparison_base"], root)
-        material = json.loads(result.stdout)["review_material"]
+        packet = prepared["handoff"]["packet_path"]
+        material = self.material_for_content(result, packet)
+        self.assertEqual(material["comparison_base"], root)
         self.assertEqual(material["dependency_revision"], current)
         self.assertNotIn("unchanged_inventory", material)
         detailed = self.material_read(material["recovery_command"])
         self.assertEqual(detailed.returncode, 0, detailed.stderr)
-        inventory = self.inventory(json.loads(detailed.stdout)["review_material"])
+        inventory = self.inventory(self.material_for_content(detailed, packet))
         self.assertIn("SPEC.md", [row["path"] for row in inventory["entries"]])
 
     def test_live_contract_and_generation_drift_and_opaque_targets(self):
@@ -2022,6 +2068,86 @@ class ReviewerMaterialTests(PreparationFixture):
             # End this fixture's execution before acquiring the next tier case;
             # review-pending retains the same session/project slot as execution.
             self.cli("task", "edit", task, "--status", "ready")
+
+
+class MaterialContentRecoveryTests(unittest.TestCase):
+    """The opt-in oracle must reject incomplete or differently bound pages."""
+
+    material_document = ReviewerMaterialTests.material_document
+    material_for_content = ReviewerMaterialTests.material_for_content
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        raw = b'{"review_target":{"kind":"git_snapshot","generation":1}}'
+        (self.root / "packet.json").write_bytes(raw)
+        self.target = json.loads(raw)["review_target"]
+        self.digest = hashlib.sha256(raw).hexdigest()
+        self.material = {"dependency_revision": "fixed-base", "changes_command": "changes-0"}
+        body = json.dumps(self.material).encode()
+        content_hash = hashlib.sha256(body).hexdigest()
+        self.pages = []
+        for start, end in ((0, 17), (17, len(body))):
+            more = end < len(body)
+            self.pages.append({
+                "status": "partial", "identity": {"packet_sha256": self.digest, "section": "material"},
+                "content_sha256": content_hash, "start": start, "end": end, "total_bytes": len(body),
+                "text": body[start:end].decode(), "next_start": end if more else None,
+                "next_command": "material-17" if more else None})
+        for start in (0, 1):
+            self.pages.append({
+                "status": "list", "review_target": self.target, "packet_sha256": self.digest,
+                "dependency_revision": "fixed-base", "entries": [{"ordinal": start}],
+                "start": start, "end": start + 1, "total": 2, "remaining": 1 - start,
+                "next_start": 1 if start == 0 else None,
+                "next_command": "changes-1" if start == 0 else None})
+        self.view = {"status": "partial", "packet_sha256": self.digest,
+                     "review_target": self.target, "material_command": "material-0"}
+
+    @staticmethod
+    def response(value):
+        return SimpleNamespace(returncode=0, stdout=json.dumps(value).encode())
+
+    def recover(self, pages):
+        self.material_read = mock.Mock(side_effect=[self.response(page) for page in pages])
+        return self.material_for_content(self.response(self.view), "packet.json")
+
+    def test_opt_in_content_recovery_follows_only_returned_commands(self):
+        material = self.recover(self.pages)
+        self.assertEqual(material, {**self.material, "changes": [{"ordinal": 0}, {"ordinal": 1}]})
+        self.assertEqual(self.material_read.call_args_list, [
+            mock.call(command, decode_text=False)
+            for command in ("material-0", "material-17", "changes-0", "changes-1")])
+        complete = {"review_target": self.target, "review_material": material}
+        self.material_read.reset_mock()
+        self.assertEqual(self.material_for_content(self.response(complete), "packet.json"), material)
+        self.material_read.assert_not_called()
+
+    def test_content_recovery_rejects_missing_mixed_or_reordered_pages(self):
+        mutations = (
+            (0, "identity", {"packet_sha256": "wrong", "section": "material"}),
+            (1, "identity", {"packet_sha256": self.digest, "section": "context"}),
+            (1, "content_sha256", "wrong"), (1, "total_bytes", 999),
+            (0, "content_sha256", "0" * 64), (1, "start", 18),
+            (1, "end", 18), (0, "next_start", 18), (0, "next_command", None),
+            (1, "text", "x" * len(self.pages[1]["text"])),
+            (2, "packet_sha256", "wrong"), (3, "review_target", {}),
+            (2, "dependency_revision", "other-base"), (3, "total", 3),
+            (3, "start", 0), (3, "end", 3), (2, "next_start", 2),
+            (2, "next_command", None), (3, "entries", []),
+            (3, "entries", [{"ordinal": 0}]), (2, "remaining", 0),
+        )
+        for index, key, value in mutations:
+            with self.subTest(page=index, field=key, value=value):
+                pages = copy.deepcopy(self.pages)
+                pages[index][key] = value
+                with self.assertRaises(AssertionError):
+                    self.recover(pages)
+        for key, value in (("packet_sha256", "wrong"), ("review_target", {})):
+            with self.subTest(navigation=key):
+                with mock.patch.dict(self.view, {key: value}), self.assertRaises(AssertionError):
+                    self.recover(self.pages)
 
 
 class DirectPacketReviewerTests(unittest.TestCase):

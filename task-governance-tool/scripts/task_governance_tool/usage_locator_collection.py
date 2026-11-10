@@ -63,8 +63,8 @@ def _capture(repository, target, payload, roots, project, thread, deadline):
     return hint
 
 
-def _pending(repository, target, roots, deadline, clock, gaps):
-    for entry in repository.locator_page(locator_root_fingerprints(roots), limit=PENDING_PAGE, pending=True):
+def _pending(repository, target, roots, deadline, clock, gaps, *, limit=PENDING_PAGE):
+    for entry in repository.locator_page(locator_root_fingerprints(roots), limit=limit, pending=True):
         if clock() >= deadline:
             gaps.add("usage_pending")
             break
@@ -131,7 +131,7 @@ def _direct(repository, roots, project, hint, work, ceiling):
     work.run(sources, list(sources), hint, ceiling=ceiling, before_attempt=begin)
 
 
-def _inventory(repository, target, roots, project, hint, work):
+def _inventory(repository, target, roots, project, hint, work, *, collect=True):
     if work.slots >= work.limit or work.clock() >= work.deadline:
         work.gaps.add("usage_pending")
         return
@@ -143,6 +143,7 @@ def _inventory(repository, target, roots, project, hint, work):
             repository.register_session(CallerIdentity(hint.thread_id))
             entry = repository.remember_locator(locator)
             work.known_sources.update(repository.known_sources((hint.source_id,)))
+        if collect:
             work.run({hint.source_id: hint}, [hint.source_id], hint,
                      before_attempt=lambda _: repository.begin_locator_attempt(entry) is not None)
     if work.slots >= work.limit or work.clock() >= work.deadline:
@@ -164,7 +165,7 @@ def _inventory(repository, target, roots, project, hint, work):
             repository.register_session(CallerIdentity(source.thread_id))
             entries[identity] = repository.remember_locator(locator)
     pending = repository.unattempted_sources(sources, position["attempt_floor"])
-    if pending:
+    if pending and collect:
         work.known_sources.update(repository.known_sources(list(sources)))
         ordered = [identity for identity in sources if identity in pending]
 
@@ -180,18 +181,20 @@ def _inventory(repository, target, roots, project, hint, work):
             work.gaps.add("source_unreadable")
 
 
-def collect_located(repository, target, payload, roots, project, thread, deadline, *, limit, current_limit, clock):
+def collect_located(repository, target, payload, roots, project, thread, deadline, *, limit, current_limit, clock,
+                    capture=True, hint=None, inventory=True, resume_audits=False):
     """No stage resets the deadline; failed discovery cannot discard direct work."""
     from task_governance_tool.debug_log import aggregate
-    work = IngestWork(repository, (), thread, deadline, limit=limit, current_limit=current_limit, clock=clock)
-    hint = None
+    work = IngestWork(repository, (), thread, deadline, limit=limit, current_limit=current_limit, clock=clock,
+                      resume_audits=resume_audits)
     try:
         # Metadata admission must leave time for already admitted direct work.
         # Sub-deadlines are carved out of, never added to, the event allowance.
         metadata_deadline = min(deadline, clock() + min(1.0, max(0, deadline - clock()) / 4))
         repository.deadline = metadata_deadline
         with aggregate(_capture):
-            hint = _capture(repository, target, payload, roots, Path(project), thread, metadata_deadline)
+            if capture:
+                hint = _capture(repository, target, payload, roots, Path(project), thread, metadata_deadline)
     except UsageError as error:
         work.gaps.add(error.code)
     finally:
@@ -213,7 +216,8 @@ def collect_located(repository, target, payload, roots, project, thread, deadlin
         work.gaps.add(error.code)
     try:
         with aggregate(_inventory):
-            _inventory(repository, target, roots, Path(project), hint, work)
+            if inventory:
+                _inventory(repository, target, roots, Path(project), hint, work)
     except UsageError as error:
         work.gaps.add(error.code)
     return len(work.successful), work.gaps

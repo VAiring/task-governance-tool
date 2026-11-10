@@ -90,7 +90,8 @@ def guard(repository, core_reader, index, state):
         if captured_basis(repository, core, connection) != index["core_digest"]:
             raise UsageError("usage_pending")
         repository.check_budget()
-        yield
+        # Borrow only during this fresh guard; no fact survives its readers.
+        yield connection
 
 
 def periods(connection):

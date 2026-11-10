@@ -33,7 +33,7 @@ _OPERATIONS = frozenset({
     "handoff.record", "handoff.list", "handoff.show", "handoff.withdraw",
     "review.prepare", "review.target.set", "review.receipt.add", "review.result.add",
     "review.finding.add", "review.finding.resolve", "verification.receipt.add",
-    "usage_hook", "review_handoff", "review_wait", "review_wait_worker", "review_wait_cleanup",
+    "usage_hook", "usage_continuation", "review_handoff", "review_wait", "review_wait_worker", "review_wait_cleanup",
     "maintenance", "backup_worker", "backup.protect", "other",
 })
 _ROLES = frozenset({"core", "numerical", "operational", "backup", "other"})

@@ -290,10 +290,24 @@ class UsageLifecycleReviewInstallTests(unittest.TestCase):
         # instead of folding all independent work into one merged successor.
         retained = set(recovered["snapshot_ids"]) | {identity for item in successors for identity in item["predecessors"]}
         self.assertTrue(set(initial["periods"][0]["snapshot_ids"]) <= retained)
-        stable = file_snapshot(target.resolved_usage_root)
+        def numerical_artifacts():
+            return {name: value for name, value in file_snapshot(target.resolved_usage_root).items()
+                    if not name.startswith("runtime/")}
+
+        from task_governance_tool import usage_continuation_state
+        with usage_continuation_state.lease(target, "state") as runtime:
+            previous_request = usage_continuation_state.read(runtime, target)
+        stable = numerical_artifacts()
         hook()
         self.assertEqual(assert_current(), recovered)
-        self.assertEqual(file_snapshot(target.resolved_usage_root), stable)
+        self.assertEqual(numerical_artifacts(), stable)
+        with usage_continuation_state.lease(target, "state") as runtime:
+            replay_request = usage_continuation_state.read(runtime, target)
+        self.assertNotEqual(replay_request["request"], previous_request["request"])
+        self.assertEqual(replay_request["status"], "requested")
+        self.assertEqual(replay_request["intakes"], previous_request["intakes"])
+        self.assertEqual({key: value for key, value in replay_request.items() if key != "request"},
+                         {key: value for key, value in previous_request.items() if key != "request"})
         with segment.open("ab") as stream:
             stream.write(json.dumps(usage("parent-late", thread=OWNER.session_id, turn=turn(5))).encode() + b"\n")
         expected.add(("openai", "parent-late"))

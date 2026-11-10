@@ -43,6 +43,7 @@ EXPECTED_CANONICAL_DOCS = (
     "docs/state-layout-separation-plan.md",
     "docs/verification-declaration-plan.md",
     "docs/session-usage-plan.md",
+    "docs/usage-continuation-plan.md",
     "docs/review-finalization-plan.md",
     "docs/usage-response-attribution-design.md",
     "docs/review-continuation-plan.md",
@@ -260,9 +261,9 @@ class DocumentContractTests(unittest.TestCase):
         self.assertNotIn(secret, serialized)
         self.assertNotIn("Traceback", serialized)
 
-    def test_registry_v29_is_closed(self):
+    def test_registry_v30_is_closed(self):
         expected = {
-            "schema": "taskgov-document-authority-v29",
+            "schema": "taskgov-document-authority-v30",
             "mandatory_start": [
                 "AGENTS.md",
                 "docs/authority.md",
@@ -287,7 +288,7 @@ class DocumentContractTests(unittest.TestCase):
                 "docs/database-design.md",
             ],
             "mixed_execution": [],
-            "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/review-finalization-plan.md", "docs/usage-response-attribution-design.md", "docs/review-continuation-plan.md", "docs/review-answer-collection-design.md", "docs/operation-admission-plan.md", "docs/logger-design.md", "docs/async-backup-plan.md", "docs/backup-validation-reuse-plan.md", "docs/integrity-validation-plan.md"],
+            "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/usage-continuation-plan.md", "docs/review-finalization-plan.md", "docs/usage-response-attribution-design.md", "docs/review-continuation-plan.md", "docs/review-answer-collection-design.md", "docs/operation-admission-plan.md", "docs/logger-design.md", "docs/async-backup-plan.md", "docs/backup-validation-reuse-plan.md", "docs/integrity-validation-plan.md"],
             "history_index": "docs/history/README.md",
         }
         with self.fixture() as root:
@@ -541,6 +542,11 @@ class DocumentContractTests(unittest.TestCase):
                     contract.AUTHORITY,
                     "## Conditional Review Continuation Plan",
                     ("review-continuation-plan.md",),
+                ),
+                (
+                    contract.AUTHORITY,
+                    "## Conditional Usage Continuation Plan",
+                    ("usage-continuation-plan.md",),
                 ),
                 (
                     contract.AUTHORITY,

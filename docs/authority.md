@@ -134,6 +134,14 @@ activate ownership, numerical collection, a schema migration or host hooks.
 Current product owners remain controlling until the corresponding reviewed
 implementation updates them. Unverified host prerequisites are explicit there.
 
+## Conditional Usage Continuation Plan
+
+[Usage continuation](usage-continuation-plan.md) owns the approved three
+sequential stages within the existing after-Hook continuation Task. Setup/state
+and numerical persistence owners retain durable behavior and structure. This
+route does not activate unreviewed background collection, host configuration,
+trust or a live migration.
+
 ## Conditional Response Usage Attribution Design
 
 [Response usage attribution](usage-response-attribution-design.md) owns the
@@ -272,11 +280,11 @@ enforced meaning.
 
 ```json
 {
-  "schema": "taskgov-document-authority-v29",
+  "schema": "taskgov-document-authority-v30",
   "mandatory_start": ["AGENTS.md", "docs/authority.md", "live_task_contract"],
   "current": ["docs/specification.md", "docs/design.md", "plan.md", "docs/viewer-specification.md", "docs/viewer-design.md", "docs/runner-plan-authoring-specification.md", "docs/runner-plan-authoring-design.md", "docs/task-operation-specification.md", "docs/task-operation-design.md", "docs/runner-execution-specification.md", "docs/runner-execution-design.md", "docs/evidence-specification.md", "docs/evidence-design.md", "docs/review-completion-specification.md", "docs/review-completion-design.md", "docs/setup-state-specification.md", "docs/setup-state-design.md", "docs/database-specification.md", "docs/database-design.md"],
   "mixed_execution": [],
-  "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/review-finalization-plan.md", "docs/usage-response-attribution-design.md", "docs/review-continuation-plan.md", "docs/review-answer-collection-design.md", "docs/operation-admission-plan.md", "docs/logger-design.md", "docs/async-backup-plan.md", "docs/backup-validation-reuse-plan.md", "docs/integrity-validation-plan.md"],
+  "conditional": ["docs/state-layout-separation-plan.md", "docs/verification-declaration-plan.md", "docs/session-usage-plan.md", "docs/usage-continuation-plan.md", "docs/review-finalization-plan.md", "docs/usage-response-attribution-design.md", "docs/review-continuation-plan.md", "docs/review-answer-collection-design.md", "docs/operation-admission-plan.md", "docs/logger-design.md", "docs/async-backup-plan.md", "docs/backup-validation-reuse-plan.md", "docs/integrity-validation-plan.md"],
   "history_index": "docs/history/README.md"
 }
 ```

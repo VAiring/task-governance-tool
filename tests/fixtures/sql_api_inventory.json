@@ -491,6 +491,13 @@
       },
       "kind": "observed_connection"
     },
+    "usage_continuation_repository.py": {
+      "attributes": {
+        "execute": 8,
+        "fetchone": 7
+      },
+      "kind": "observed_connection"
+    },
     "usage_evidence_repository.py": {
       "attributes": {
         "execute": 24,

@@ -1153,7 +1153,8 @@ committed progress and last-good publication. Prefix integrity is explicitly
 [deferred](database-specification.md#numerical-usage-store); immutable snapshot
 validation and file comparison follow the explicitly deferred
 [rotating audit](database-specification.md#immutable-usage-evidence).
-Completed audit steps resume on later events against the same index basis;
+Completed audit steps resume on later events or admitted continuation slices
+against the same index basis;
 `evidence_verification_deferred` never claims current integrity. Internal budgets do
 not assert every environment finishes within the host timeout. The cooperative
 budget begins at collection entry and includes state admission; a later stage
@@ -1169,10 +1170,57 @@ Final index replacement still requires fresh admitted reads and matching
 transaction-bound generations, with no pending reconciliation work. Prior
 classification alone cannot certify the fresh basis.
 
+An admitted Hook also leaves closed work intent for the already configured
+project MCP service. With that compatible service available, finite stable
+obtainable input and work units that can commit within a slice, known backlog
+continues after the Hook returns without another Hook, command or LLM turn.
+The service owns a separate project-scoped OS lease throughout execution;
+duplicate services cannot execute the same work concurrently. Hook and service
+numerical work use a shared zero-wait execution lease. A busy service never
+extends the Hook's original deadline. Unfinished work and committed numerical
+positions survive interruption; superseded requests cannot receive an old
+acknowledgment. Each service opportunity rechecks policy, runtime and binding.
+No new daemon, host timer, process launch or automatic MCP restart is added.
+
+Configuration alone is not evidence of a trusted Hook invocation. Only actual
+admitted intake creates continuation intent; starting the MCP service without
+that intent cannot collect sources. Intake retains only the event kind,
+canonical parent/selected-session IDs and optional already permitted locator,
+not the Hook payload, source bodies or arbitrary paths. It is re-admitted before
+use and does not itself grant participant/source/attribution rights. Duplicate
+pending intakes coalesce; the closed runtime record is limited to 1,024 pending
+intakes and 8 MiB, refusing excess input without evicting accepted work.
+
+Catch-up acknowledgment requires a completed bounded source pass and current
+guarded numerical publication. Candidate rotation, an attempted operation or
+a successful Hook return cannot substitute. Missing/unreadable input, partial
+tails, pending reviewer admission and unavailable execution remain distinct
+unfinished conditions and yield before retry. One inaccessible candidate cannot
+prevent other accepted sources from progressing. Existing page/deadline policy,
+source deduplication, fresh Core checks and last-good publication remain intact.
+Recurring intake, pending-review checks and inventory receive separate bounded
+opportunities from saved source and publication work. Waiting metadata cannot
+repeatedly consume their allowance. Discovery may retain a page across source
+opportunities, but catch-up still requires that page's actual completion.
+Failed non-budget source attempts release discovery-page coverage while retaining
+input waiting and applicable numerical gaps; they do not advance data cursors.
+Completion includes participants admitted from Core during publication, even
+when discovery finished earlier or its later diagnosis was interrupted. Such
+participants require another inventory opportunity, never inferred collection.
+Successful publication retains a separate confirmation opportunity. Confirmation
+uses fresh Core/numerical guards and rechecks the physical index and its full
+bytes before acknowledgment. A timeout in that confirmation resumes it without
+restarting an already completed history audit; changed publication inputs return
+to reconciliation. No prior admission success is retained across slices.
+The runtime checkpoint is operational state, never a Receipt, sealed Evidence,
+Task gate, billing total or proof of current historical integrity.
+
 Stop, quiet files and elapsed time never establish final coverage. Disabled or
-untrusted hooks perform no collection. With no later event, late usage stays
-pending; starting/resuming an ordinary session in that same project is the
-recovery trigger, not merely restarting the app. SessionEnd is supplemental,
+untrusted hooks perform no collection. An absent/incompatible execution service
+does not promise after-return progress; accepted work resumes when the configured
+service is available again. A later ordinary same-project event remains the
+fallback for missing initial intake and late, previously unknown input.
+Restarting the app alone does not establish Hook delivery. SessionEnd is supplemental,
 not guaranteed cleanup. Host-specific delivery and transcript support must be
 observed separately; mocked tests do not certify Desktop, CLI or all OSes.
 See the packaged [installation procedure](../task-governance-tool/references/usage_hooks.md).

@@ -265,7 +265,7 @@ class UsageIncrementalRepository(UsageWaitRepository):
         connection.execute("INSERT INTO usage_work_order VALUES (?,(SELECT coalesce(max(last_attempt),0)+1 FROM usage_work_order)) "
                            "ON CONFLICT(source_id) DO UPDATE SET last_attempt=excluded.last_attempt", (source,))
 
-    def collect_source(self, source, *, lane="ingest", record_attempt=False, **limits):
+    def collect_source(self, source, *, lane="ingest", record_attempt=False, resume_audit_only=False, **limits):
         """Read without a writer, then CAS continuation+observations atomically."""
         with self.connection() as connection:
             source_row = connection.execute("SELECT * FROM usage_sources WHERE source_id=? AND thread_id=?",
@@ -276,6 +276,11 @@ class UsageIncrementalRepository(UsageWaitRepository):
             document = _document(row)
             revision = row["revision"] if row else 0
             reset = document is None or document["incarnation"] != expected.incarnation or document["reset"]
+            if (lane == "audit" and resume_audit_only and not reset
+                    and document["state"].offset == document["goal"]):
+                # A continuation finishes the retained sweep, not an infinite
+                # series of new sweeps. A later real Hook may start another.
+                return {"bytes_read": 0, "records": 0, "pending": "none", "progressed": False}
             if lane == "audit" and not expected.offset:
                 return {"bytes_read": 0, "records": 0, "pending": "none", "progressed": False}
             if lane == "audit" and connection.execute(

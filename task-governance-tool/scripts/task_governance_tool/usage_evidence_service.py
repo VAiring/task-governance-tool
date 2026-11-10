@@ -5,6 +5,7 @@ internal worker consumes a resolver-admitted target, never caller-supplied IDs.
 """
 
 from contextlib import closing, contextmanager, nullcontext, suppress
+import json
 from uuid import uuid4
 
 from task_governance_tool.artifact_lock import zero_wait_artifact_lock
@@ -13,6 +14,7 @@ from task_governance_tool.no_replace import rename_no_replace
 from task_governance_tool.state_paths import (
     inspect_physical_directory, path_lexically_exists, create_physical_directory_exclusive,
     read_physical_file_bounded, create_exclusive_durable_file, unlink_validated_file,
+    StatePathError,
 )
 from task_governance_tool.storage import connect_initialized_readonly
 from task_governance_tool.usage_evidence import encode, MAX_DOCUMENT_BYTES
@@ -133,3 +135,42 @@ def refresh_usage(target, *, deadline=None):
         return {"status": "pending", "publication": "current", "diagnostics": ["evidence_verification_deferred"]}
     except Exception:
         return {"status": "unknown", "publication": "pending", "diagnostics": ["usage_unavailable"]}
+
+
+@contextmanager
+def confirm_usage(target, repository, *, deadline):
+    """Re-admit a published index without starting another history audit.
+
+    The yielded connection and final file check live only inside the fresh
+    Core/numerical guard. A saved operational phase is never a certificate.
+    """
+    @contextmanager
+    def core_reader():
+        with closing(connect_initialized_readonly(target, deadline=deadline, operation_local=True)) as core:
+            yield core
+    root = target.resolved_usage_root
+    with zero_wait_artifact_lock(target.resolved_usage_lock):
+        try:
+            data, observed = read_physical_file_bounded(target.resolved_usage_index, root=root,
+                                                       max_bytes=MAX_DOCUMENT_BYTES)
+            index = json.loads(data)
+            if encode(index) != data:
+                raise UsageError("cursor_stale")
+        except (ValueError, UnicodeError, OSError, StatePathError):
+            raise UsageError("cursor_stale") from None
+        with repository.connection() as connection:
+            state = repository._publication_state(connection)
+        if state is None or state["published"] != 1:
+            raise UsageError("cursor_stale")
+        with repository.publication_guard(core_reader, index, state) as connection:
+            def recheck():
+                repository.check_budget()
+                try:
+                    current, validated = read_physical_file_bounded(target.resolved_usage_index, root=root,
+                                                                   max_bytes=MAX_DOCUMENT_BYTES)
+                except (OSError, StatePathError):
+                    raise UsageError("cursor_stale") from None
+                if validated.identity != observed.identity or current != data:
+                    raise UsageError("cursor_stale")
+                repository.check_budget()
+            yield connection, recheck

@@ -493,6 +493,11 @@ class DatabaseTarget:
         return self.resolved_usage_root / "taskgov-usage.lock"
 
     @property
+    def resolved_usage_runtime(self) -> Path:
+        """Restartable collection control, separate from numerical Evidence."""
+        return self.resolved_usage_root / "runtime"
+
+    @property
     def resolved_backups_path(self) -> Path:
         return self.backups_path or (self.db_path.parent / "backups")
 

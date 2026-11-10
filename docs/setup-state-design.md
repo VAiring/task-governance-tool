@@ -33,6 +33,7 @@ numerical usage  <fixed-root>/taskgov-usage.sqlite
 usage index      <fixed-root>/usage/index.json
 usage snapshots  <fixed-root>/usage/snapshots
 usage lock       <fixed-root>/usage/taskgov-usage.lock
+usage runtime    <fixed-root>/usage/runtime
 managed backups  <fixed-root>/backups
 DB protection    <state-root>/protection/<capture-id>
 backup runtime   <fixed-root>/backups/runtime
@@ -326,9 +327,116 @@ compare-and-commit cursor/continuation rule handles interruption, followed by
 `refresh_usage` for exact-cycle capture and snapshot-first publication. Its
 schema-7 publication cursor, preserved by schemas 8 through 10, continues the rotating history audit across events; a completed
 sweep retains explicit deferred-integrity status. It uses
-the existing canonical paths above; no daemon, timer, process, model call,
-post-commit Task callback or host-settings writer is added. A later same-project
-event retries backlog and late records, with pending coverage throughout.
+the existing canonical paths above. The configured MCP process can continue
+accepted work as described below; later events remain the fallback for absent
+service/intake and previously unknown late records.
+
+`usage_continuation.py` separates Hook intake from background slices. Before
+short registry/candidate writes it durably accepts closed structural metadata,
+so interruption at that boundary does not lose an accepted SessionStart or hint.
+`usage_continuation_intake.py` validates and reconstructs only internal capture
+arguments. The ordinary participant/locator admission is repeated before reads;
+this is not synthetic host event delivery. Retained failures rotate fairly and
+do not stop other accepted sources. The original Hook deadline and neutral
+protocol remain unchanged.
+
+The operational round schedules intake, pending-review admission, inventory,
+source traversal, publication and confirmation as separate opportunities. One retained intake
+and one pending reviewer receive their own opportunities, with their next stage
+saved before fallible work. Intake remains retained until successful admission;
+rotation or advancing this schedule proves no numerical progress. The pending
+reviewer uses its existing exact-revision queue rotation and fresh Core check.
+Empty intake can advance without an execution opportunity. Completed or failed
+metadata is not prepended to every saved source/publication retry, so a repeated
+slow metadata check cannot continually consume the source's allowance.
+
+Background inventory registers eligible locations without ingesting their bodies.
+Unknown explicit hints remain retained for the ordinary participant-discovery
+stage; they grant no participation. A pending discovery page yields to the finite
+source pass, whose committed attempt watermarks permit that page to advance on
+the next inventory opportunity. The page's original cycle stays pending until
+completed, and publication alone cannot acknowledge incomplete discovery.
+Missing-source diagnostics from a completed inventory remain in the round's
+unfinished reason through subsequent source traversal and guarded publication.
+After a guarded publication observes no retained intake or pending reviewer,
+the same request can resume that discovery page directly; a new Hook supersedes
+the request and rejects its old scheduling CAS.
+Normal Hook inventory retains its existing inline collection. No admission
+certificate is cached, numerical unit is split, or page/Hook budget is extended.
+
+`DatabaseTarget.resolved_usage_runtime` derives `current/usage/runtime` from
+the existing fixed resolver. `usage_continuation_state.py` owns only
+`continuation.json`, reserved `.continuation-next.json` and the `state.lock`,
+`execution.lock`, `service.lock` OS leases there. The ASCII version-one record
+has closed project/binding/root identities, a random coalesced request identity,
+pending intake metadata, traversal checkpoint and fixed status. Duplicate keys,
+nonphysical/linklike entries, wrong bindings, unsupported fields or excess size
+fail closed without repairing state. Replacement flushes a bounded sibling and
+uses atomic replace under the state lease; only that reserved interrupted
+temporary is recoverable. This adds no numerical schema migration. Runtime
+intent is not part of database backups, sealed Evidence or recovery proof.
+
+`usage_continuation_repository.py` uses the existing schema-10 repository for
+finite inventory/source traversal. A checkpoint binds the numerical epoch,
+physical/schema/algorithm identity and nonregressing generation, inventory
+cycle and indexed source queue ceiling/cursor. It is never an admission cache.
+Actual collection results, not attempt counters, determine completion; failed
+passes retry with bounded delay. Newly promoted sources extend the next pass.
+Continuation resumes an unfinished prefix-audit goal but does not start another
+full audit of an already finished goal each slice. Later real events can begin
+the next audit. This preserves the existing deferred-integrity meaning.
+Publication is a separate retry phase using the existing dirty queues, progress
+and fresh guard; retries do not repeatedly reset a completed source pass.
+Successful publication saves the `confirm` phase before another budgeted read.
+Remaining slice time can run confirmation immediately; otherwise the saved phase
+receives the next opportunity without repeating publication.
+`usage_evidence_service.confirm_usage` observes the bounded canonical index and
+published cursor under the existing publication lease, then opens a fresh
+Core/numerical guard. Completion borrows that numerical reader only within the
+guard, checking the union of registered sessions and admitted Core participants,
+pending locations, current-root sources, discovery cycle and checkpoint identity.
+This reconstructs missing-participant diagnosis even after an interrupted
+post-discovery check. New participants restart inventory. Final physical identity
+and full-byte comparison and a budget check precede the request CAS while the
+guard readers remain open. A timeout retains confirmation; a rejected publication
+basis returns to publication. No file identity, index or admission result is
+retained between opportunities, and confirmation does not prepare a new audit.
+Operational CAS acknowledges only the exact request it consumed. Process restart
+reestablishes traversal while preserving committed numerical positions.
+Each completed source opportunity saves its operational frontier before another
+deadline-checked database operation. A later timeout or stop cannot discard that
+frontier. This save does not refresh an identity certificate or establish catch-up;
+the next slice revalidates the stored basis and final publication remains freshly
+guarded. Registered-source failures use the existing numerical gap repository,
+including its transient-error exclusions, before advancing the failed opportunity.
+An operational waiting status alone cannot replace numerical coverage diagnostics.
+Budget-interrupted audit/ingest work, including a returned pending/replay result,
+retains the position before that source and yields. Its next opportunity starts
+there with a fresh slice allowance, preserving any numerical commits; completed
+predecessors cannot repeatedly consume that source's available budget. Actual
+unavailable or invalid input still advances the pass and retains its waiting
+reason, so it does not prevent later obtainable sources from progressing.
+Every non-budget source failure commits the existing attempt watermark before
+advancing that frontier, including a candidate never admitted as a source. This
+allows its inventory page to advance; neither the attempt nor queue movement
+certifies successful ingestion. Budget interruption still retains the source.
+
+`usage_continuation_service.py` runs one daemon thread within the already
+configured project MCP process, started/closed by `project_server.py` independently
+of backup and review ownership. Startup requires compatible runtime, existing
+numerical schema and policy; source work also requires real persisted Hook intent.
+The service lease spans the actual thread, including a shutdown that has not
+finished. Close signals stop and joins for at most 0.5 seconds; it never releases
+an active thread's lease. An unfinished close contributes the existing
+`observer_cleanup_unknown` service outcome instead of claiming cleanup succeeded.
+Each opportunity has the existing 20-second allowance and yields 10 seconds;
+unavailable/input/review waits yield at least 60 seconds.
+No-progress does not claim catch-up. SQLite/page limits are unchanged, and no Core
+writer is opened. A disabled policy or incompatible runtime ends execution with
+accepted work retained. No task callback, timer, model call, new process,
+host-settings writer or automatic service restart is introduced.
+Enabled local diagnostic output uses the fixed `usage_continuation` operation
+category under the existing logger contract, without intake arguments or bodies.
 
 ### Separation Record And Publication
 

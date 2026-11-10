@@ -39,6 +39,7 @@ ARTIFACT_AUTHORING = "docs/artifact-authoring.md"
 STATE_LAYOUT_PLAN = "docs/state-layout-separation-plan.md"
 VERIFICATION_DECLARATION_PLAN = "docs/verification-declaration-plan.md"
 SESSION_USAGE_PLAN = "docs/session-usage-plan.md"
+USAGE_CONTINUATION_PLAN = "docs/usage-continuation-plan.md"
 REVIEW_FINALIZATION_PLAN = "docs/review-finalization-plan.md"
 RESPONSE_USAGE_DESIGN = "docs/usage-response-attribution-design.md"
 REVIEW_CONTINUATION_PLAN = "docs/review-continuation-plan.md"
@@ -76,6 +77,7 @@ CANONICAL_DOCS = (
     STATE_LAYOUT_PLAN,
     VERIFICATION_DECLARATION_PLAN,
     SESSION_USAGE_PLAN,
+    USAGE_CONTINUATION_PLAN,
     REVIEW_FINALIZATION_PLAN,
     RESPONSE_USAGE_DESIGN,
     REVIEW_CONTINUATION_PLAN,
@@ -108,6 +110,7 @@ ROUTE_SECTIONS = (
     (AUTHORITY, "## Conditional Operation Admission Correction", ("operation-admission-plan.md",)),
     (AUTHORITY, "## Conditional Review Answer Collection Design", ("review-answer-collection-design.md",)),
     (AUTHORITY, "## Conditional Review Continuation Plan", ("review-continuation-plan.md",)),
+    (AUTHORITY, "## Conditional Usage Continuation Plan", ("usage-continuation-plan.md",)),
     (AUTHORITY, "## Conditional Response Usage Attribution Design", ("usage-response-attribution-design.md",)),
     (DESIGN, "## Conditional Response Usage Attribution Design", ("usage-response-attribution-design.md",)),
     (AUTHORITY, "## Conditional Review Finalization Plan", ("review-finalization-plan.md",)),
@@ -616,6 +619,7 @@ FENCE_LIST_PREFIX = re.compile(
 )
 
 ROLE_TITLES = {
+    USAGE_CONTINUATION_PLAN: "# Usage Continuation Execution Plan",
     BACKUP_VALIDATION_PLAN: "# Backup Validation Reuse Execution Plan",
     ASYNC_BACKUP_PLAN: "# Asynchronous Routine Backup Execution Plan",
     LOGGER_DESIGN: "# Logger Design",
@@ -1295,7 +1299,7 @@ def _section_bounds(scan: Scan, heading: str) -> tuple[int, int] | None:
 
 def _expected_registry() -> dict[str, object]:
     return {
-        "schema": "taskgov-document-authority-v29",
+        "schema": "taskgov-document-authority-v30",
         "mandatory_start": ["AGENTS.md", AUTHORITY, "live_task_contract"],
         "current": [
             "docs/specification.md", "docs/design.md", "plan.md",
@@ -1309,7 +1313,7 @@ def _expected_registry() -> dict[str, object]:
             DATABASE_SPECIFICATION, DATABASE_DESIGN,
         ],
         "mixed_execution": [],
-        "conditional": [STATE_LAYOUT_PLAN, VERIFICATION_DECLARATION_PLAN, SESSION_USAGE_PLAN, REVIEW_FINALIZATION_PLAN, RESPONSE_USAGE_DESIGN, REVIEW_CONTINUATION_PLAN, REVIEW_ANSWER_COLLECTION_DESIGN, OPERATION_ADMISSION_PLAN, LOGGER_DESIGN, ASYNC_BACKUP_PLAN, BACKUP_VALIDATION_PLAN, INTEGRITY_VALIDATION_PLAN],
+        "conditional": [STATE_LAYOUT_PLAN, VERIFICATION_DECLARATION_PLAN, SESSION_USAGE_PLAN, USAGE_CONTINUATION_PLAN, REVIEW_FINALIZATION_PLAN, RESPONSE_USAGE_DESIGN, REVIEW_CONTINUATION_PLAN, REVIEW_ANSWER_COLLECTION_DESIGN, OPERATION_ADMISSION_PLAN, LOGGER_DESIGN, ASYNC_BACKUP_PLAN, BACKUP_VALIDATION_PLAN, INTEGRITY_VALIDATION_PLAN],
         "history_index": HISTORY_INDEX,
     }
 

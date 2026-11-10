@@ -50,7 +50,8 @@ Timeouts are host execution bounds, not performance acceptance requirements.
 The adapter emits only `{}` with successful exit, never model context, a
 continuation request, or a block decision. It modifies only canonical numerical
 state and usage projections, not Task state, original Evidence, Viewer or source.
-No daemon, external service or process termination is required.
+Known unfinished work can continue inside the already configured project MCP
+process. No new daemon installation, model turn or per-event command is needed.
 
 ## Development Self-Host
 
@@ -132,10 +133,20 @@ is needed, use the explicit [collection selection](#collection-selection) or
 [installation/trust](#installation-and-trust) procedure; diagnosis itself does
 not authorize those writes.
 
-Later events catch up registered participants, including completed Tasks and
-late endpoint-turn records. With hooks disabled/untrusted or no subsequent
-event, collection cannot catch up. Start/resume an ordinary session in that
-same project to trigger recovery; merely restarting the app does not do so.
+After actual admitted Hook intake, the compatible project MCP service continues
+known backlog without another event while it remains available. Finite stable
+obtainable input and work units that can commit within a slice are required.
+Missing input, partial tails and pending reviewer admission remain unfinished;
+the service yields before retry and preserves committed progress across restart.
+Hook return and numerical catch-up are separate facts. Neither proves final
+coverage, billing or historical integrity.
+
+Later events also catch up registered participants, completed Tasks and late
+endpoint-turn records. Disabled/untrusted hooks cannot establish initial intake.
+An absent/incompatible service cannot promise after-return progress; accepted
+work resumes when the configured service becomes available. Start/resume an
+ordinary session in that same project for missing intake or previously unknown
+late records. Merely restarting the app does not prove Hook delivery.
 Do not redo Task completion or review registration to recover numerical data.
 SessionEnd is best effort, not finalization. Stop, elapsed time and a quiet file
 do not prove final coverage; current snapshots remain pending/incomplete or

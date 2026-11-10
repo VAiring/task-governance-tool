@@ -1,8 +1,9 @@
 """Trusted project-local hook composition; numerical side effects only.
 
 No core writer, implicit setup, host configuration, process launch or LLM
-output. Invocation failures are neutral and remain recoverable by a later
-project event. Unknown coverage is never promoted to complete.
+output. Admitted work can continue in the configured project MCP lifetime;
+later events remain the fallback when that service is unavailable. Unknown
+coverage is never promoted to complete.
 """
 
 from contextlib import closing
@@ -118,6 +119,14 @@ def _collect_event(payload, *, skill_root, repo, environment, repo_explicit, sta
             repository.deadline = deadline
         from task_governance_tool.usage_locator_repository import UsageLocatorRepository
         if isinstance(repository, UsageLocatorRepository):
+            from task_governance_tool.usage_reconciliation_repository import UsageReconciliationRepository
+            from task_governance_tool.storage import DatabaseTarget
+            if isinstance(repository, UsageReconciliationRepository) and isinstance(target, DatabaseTarget):
+                from task_governance_tool.usage_continuation import collect_hook
+                collected, gaps = collect_hook(repository, target, payload, source_roots(environment),
+                    Path(repo), thread, deadline, limit=MAX_SOURCES, current_limit=CURRENT_SLICES)
+                return {"status": "unknown" if gaps else "pending", "collected_sources": collected,
+                        "diagnostics": sorted(gaps)}
             from task_governance_tool.usage_locator_collection import collect_located
             collected, gaps = collect_located(repository, target, payload, source_roots(environment),
                 Path(repo), thread, deadline, limit=MAX_SOURCES, current_limit=CURRENT_SLICES, clock=monotonic)

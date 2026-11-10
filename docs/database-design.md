@@ -1183,6 +1183,16 @@ require establishing derived reconciliation state. Migration preserves existing
 schema-9 rows and cursors; older schemas retain their established replay rules.
 Ordinary reads and Hook events never create or migrate this tracking state.
 
+The [Usage continuation service](setup-state-design.md#lifecycle-usage-hook)
+reuses these exact committed queues and publication positions after Hook return.
+Its finite source-pass checkpoint is separate operational state, not another
+reconciliation frontier or cached validation. Each opportunity uses fresh
+repository admission and the same Core/numerical publication fence; service
+restart does not discard committed numerical work. Prefix auditing can resume
+its retained goal without starting a new completed sweep on every background
+slice. Coverage and historical integrity remain independently pending where
+their existing contracts require it.
+
 The integration consumes core changes through the existing transaction-bound
 Task revision/epoch contract only after checking that all numerical dependencies
 are covered by that writer inventory. Numerical and core watermarks are separate:
@@ -2040,6 +2050,15 @@ snapshot preparation already follows its numerical reader's close, and cursor
 CAS still follows file adoption without retaining either guard reader.
 The published flag is saved afterward; an interruption at
 that boundary permits idempotent index replay. No core writer spans this work.
+
+After successful publication, continuation confirmation can borrow the current
+schema-10 guard's numerical reader within its lexical lifetime. It re-reads the
+published cursor and bounded index on each opportunity, checks the complete
+admitted participant set and operational completion conditions, then rechecks
+physical identity and full index bytes before acknowledgment under the same
+guard. No reader or validated result crosses opportunities. This separate phase
+does not prepare publication or restart a finished rotating audit. A changed
+basis must reconcile and publish again; a confirmation timeout remains pending.
 
 The saved position is completed work, not an unchanged-byte certificate. The
 index's `integrity` and internal `evidence_verification_deferred` diagnostic

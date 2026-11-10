@@ -6,7 +6,8 @@ from task_governance_tool.usage_values import UsageError
 
 
 class IngestWork:
-    def __init__(self, repository, known_sources, thread, deadline, *, limit, current_limit, clock):
+    def __init__(self, repository, known_sources, thread, deadline, *, limit, current_limit, clock,
+                 resume_audits=False):
         self.repository = repository
         self.known_sources = set(known_sources)
         self.thread = thread
@@ -20,6 +21,7 @@ class IngestWork:
         self.repeatable = set()
         self.audited = set()
         self.gaps = set()
+        self.resume_audits = resume_audits
 
     def run(self, sources, identities, hint, *, ceiling=None, before_attempt=None):
         """Use an already bounded, ordered candidate page; never select all history."""
@@ -50,7 +52,8 @@ class IngestWork:
                     replay = False
                     if identity in self.known_sources and identity not in self.audited:
                         measurement.mark('revalidated')
-                        audit = self.repository.collect_source(source, lane="audit")
+                        audit = self.repository.collect_source(source, lane="audit",
+                            **({"resume_audit_only": True} if self.resume_audits else {}))
                         self.audited.add(identity)
                         replay = audit.get("replay", False)
                     result = self.repository.collect_source(source, record_attempt=True)

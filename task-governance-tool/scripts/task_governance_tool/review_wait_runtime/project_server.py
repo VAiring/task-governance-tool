@@ -103,6 +103,21 @@ class ProjectReviewWaitSession:
         self.managed = ManagedWait(self)
         self.runtime_identity = runtime_identity
         self.backup_observer = None
+        self.usage_observer = None
+
+    def start_usage_observer(self):
+        """Configured service lifetime only; independent of review ownership."""
+        if self.closed or self.usage_observer is not None or self.runtime_identity is None:
+            return False
+        from task_governance_tool.usage_continuation_service import UsageServiceObserver
+        from task_governance_tool.storage import SCHEMA_VERSION
+
+        def compatible():
+            return self.runtime_identity.inspect(loaded_schema=SCHEMA_VERSION).get("comparison") == "matching"
+
+        self.usage_observer = UsageServiceObserver(skill_root=self.skill, repo=self.config.repo,
+            environment={"CODEX_HOME": str(self.config.codex_home)}, compatible=compatible)
+        return self.usage_observer.start()
 
     def start_backup_observer(self):
         """Called once by the configured service entry, never by an MCP tool.
@@ -777,12 +792,18 @@ class ProjectReviewWaitSession:
         from . import worker_diagnostics as diagnostics
         from .worker_diagnostics import Stage, Outcome
         self.closed = True
+        usage_closed = True
+        if self.usage_observer is not None:
+            try:
+                usage_closed = self.usage_observer.close() is True
+            except Exception:
+                usage_closed = False
         if self.backup_observer is not None:
             try:
                 self.backup_observer.close()
             except Exception:
                 pass
-        succeeded = True
+        succeeded = usage_closed
         for session in self.sessions.values():
             try:
                 # A finite scope per existing session, including EOF cleanup.
@@ -822,6 +843,7 @@ def main(argv=None, *, runtime_identity=None):
         config = ProjectConfig(Path(args.repo), server, Path(args.codex_home), args.timezone)
         session = ProjectReviewWaitSession(config, runtime_identity=runtime_identity)
         session.start_backup_observer()
+        session.start_usage_observer()
         return serve(sys.stdin.buffer, sys.stdout.buffer, session)
     except (Exception, KeyboardInterrupt):
         sys.stderr.write("Review-wait server unavailable.\n")

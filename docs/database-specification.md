@@ -1008,7 +1008,8 @@ ranges are reclassified. Unchanged histories in the same session are not an
 unconditional dependency. The exact response partition, diagnostic provenance,
 original-key deduplication and immutable evidence meanings remain unchanged.
 
-Each committed work unit or bounded phase page retains its progress for a later lifecycle event;
+Each committed work unit or bounded phase page retains its progress for a later lifecycle event
+or an admitted [continuation slice](setup-state-specification.md#optional-lifecycle-usage-collection);
 pending work or a changed capture fence cannot be published as current. Binding,
 schema, algorithm or database epoch/physical identity changes and regressed or
 missing tracking require reestablishment, never reuse of an obsolete capture.
@@ -1025,7 +1026,8 @@ prefetch, changed queue semantics or cross-transaction validity claim.
 The four turn/effect stages use a first standalone unit followed by pages of at
 most 128 units, stopping optional starts after 250 ms or at the existing
 deadline's 50 ms commit margin. Uncommitted page results and queue consumption
-roll back together; later events resume from the committed frontier. These are
+roll back together; later events or admitted continuation slices resume from
+the committed frontier. These are
 cooperative bounds, not an absolute duration guarantee. The response classifier
 also commits its first key alone, then uses separate pages of at most 128 keys
 with a 250 ms optional-start allowance and the same 50 ms deadline margin.
@@ -1082,8 +1084,11 @@ This queue CAS is independent of the numerical cursor CAS: it records a fair
 attempt, never evidence that bytes were read or a source recovered. Failed or
 interrupted attempts remain retryable, and subsequent events can reach every
 retained candidate for finite stable input when their work fits the available
-budget. No later event, missed initial locations, arbitrary renames and unknown
-historical segments retain the lifecycle adapter's existing coverage limits.
+budget. After-return continuation separately follows a finite indexed pass and
+requires actual successful source processing plus fresh guarded publication;
+attempt order alone cannot acknowledge a request. Unavailable continuation,
+missed initial locations, arbitrary renames and unknown historical segments
+retain the lifecycle adapter's coverage limits.
 Directory inventory omission alone cannot mark a location under the current
 roots missing; its direct attempt supplies that observation. Hash-only sources
 and locators for an old root retain inventory-loss diagnosis. Neither a saved
@@ -1136,8 +1141,11 @@ same-length edits with restored mtime. Every source retains the explicit
 `prefix_verification_deferred` diagnostic: finishing one audit is not proof that
 the whole current source remains verified. There is no new completion gate.
 Mismatch schedules a new incarnation and deduplicated replay; previous numerical
-observations and conflicts remain. No subsequent project event means no progress
-or detection guarantee. Continuous append cannot move an in-flight audit goal.
+observations and conflicts remain. An admitted continuation can finish a pending
+audit goal without another project event; after that goal finishes, a later real
+event starts the next audit. Without such later events, there is no guarantee of
+detecting later changes to previously audited bytes. Continuous append cannot
+move an in-flight audit goal.
 
 A partial tail remains unread; an oversized complete record creates a fixed gap.
 Its drain position is separate from the complete cursor and retains no bytes.
@@ -1186,8 +1194,8 @@ and published immutable bytes are checked by the rotating publication audit
 below. This explicitly defers historical integrity detection between events;
 deferred log auditing is a separate mechanism. Budget or publication failure
 keeps committed collection progress, completed audit steps and last-good output,
-reports pending/unavailable, and resumes at later events without retrying
-completion or review registration.
+reports pending/unavailable, and resumes at later events or admitted continuation
+slices without retrying completion or review registration.
 
 Repository summaries report observed per-model totals, registered source
 coverage, conflicts and fixed gaps. Collection alone returns pending,
@@ -1784,10 +1792,18 @@ event after successful publication starts another sweep. Same-length edits
 with restored mtime, changes to previously visited rows or files, and missing
 earlier files may be detected only on that next sweep. No mtime/size check or
 saved cursor is accepted as proof of unchanged bytes. Until a sweep finishes,
-last-good output remains intact; without later events there is no progress or
-detection guarantee. For finite stable input and enough budget to perform a
-reconciliation unit, one audit step and their checkpoints, repeated events reach
-publication instead of restarting the same history prefix. Schema 10 retains
+last-good output remains intact. An admitted continuation can finish that pending
+sweep without another event; after publication a later real event starts the
+next sweep, so later changes have no detection guarantee without later events.
+A continuation's post-publication completion checks may resume separately from
+the finished sweep. Every such opportunity repeats the fresh Core/numerical
+guard and physical/full-byte index check, and includes all admitted participants.
+The saved phase is only a schedule, never a verified result. Changed inputs
+require reconciliation and publication again; a timeout cannot acknowledge
+catch-up or repeatedly restart a finished audit ahead of its completion checks.
+For finite stable input and enough budget to perform a reconciliation unit,
+one audit step and their checkpoints, repeated events or admitted continuation
+slices reach publication instead of restarting the same history prefix. Schema 10 retains
 reconciliation progress between finite units and validates changed components;
 index metadata serialization still lists the immutable IDs and cycle links.
 Each snapshot/file remains bounded to 16 MiB. These are cooperative progress

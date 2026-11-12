@@ -1298,7 +1298,9 @@ phases. Core/changes/source pages, selected Task operations and intervals, turn
 input/allocation, contribution replacement, uncertainty/pending/range overlays,
 response totals, diagnostics and selected snapshots retain separate phase boundaries.
 Read transactions open after the numerical writer; no core write occurs.
-For each of `turn_inputs`, `allocation`, `base_effects` and `turn_overlays`,
+For each of `operations`, `participants`, `turn_inputs`, `allocation`,
+`base_effects`, `event_locations`, `pending_source`, `uncertainty_rule`,
+`interval_metadata`, `turn_overlays`, `diagnostics` and `execution`,
 the first unit in each reconciliation run commits alone. Subsequent pages use
 one admitted numerical writer and its subsequently opened Core read for at most
 128 units of that phase. The ordinary unit algorithms and queue order are
@@ -1311,8 +1313,11 @@ uncommitted page while earlier pages remain durable. Run-local first-unit
 tracking advances only after a successful commit and resets on a later run.
 Every page reopens admission and checks Core revisions and higher-priority work;
 no validated state is cached across transactions or connections. A Core writer
-can proceed between pages. Other stages and the independent fresh final guard
-retain their existing boundaries.
+can proceed between pages. Baseline establishment, source ingestion, interval
+reconstruction, snapshot construction and immutable-history audit retain their
+existing boundaries, as does the independent fresh final guard. The shared
+page helper never nests a response page or crosses a phase. There is no new
+deadline, configuration, schema or cross-Hook admission cache.
 
 Replacement skips a DELETE only when an existing read in that same writer
 proves the entire deletion predicate empty. New inserts, old/new affected-key

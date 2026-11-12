@@ -331,6 +331,14 @@ the existing canonical paths above. The configured MCP process can continue
 accepted work as described below; later events remain the fallback for absent
 service/intake and previously unknown late records.
 
+The initial/effect phases enumerated in
+[reconciliation tracking](database-design.md#usage-reconciliation-tracking)
+share the same phase-page executor: first commit one unit, then admit bounded
+pages under that original deadline. Each page opens its numerical writer before
+its fresh Core reader; neither connection nor validation survives the page.
+This applies in both Hook and admitted continuation slices. Response pages,
+source ingestion and the final publication guard retain separate boundaries.
+
 `usage_continuation.py` separates Hook intake from background slices. Before
 short registry/candidate writes it durably accepts closed structural metadata,
 so interruption at that boundary does not lose an accepted SessionStart or hint.

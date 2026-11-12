@@ -1,0 +1,36 @@
+{"kind": "provenance", "python": "3.14.3 (tags/v3.14.3:323c59a, Feb  3 2026, 16:04:56) [MSC v.1944 64 bit (AMD64)]", "platform": "win32", "baseline_runtime_sha256": "1f0692b74d4b9676f45c0a5bf2661793acf63c19fd1140288da1e9b5b4e2c622", "candidate_runtime_sha256": "4771f148feba2bf4b46fdb059494a1e58195bb1b38c85f32aa626bbafd12f76a", "only_runtime_python_differs": true, "count_semantics": "SQLite trace callbacks, not SQL API calls; observed run time excluded from time comparison"}
+{"kind": "measurement", "case": "pause16-turns32", "mode": "before", "iteration": 0, "instrumented": false, "seconds": 10.620344799943268, "counts": {}}
+{"kind": "measurement", "case": "pause16-turns32", "mode": "after", "iteration": 0, "instrumented": false, "seconds": 3.04573389980942, "counts": {}}
+{"kind": "measurement", "case": "pause16-turns32", "mode": "after", "iteration": 1, "instrumented": false, "seconds": 3.1881740000098944, "counts": {}}
+{"kind": "measurement", "case": "pause16-turns32", "mode": "before", "iteration": 1, "instrumented": false, "seconds": 11.278089500032365, "counts": {}}
+{"kind": "measurement", "case": "pause16-turns32", "mode": "before", "iteration": 2, "instrumented": true, "seconds": 10.938692099880427, "counts": {"connections": 372, "usage_connections": 186, "usage_sql_trace_callbacks": 22386, "core_connections": 186, "core_sql_trace_callbacks": 23090, "schema_entries": 186}}
+{"kind": "measurement", "case": "pause16-turns32", "mode": "after", "iteration": 2, "instrumented": true, "seconds": 2.8698760997503996, "counts": {"connections": 88, "usage_connections": 44, "usage_sql_trace_callbacks": 19098, "core_connections": 44, "core_sql_trace_callbacks": 5482, "schema_entries": 44}}
+{"kind": "oracle", "case": "pause16-turns32", "exact_index": true, "full_replay": true, "core_unchanged": true}
+{"kind": "measurement", "case": "task1-turns128", "mode": "before", "iteration": 0, "instrumented": false, "seconds": 11.154664399567991, "counts": {}}
+{"kind": "measurement", "case": "task1-turns128", "mode": "after", "iteration": 0, "instrumented": false, "seconds": 4.062251899857074, "counts": {}}
+{"kind": "measurement", "case": "task1-turns128", "mode": "after", "iteration": 1, "instrumented": false, "seconds": 3.566149600315839, "counts": {}}
+{"kind": "measurement", "case": "task1-turns128", "mode": "before", "iteration": 1, "instrumented": false, "seconds": 10.133773600216955, "counts": {}}
+{"kind": "measurement", "case": "task1-turns128", "mode": "before", "iteration": 2, "instrumented": true, "seconds": 10.35198129992932, "counts": {"connections": 356, "usage_connections": 178, "usage_sql_trace_callbacks": 28344, "core_connections": 178, "core_sql_trace_callbacks": 22098, "schema_entries": 178}}
+{"kind": "measurement", "case": "task1-turns128", "mode": "after", "iteration": 2, "instrumented": true, "seconds": 3.61175199970603, "counts": {"connections": 100, "usage_connections": 50, "usage_sql_trace_callbacks": 26423, "core_connections": 50, "core_sql_trace_callbacks": 6226, "schema_entries": 50}}
+{"kind": "oracle", "case": "task1-turns128", "exact_index": true, "full_replay": true, "core_unchanged": true}
+{"kind": "measurement", "case": "unchanged-history128", "mode": "before", "iteration": 0, "instrumented": false, "seconds": 0.24863559985533357, "counts": {}}
+{"kind": "measurement", "case": "unchanged-history128", "mode": "after", "iteration": 0, "instrumented": false, "seconds": 0.22873459989205003, "counts": {}}
+{"kind": "measurement", "case": "unchanged-history128", "mode": "after", "iteration": 1, "instrumented": false, "seconds": 0.1253276001662016, "counts": {}}
+{"kind": "measurement", "case": "unchanged-history128", "mode": "before", "iteration": 1, "instrumented": false, "seconds": 0.1474610003642738, "counts": {}}
+{"kind": "measurement", "case": "unchanged-history128", "mode": "before", "iteration": 2, "instrumented": true, "seconds": 0.13859059987589717, "counts": {"connections": 8, "usage_connections": 4, "usage_sql_trace_callbacks": 157, "core_connections": 4, "core_sql_trace_callbacks": 500, "schema_entries": 4}}
+{"kind": "measurement", "case": "unchanged-history128", "mode": "after", "iteration": 2, "instrumented": true, "seconds": 0.18885000003501773, "counts": {"connections": 8, "usage_connections": 4, "usage_sql_trace_callbacks": 157, "core_connections": 4, "core_sql_trace_callbacks": 500, "schema_entries": 4}}
+{"kind": "oracle", "case": "unchanged-history128", "exact_index": true, "full_replay": true, "core_unchanged": true}
+{"kind": "measurement", "case": "one-append-history128", "mode": "before", "iteration": 0, "instrumented": false, "seconds": 1.0005380003713071, "counts": {}}
+{"kind": "measurement", "case": "one-append-history128", "mode": "after", "iteration": 0, "instrumented": false, "seconds": 0.881525699980557, "counts": {}}
+{"kind": "measurement", "case": "one-append-history128", "mode": "after", "iteration": 1, "instrumented": false, "seconds": 0.8125996999442577, "counts": {}}
+{"kind": "measurement", "case": "one-append-history128", "mode": "before", "iteration": 1, "instrumented": false, "seconds": 0.9007252003066242, "counts": {}}
+{"kind": "measurement", "case": "one-append-history128", "mode": "before", "iteration": 2, "instrumented": true, "seconds": 0.9768002000637352, "counts": {"connections": 32, "usage_connections": 16, "usage_sql_trace_callbacks": 1269, "core_connections": 16, "core_sql_trace_callbacks": 1988, "schema_entries": 16}}
+{"kind": "measurement", "case": "one-append-history128", "mode": "after", "iteration": 2, "instrumented": true, "seconds": 0.8899073000065982, "counts": {"connections": 32, "usage_connections": 16, "usage_sql_trace_callbacks": 1269, "core_connections": 16, "core_sql_trace_callbacks": 1988, "schema_entries": 16}}
+{"kind": "oracle", "case": "one-append-history128", "exact_index": true, "full_replay": true, "core_unchanged": true}
+{"kind": "measurement", "case": "tasks13-sources5", "mode": "before", "iteration": 0, "instrumented": false, "seconds": 9.914308999665082, "counts": {}}
+{"kind": "measurement", "case": "tasks13-sources5", "mode": "after", "iteration": 0, "instrumented": false, "seconds": 4.257789300289005, "counts": {}}
+{"kind": "measurement", "case": "tasks13-sources5", "mode": "after", "iteration": 1, "instrumented": false, "seconds": 4.429032099898905, "counts": {}}
+{"kind": "measurement", "case": "tasks13-sources5", "mode": "before", "iteration": 1, "instrumented": false, "seconds": 10.881036499980837, "counts": {}}
+{"kind": "measurement", "case": "tasks13-sources5", "mode": "before", "iteration": 2, "instrumented": true, "seconds": 10.834466999862343, "counts": {"connections": 368, "usage_connections": 184, "usage_sql_trace_callbacks": 19254, "core_connections": 184, "core_sql_trace_callbacks": 22854, "schema_entries": 184}}
+{"kind": "measurement", "case": "tasks13-sources5", "mode": "after", "iteration": 2, "instrumented": true, "seconds": 4.7019782001152635, "counts": {"connections": 138, "usage_connections": 69, "usage_sql_trace_callbacks": 16476, "core_connections": 69, "core_sql_trace_callbacks": 8594, "schema_entries": 69}}
+{"kind": "oracle", "case": "tasks13-sources5", "exact_index": true, "full_replay": true, "core_unchanged": true}

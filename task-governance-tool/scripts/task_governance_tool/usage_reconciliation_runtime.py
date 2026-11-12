@@ -24,11 +24,12 @@ from .usage_values import UsageError
 _RESPONSE_PAGE_SIZE = 128
 _RESPONSE_PAGE_SECONDS = 0.250
 _RESPONSE_COMMIT_MARGIN_SECONDS = 0.050
-_TURN_PAGE_SIZE = 128
-_TURN_PAGE_SECONDS = 0.250
+_PHASE_PAGE_SIZE = 128
+_PHASE_PAGE_SECONDS = 0.250
+_PHASE_COMMIT_MARGIN_SECONDS = 0.050
 
 
-def _turn_page(repository, phase, first, step, started, committed_phases):
+def _phase_page(repository, phase, first, step, started, committed_phases):
     """Finish only this phase in the caller's admitted writer/read transaction.
 
     The caller records the phase only after this transaction commits. A new
@@ -36,8 +37,8 @@ def _turn_page(repository, phase, first, step, started, committed_phases):
     before optional siblings can fail. No connection or admission escapes here.
     """
     if phase in committed_phases:
-        stop = min(started + _TURN_PAGE_SECONDS, repository.deadline - 0.050)
-        for _ in range(1, _TURN_PAGE_SIZE):
+        stop = min(started + _PHASE_PAGE_SECONDS, repository.deadline - _PHASE_COMMIT_MARGIN_SECONDS)
+        for _ in range(1, _PHASE_PAGE_SIZE):
             if monotonic() >= stop:
                 break
             repository.check_budget()
@@ -111,17 +112,19 @@ def advance_initial(repository, core_reader, *, committed_phases=()):
             return {"phase": "source", **source}
         resolved = _resolve_one(repository, core, connection)
         if resolved is not None:
-            return {"phase": "operations", **resolved}
+            return _phase_page(repository, "operations", resolved,
+                lambda: _resolve_one(repository, core, connection), started, committed_phases)
         participant = _participant_one(connection)
         if participant is not None:
-            return {"phase": "participants", **participant}
+            return _phase_page(repository, "participants", participant,
+                lambda: _participant_one(connection), started, committed_phases)
         work = connection.execute("SELECT task_id FROM usage_reconcile_relation_task_work ORDER BY rowid LIMIT 1").fetchone()
         if work is not None:
             changed = reconcile_intervals(repository, core, connection, work[0], _profile(repository, core, connection, work[0]))
             return {"phase": "intervals", "task_id": work[0], "changed": changed}
         staged = stage_one(repository, core, connection)
         if staged is not None:
-            return _turn_page(repository, "turn_inputs", staged,
+            return _phase_page(repository, "turn_inputs", staged,
                 lambda: stage_one(repository, core, connection), started, committed_phases)
         def execution_task(execution):
             rows = tuple(connection.execute("SELECT DISTINCT task_id FROM usage_reconcile_events WHERE execution_id=? LIMIT 2", (execution,)))
@@ -130,11 +133,11 @@ def advance_initial(repository, core_reader, *, committed_phases=()):
             return rows[0][0]
         replayed = replay_one(connection, execution_task=execution_task)
         if replayed is not None:
-            return _turn_page(repository, "allocation", replayed,
+            return _phase_page(repository, "allocation", replayed,
                 lambda: replay_one(connection, execution_task=execution_task), started, committed_phases)
         base = apply_base_one(connection)
         if base is not None:
-            return _turn_page(repository, "base_effects", base,
+            return _phase_page(repository, "base_effects", base,
                 lambda: apply_base_one(connection), started, committed_phases)
         capture_inputs(repository, core, connection)
         return {"phase": "effects_pending"}
@@ -153,16 +156,20 @@ def advance_effects(repository, core_reader, *, single_response=False, committed
         require_inputs(repository, core, connection)
         located = uncertainty.locate_one(connection)
         if located is not None:
-            return {"phase": "event_locations", "transition_id": located}
+            return _phase_page(repository, "event_locations", {"transition_id": located},
+                lambda: uncertainty.locate_one(connection), started, committed_phases)
         source_pending = pending.source_one(connection)
         if source_pending is not None:
-            return {"phase": "pending_source", "source_id": source_pending}
+            return _phase_page(repository, "pending_source", {"source_id": source_pending},
+                lambda: pending.source_one(connection), started, committed_phases)
         rule = uncertainty.rebuild_one(connection)
         if rule is not None:
-            return {"phase": "uncertainty_rule", "rule": rule}
+            return _phase_page(repository, "uncertainty_rule", {"rule": rule},
+                lambda: uncertainty.rebuild_one(connection), started, committed_phases)
         interval = overlays.interval_metadata_one(connection)
         if interval is not None:
-            return {"phase": "interval_metadata", "interval": interval}
+            return _phase_page(repository, "interval_metadata", {"interval": interval},
+                lambda: overlays.interval_metadata_one(connection), started, committed_phases)
         expanded = expand_range_page(connection)
         if expanded is not None:
             return {"phase": "affected_turns", **expanded}
@@ -174,7 +181,7 @@ def advance_effects(repository, core_reader, *, single_response=False, committed
             return overlays.apply_turn(connection, *turn)
         overlaid = overlay_one()
         if overlaid is not None:
-            return _turn_page(repository, "turn_overlays", overlaid, overlay_one, started, committed_phases)
+            return _phase_page(repository, "turn_overlays", overlaid, overlay_one, started, committed_phases)
         responses = connection.execute("SELECT provider,response_id FROM usage_reconcile_response_work "
             "ORDER BY rowid LIMIT ?", (1 if single_response else _RESPONSE_PAGE_SIZE,)).fetchall()
         if responses:
@@ -187,14 +194,24 @@ def advance_effects(repository, core_reader, *, single_response=False, committed
                 if monotonic() >= stop:
                     break
             return {"phase": "response", "key": tuple(responses[0])}
-        source = connection.execute("SELECT thread_id FROM usage_reconcile_diagnostic_work ORDER BY rowid LIMIT 1").fetchone()
-        if source is not None:
+        def diagnostic_one():
+            source = connection.execute("SELECT thread_id FROM usage_reconcile_diagnostic_work ORDER BY rowid LIMIT 1").fetchone()
+            if source is None:
+                return None
             membership.reconcile_thread_diagnostics(connection, source[0])
-            return {"phase": "diagnostics", "thread_id": source[0]}
-        execution = connection.execute("SELECT execution_id FROM usage_reconcile_execution_work ORDER BY rowid LIMIT 1").fetchone()
-        if execution is not None:
+            return {"thread_id": source[0]}
+        source = diagnostic_one()
+        if source is not None:
+            return _phase_page(repository, "diagnostics", source, diagnostic_one, started, committed_phases)
+        def execution_one():
+            execution = connection.execute("SELECT execution_id FROM usage_reconcile_execution_work ORDER BY rowid LIMIT 1").fetchone()
+            if execution is None:
+                return None
             membership.reconcile_execution(connection, execution[0])
-            return {"phase": "execution", "execution_id": execution[0]}
+            return {"execution_id": execution[0]}
+        execution = execution_one()
+        if execution is not None:
+            return _phase_page(repository, "execution", execution, execution_one, started, committed_phases)
         global_work = global_page(connection)
         if global_work is not None:
             return {"phase": "global_diagnostics", "selected": global_work}

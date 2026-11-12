@@ -1,0 +1,10 @@
+{"kind": "provenance", "python": "3.14.3 (tags/v3.14.3:323c59a, Feb  3 2026, 16:04:56) [MSC v.1944 64 bit (AMD64)]", "platform": "win32", "baseline_runtime_sha256": "1f0692b74d4b9676f45c0a5bf2661793acf63c19fd1140288da1e9b5b4e2c622", "candidate_runtime_sha256": "4771f148feba2bf4b46fdb059494a1e58195bb1b38c85f32aa626bbafd12f76a", "only_runtime_python_differs": true, "count_semantics": "SQLite trace callbacks, not SQL API calls; observed run time excluded from time comparison"}
+{"kind": "hook", "case": "initial", "mode": "before", "seconds": 4.032969000283629, "publication": "current"}
+{"kind": "hook", "case": "initial", "mode": "after", "seconds": 3.1767674000002444, "publication": "current"}
+{"kind": "hook_equality", "case": "initial", "json_equal": true, "core_unchanged": true, "sealed_evidence_unchanged": true, "operational_intent_equal_except_fresh_request": true}
+{"kind": "hook", "case": "unchanged", "mode": "before", "seconds": 1.0011464999988675, "publication": "current"}
+{"kind": "hook", "case": "unchanged", "mode": "after", "seconds": 0.8778375000692904, "publication": "current"}
+{"kind": "hook_equality", "case": "unchanged", "json_equal": true, "core_unchanged": true, "sealed_evidence_unchanged": true, "operational_intent_equal_except_fresh_request": true}
+{"kind": "hook", "case": "one-append", "mode": "before", "seconds": 1.681603700388223, "publication": "current"}
+{"kind": "hook", "case": "one-append", "mode": "after", "seconds": 1.9297976000234485, "publication": "current"}
+{"kind": "hook_equality", "case": "one-append", "json_equal": true, "core_unchanged": true, "sealed_evidence_unchanged": true, "operational_intent_equal_except_fresh_request": true}

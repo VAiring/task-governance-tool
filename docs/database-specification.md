@@ -1023,7 +1023,7 @@ execution link remain mandatory. Destructive changes, rollback, transaction or
 connection replacement and scope exit invalidate reuse; failed or incomplete
 registrations cannot establish it. This adds no persisted state, source
 prefetch, changed queue semantics or cross-transaction validity claim.
-The four turn/effect stages use a first standalone unit followed by pages of at
+The selected initial and effect stages use a first standalone unit followed by pages of at
 most 128 units, stopping optional starts after 250 ms or at the existing
 deadline's 50 ms commit margin. Uncommitted page results and queue consumption
 roll back together; later events or admitted continuation slices resume from

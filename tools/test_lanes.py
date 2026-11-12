@@ -235,6 +235,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_usage_reconciliation_membership",
         "test_usage_reconciliation_oracle",
         "test_usage_reconciliation_pages",
+        "test_usage_reconciliation_phase_pages",
         "test_usage_reconciliation_publication",
         "test_usage_reconciliation_ranges",
         "test_usage_reconciliation_reviews",

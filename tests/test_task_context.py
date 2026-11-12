@@ -117,6 +117,13 @@ class TaskContextTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
+        # These cases create their own physical install or per-iteration DB.
+        # Keep their test identities and root cleanup without a second DB.
+        if self._testMethodName in (
+            "test_physical_context_resolves_once_and_leaves_all_files_unchanged",
+            "test_authorized_registration_uses_prepared_context_and_existing_start_decision",
+        ):
+            return
         self.repo = self.root / "repo"
         self.repo.mkdir()
         self.db = self.root / "taskgov.sqlite"
@@ -224,7 +231,6 @@ class TaskContextTests(unittest.TestCase):
         self.assertEqual(set(payload["data"]["selected"]["completion_history"]), {"total", "legacy_history_incomplete"})
         self.assertEqual(set(payload["data"]["selected"]["review_evidence"]), {"gate", "counts", "current_receipts", "current_findings"})
 
-    @ordinary_current_database
     def test_authorized_registration_uses_prepared_context_and_existing_start_decision(self):
         outcomes = []
         call_counts = []

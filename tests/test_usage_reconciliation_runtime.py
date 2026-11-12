@@ -30,6 +30,9 @@ class RuntimeTests(unittest.TestCase):
     ingest = response_fixture.ResponseRepositoryTests.ingest
 
     def setUp(self):
+        # Pure owner calculation has no database, ingestion or file fixture.
+        if self._testMethodName == "test_owner_effects_keep_ambiguity_seen_before_removal_and_later_readdition":
+            return
         self.prepare_fixture(real_initialization=not uses_current_database_fixture(self))
 
     def prepare_fixture(self, *, real_initialization=True):
@@ -128,7 +131,6 @@ class RuntimeTests(unittest.TestCase):
                          {"phase": "base_effects", "provider": "openai", "response_id": "r1"})
         self.assertEqual(advance_initial(self.repository, self.reader), {"phase": "effects_pending"})
 
-    @ordinary_current_database
     def test_owner_effects_keep_ambiguity_seen_before_removal_and_later_readdition(self):
         from task_governance_tool.usage_response_ownership import apply_actions
         owners = {"old"}

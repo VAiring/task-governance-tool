@@ -42,6 +42,9 @@ class TaskShowProjectionTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
+        # The completed audit case creates and exercises its own physical DB.
+        if self._testMethodName == "test_completed_audit_remains_available_without_changing_saved_evidence":
+            return
         self.repo = self.root / "repo"
         self.repo.mkdir()
         self.db = self.root / "taskgov.sqlite"

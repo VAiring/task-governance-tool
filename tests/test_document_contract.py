@@ -1449,13 +1449,17 @@ class DocumentContractTests(unittest.TestCase):
             self.assertEqual(path.read_bytes(), b"# Readable\n")
 
         with self.fixture() as root:
+            expected_path = root.resolve() / "README.md"
             read_bytes = Path.read_bytes
+            injected = []
             def fail_one(path):
-                if path == root / "README.md":
+                if path == expected_path:
+                    injected.append(path)
                     raise PermissionError("unreadable")
                 return read_bytes(path)
             with mock.patch.object(Path, "read_bytes", fail_one):
                 result = contract.check_document_contract(root)
+            self.assertEqual(injected, [expected_path])
             self.assertEqual([(item.code, item.subject) for item in result.issues],
                              [("document_encoding", "README.md")])
 

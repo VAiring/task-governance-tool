@@ -3,6 +3,7 @@ import base64
 from collections import Counter
 import copy
 from dataclasses import replace
+from hashlib import sha256
 import json
 from pathlib import Path
 import sys
@@ -21,6 +22,127 @@ from task_governance_tool import review_answer_transport as t
 from task_governance_tool.review_answer_collection import CollectionService, source
 from task_governance_tool import review_handoff_transport as files
 from task_governance_tool.reviews import ReviewEvidenceError
+
+
+class CollectionBatchReadTests(unittest.TestCase):
+    """One batch shares observations; every new read re-admits mutable state."""
+
+    def setUp(self):
+        from task_governance_tool.review_answer_collection_repository import CollectionRepository
+        from task_governance_tool.review_answer_handoff import _CollectionAdmission
+        self.repo = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        (self.repo / ".tmp-review").mkdir()
+        self.packet = self.repo / ".tmp-review/packet.json"
+        self.packet.write_bytes(b'packet fixture')
+        items = [sample(slot, version=2) for slot in (1, 2)]
+        for item in items:
+            basis = item.metadata["basis"]
+            basis["packet_digest"] = "sha256:" + sha256(self.packet.read_bytes()).hexdigest()
+            item.metadata["binding"]["basis_digest"] = v.basis_digest(basis)
+        bases = tuple(item.metadata["basis"] for item in items)
+        self.store = CollectionRepository(self.repo / "collection.sqlite")
+        self.store.initialize(bases)
+        self.paths = tuple(item.metadata["original"]["path"] for item in items)
+        self.service = CollectionService(self.repo, self.store, original_paths=self.paths, admit_basis=Mock())
+        self.enterContext(patch.object(files, "require_ignored"))
+        for slot, item in enumerate(items, 1):
+            self.service.bind(slot, item.metadata["binding"])
+            self.service.observe(slot, dict(source_identity=item.metadata["source_identity"], answer_bytes=item.raw,
+                complete=True, terminal="completed", answer_source=source("answer_observation", 2),
+                terminal_source=source("terminal_observation", 2)))
+        self.admission = _CollectionAdmission(self.repo, SimpleNamespace(target=object(), paths=object()),
+            SimpleNamespace(basis=bases[0]["execution_basis"]), self.store, tuple(v.basis_digest(b) for b in bases),
+            ".tmp-review/packet.json", sha256(self.packet.read_bytes()).hexdigest(), self.paths, False, True, None)
+        self.service.admit_basis = self.admission
+
+    def test_same_results_share_packet_check_but_next_read_checks_again(self):
+        from task_governance_tool.review_answer_handoff import _CollectionAdmission
+        expected = tuple(self.service.readback_item(slot) for slot in (1, 2))
+        original = _CollectionAdmission._packet
+        with patch.object(_CollectionAdmission, "_packet", autospec=True, side_effect=original) as packet:
+            self.assertEqual(self.service.readback_items((1, 2)), expected)
+            self.assertEqual(packet.call_count, 2)
+            self.assertEqual(self.service.readback_items((1, 2)), expected)
+            self.assertEqual(packet.call_count, 4)
+        (self.repo / self.paths[1]).write_bytes(b'replaced')
+        with self.assertRaises(a.AnswerError):
+            self.service.readback_items((1, 2))
+
+    def test_packet_original_and_operational_change_during_batch_are_rejected(self):
+        before = self.store.read()
+        for changed in ("packet", "original", "record"):
+            packet_bytes = self.packet.read_bytes()
+            original_bytes = (self.repo / self.paths[0]).read_bytes()
+            real = self.service._readback_item
+            def read(record, slot, ordinal, **kwargs):
+                item = real(record, slot, ordinal, **kwargs)
+                if slot == 2:
+                    if changed == "packet":
+                        self.packet.write_bytes(b'changed packet')
+                    elif changed == "original":
+                        (self.repo / self.paths[0]).write_bytes(b'changed original')
+                    else:
+                        with self.store.serial() as lease:
+                            self.service.mark_registration_locked(lease, (1,), "sha256:" + "d" * 64)
+                return item
+            with self.subTest(changed=changed), patch.object(self.service, "_readback_item", side_effect=read):
+                with self.assertRaises(a.AnswerError):
+                    self.service.readback_items((1, 2))
+            self.packet.write_bytes(packet_bytes)
+            (self.repo / self.paths[0]).write_bytes(original_bytes)
+        self.assertNotEqual(before, self.store.read())
+
+    def test_native_state_and_git_observations_do_not_escape_one_batch(self):
+        from task_governance_tool import review_answer_handoff as handoff
+        self.service.admit_basis = replace(self.admission, current=True)
+        actual = copy.deepcopy(self.admission.root.basis)
+        with patch.object(handoff._CollectionAdmission, "_preparation") as preparation, \
+                patch.object(handoff, "connect_initialized_readonly", side_effect=lambda *a, **k: Mock()) as connect, \
+                patch.object(handoff, "read_review_basis", side_effect=lambda *a, **k: copy.deepcopy(actual)), \
+                patch.object(handoff._CollectionAdmission, "_material") as material:
+            self.service.readback_items((1, 2))
+            self.assertEqual((connect.call_count, preparation.call_count, material.call_count), (2, 2, 2))
+            actual["target_generation"] += 1
+            with self.assertRaises(a.AnswerError):
+                self.service.readback_items((1, 2))
+            self.assertEqual(connect.call_count, 3)
+            self.assertEqual(material.call_count, 2)
+        # No shared admission suppresses the policy or separately issued pins.
+        self.service.admit_basis = replace(self.admission, enabled=lambda: False)
+        with self.assertRaises(a.AnswerError):
+            self.service.readback_items((1, 2))
+        self.service.admit_basis = replace(self.admission, issued_digests=(self.admission.issued_digests[0], "sha256:" + "f" * 64))
+        with self.assertRaises(a.AnswerError):
+            self.service.readback_items((1, 2))
+
+    def test_read_only_invalidation_never_mutates_tracking(self):
+        from task_governance_tool.review_answer_handoff import _CollectionAdmission
+        from task_governance_tool.review_answer_collection import CollectionInvalidated
+        before = self.store.read()
+        with patch.object(_CollectionAdmission, "_material", side_effect=CollectionInvalidated):
+            with self.assertRaises(CollectionInvalidated):
+                self.service.readback_items((1, 2))
+        self.assertEqual(self.store.read(), before)
+
+    def test_saved_original_batch_preserves_individual_binding_and_packet_confirmation(self):
+        from task_governance_tool import review_handoff_originals as originals
+        bases = tuple(row["basis"] for row in self.store.read())
+        root = SimpleNamespace(version=2, collection_bases=bases)
+        with patch.object(files, "decode_packet", return_value={"review_session_context": {}}), \
+                patch.object(originals, "collection_location", return_value=(None, root, bases)) as locate, \
+                patch("task_governance_tool.review_answer_handoff.service_for", return_value=self.service):
+            observed = originals.read_original_batch(self.repo, ".tmp-review/packet.json", self.paths)
+            self.assertEqual(locate.call_count, 1)
+            self.assertEqual(tuple(row.result_path for row in observed), self.paths)
+            self.assertEqual(len({row.bound.binding.session_id for row in observed}), 2)
+            original = self.service.readback_items
+            def changed(slots):
+                result = original(slots)
+                self.packet.write_bytes(b'changed after admission')
+                return result
+            with patch.object(self.service, "readback_items", side_effect=changed):
+                with self.assertRaises(files.HandoffError):
+                    originals.read_original_batch(self.repo, ".tmp-review/packet.json", self.paths)
 
 
 def measured(operation):

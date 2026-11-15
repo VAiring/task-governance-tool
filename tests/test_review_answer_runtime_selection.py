@@ -128,6 +128,37 @@ class RuntimeSelectionTests(unittest.TestCase):
         return {path.relative_to(self.fixture.repo).as_posix(): path.read_bytes()
             for path in self.fixture.repo.rglob("*") if path.is_file() and ".git" not in path.parts}
 
+    def test_source_selection_shares_native_admission_and_confirms_all_source_records(self):
+        from task_governance_tool import review_answer_handoff as handoff
+        self.ready(version=2)
+        service = self.bound_service()
+        with patch.object(handoff, "connect_initialized_readonly", wraps=handoff.connect_initialized_readonly) as connect:
+            selected = runtime.sources_for_reviewers(self.fixture.repo, None, self.binding, (A, B))
+            self.assertEqual(selected[0].source_slots, (1, 2))
+            self.assertEqual(connect.call_count, 1)
+        original = handoff._CollectionAdmission._material
+        def changed(admission, value):
+            original(admission, value)
+            with service.repository.serial() as lease:
+                service.repository.update(lease, 2, lambda row: {**row,
+                    "registration": dict(state="dispatched", submission_digest="sha256:" + "d" * 64, receipt_id=None)})
+        with patch.object(handoff._CollectionAdmission, "_material", autospec=True, side_effect=changed):
+            with self.assertRaises(AnswerError):
+                runtime.sources_for_reviewers(self.fixture.repo, None, self.binding, (A, B))
+
+    def test_later_source_read_cannot_hide_same_packet_replacement(self):
+        from task_governance_tool import review_answer_handoff as handoff
+        self.ready(version=2)
+        self.bound_service()
+        original = handoff._CollectionAdmission._source
+        def replaced(admission, paths, value, slot, history):
+            original(admission, paths, value, slot, history)
+            if slot == 2:
+                (self.fixture.repo / admission.packet_path).write_bytes(b'changed packet')
+        with patch.object(handoff._CollectionAdmission, "_source", autospec=True, side_effect=replaced):
+            with self.assertRaises(AnswerError):
+                runtime.sources_for_reviewers(self.fixture.repo, None, self.binding, (A, B))
+
     def replace_round(self, **changes):
         changed = replace(self.round, **changes)
         with closing(sqlite3.connect(self.fixture.root / "transition.sqlite")) as connection, connection:

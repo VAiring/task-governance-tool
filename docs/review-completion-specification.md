@@ -36,6 +36,16 @@ Every source group retains its full slot inventory and source lease. A frozen
 collection may supply all reviewers in one effect guard, with fresh admission
 on the next guard; this does not replace original-file confirmation or native
 registration/completion checks.
+One synchronous selection/readback may observe the common preparation, native
+Task basis/history and Git target once for its complete bounded source group.
+Each source still proves its independent issuance, policy and selection; each
+distinct Packet is checked after source reads, and the complete operational
+records are confirmed afterwards. Batched original readback brackets the byte
+reads with fresh admission and confirms every physical original. No group
+observation survives the call or authorizes a later effect. A subsequent guard,
+registration, recovery or completion starts fresh; registered Receipt identity
+never substitutes for current original-file confirmation. Historical report
+reads retain their existing non-current mode and per-original unavailability.
 Locating canonical state or reading schema/policy metadata alone is structural,
 not proof of Task eligibility. A retained resolver snapshot validates its selected
 Task before consuming that Task's review graph. Runner control/audit reads keep

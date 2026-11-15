@@ -335,7 +335,7 @@ def _source_selection(repo, skill, binding, reviewer_ids, *, observe_policy=None
     latest = group[-1] if group else None
     ever_selected = {choice.session_id for row in relevant for choice in row.selected}
     selected = () if latest is None else tuple(choice.session_id for choice in latest.selected)
-    services, records_by_source, grouped, order = {}, {}, {}, []
+    services, records_by_source, grouped, order, admissions = {}, {}, {}, [], []
     for position, child in enumerate(children, 1):
         initial = child not in ever_selected
         if not initial and (child not in selected or transition is None
@@ -369,7 +369,7 @@ def _source_selection(repo, skill, binding, reviewer_ids, *, observe_policy=None
                 _fail()
         else:
             _fail()
-        service.check_basis(records[slot - 1]["basis"], slot)
+        admissions.append((service, records[slot - 1]["basis"], slot))
         order.append((1 if initial and relevant else 0, slot))
         grouped.setdefault(initial, []).append((child, slot, position))
     if None in grouped:
@@ -378,6 +378,8 @@ def _source_selection(repo, skill, binding, reviewer_ids, *, observe_policy=None
         return None, ()
     if order != sorted(order):
         _fail()
+    from .review_answer_handoff import check_collection_bases
+    check_collection_bases(admissions)
     # Source admission may read native/filesystem state. Confirm the exact
     # operational snapshot again afterwards; no pre-I/O rows certify changes.
     for key in grouped:
@@ -709,18 +711,16 @@ def tracking_observer_for_reviewers(repo, skill, binding, reviewer_ids):
     from .setup_feature_config import answer_collection_allowed
     collection_policy = lambda: answer_collection_allowed(skill)
     policy_observation = []
-    groups = sources_for_reviewers(repo, skill, binding, reviewer_ids,
-                                  observe_policy=policy_observation.append)
+    groups, snapshots = _source_selection(repo, skill, binding, reviewer_ids,
+                                         observe_policy=policy_observation.append)
     collection_enabled = policy_observation[-1]
     admitted, observed = [], {}
-    for group in groups or ():
-        records = group.service.repository.read()
+    for group, records in zip(groups or (), snapshots):
         selected = []
         for child, slot in zip(group.reviewer_ids, group.source_slots):
             row = records[slot - 1]
             if row["basis"]["version"] != 2:
                 continue
-            group.service.check_basis(row["basis"], slot)
             projection = _tracking_projection(row, child)
             if projection is not None:
                 observed[child] = projection

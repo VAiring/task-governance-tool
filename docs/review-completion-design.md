@@ -615,6 +615,31 @@ reporting and source composition. Report fields are detached copies; another
 physical observation or changed bytes require a new parse. Legacy originals
 retain their decoded closed result and sidecar checks.
 
+`check_collection_bases` groups only exact repository/target/preparation/current
+mode matches within one synchronous call. Single-source and grouped admission
+share `_CollectionAdmission._observe`: one native read validates the common
+basis and needed continuation history, then closes before per-source selection,
+distinct physical Packet and Git observations. Issued pins, policy, obsolete
+tracking and source relations remain per source. It returns no proof or cache.
+Source selection confirms the complete records afterwards; tracking-observer
+construction consumes those detached snapshots instead of repeating admission.
+Later observer hints retain their separate readmission rules and never permit
+an effect. `CollectionService.readback_items` independently admits before and
+after reading the requested originals, confirms the complete records and every
+physical byte sequence, and never writes an invalidation during inspection.
+Same-Packet `read_original_batch` shares only its locator and bounded admission
+work; single/legacy sources retain the existing reader. Inventory composition
+and finalizer reports use this batch entry. Partial report failures fall back
+to independent reads so one unavailable source does not hide another.
+
+The registered finalizer path deliberately retains `_require_registration` at
+every effect boundary: exact native Receipt reconciliation and physical
+original checks are still required after restore, replacement or acknowledgement
+loss. It does not reconstruct an unregistered submission for a successful
+registration. Unregistered/unknown registration, manual submission, source leases,
+native writer admission, publication and completion keep their existing fresh
+checks. Neither these batches nor immutable parsing values cross those gates.
+
 Native `validate_storage_rows` shares each collected Receipt's complete
 provenance and payload-Finding validation with its dispatch-entry validation
 inside that one synchronous, write-free read transaction. The local callback

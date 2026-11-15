@@ -79,20 +79,21 @@ class CollectionService:
         try:
             self.admit_basis(basis, slot)
         except CollectionInvalidated:
-            def close(admitted_lease):
-                record = self._record(slot)
-                if record["version"] == 2 and record["basis"] == basis and record["tracking_state"] != "invalidated":
-                    def invalidated(row):
-                        row["tracking_state"] = "invalidated"
-                        return row
-                    self.repository.update(admitted_lease, slot, invalidated)
             if basis["version"] == 2 and persist_invalidation:
-                if lease is None:
-                    with self.repository.serial() as acquired:
-                        close(acquired)
-                else:
-                    close(lease)
+                self._invalidate_basis(basis, slot, lease=lease)
             raise
+
+    def _invalidate_basis(self, basis, slot, *, lease=None):
+        """Retain only a positively observed obsolete tracking basis."""
+        if lease is None:
+            with self.repository.serial() as acquired:
+                return self._invalidate_basis(basis, slot, lease=acquired)
+        record = self._record(slot)
+        if record["version"] == 2 and record["basis"] == basis and record["tracking_state"] != "invalidated":
+            def invalidated(row):
+                row["tracking_state"] = "invalidated"
+                return row
+            self.repository.update(lease, slot, invalidated)
 
     def _record(self, slot):
         records = self.repository.read()
@@ -365,6 +366,31 @@ class CollectionService:
     def readback_item(self, slot):
         """Lend decoded bytes from this fresh completed-original observation."""
         return self._confirmed_readback(slot, require_terminal=True)
+
+    def readback_items(self, slots):
+        """Read one complete source group between two fresh admissions.
+
+        A batch shares no success with the next read. Records, original bytes
+        and Packet admission are all confirmed again after physical I/O.
+        """
+        from .review_answer_handoff import check_collection_bases
+        selected = tuple(slots)
+        before = self.repository.read()
+        if (not selected or len(set(selected)) != len(selected)
+                or len(before) != len(self.original_paths)
+                or any(type(slot) is not int or not 1 <= slot <= len(before) for slot in selected)):
+            _fail("binding_mismatch", "identity")
+        entries = tuple((self, before[slot - 1]["basis"], slot) for slot in selected)
+        check_collection_bases(entries, persist_invalidation=False)
+        items = tuple(self._readback_item(before[slot - 1], slot, _ordinal(before[slot - 1]))
+                      for slot in selected)
+        check_collection_bases(entries, persist_invalidation=False)
+        if self.repository.read() != before:
+            _fail("binding_mismatch", "conflict")
+        for item in items:
+            if files.read_bounded(files.checked_path(self.repo, item.metadata["original"]["path"]), 262144) != item.raw:
+                _fail("save_unknown", "conflict")
+        return items
 
     def _confirmed_readback(self, slot, *, require_terminal):
         record = self._record(slot)

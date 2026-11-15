@@ -29,7 +29,7 @@ class TrackingObservationTests(unittest.TestCase):
         self.group = runtime.SourceGroup(self.service, (self.child,), (1,), (1,))
         self.allowed = self.enterContext(patch(
             "task_governance_tool.setup_feature_config.answer_collection_allowed", return_value=True))
-        self.sources = self.enterContext(patch.object(runtime, "sources_for_reviewers",
+        self.sources = self.enterContext(patch.object(runtime, "_source_selection",
             side_effect=lambda *args, observe_policy=None: self.observe_sources(observe_policy)))
         self.groups = (self.group,)
         self.repo, self.skill, self.binding = object(), object(), object()
@@ -41,7 +41,13 @@ class TrackingObservationTests(unittest.TestCase):
     def observe_sources(self, observe_policy):
         if observe_policy is not None:
             observe_policy(self.allowed())
-        return self.groups
+        snapshots = []
+        for group in self.groups or ():
+            records = group.service.repository.read()
+            for slot in group.source_slots:
+                group.service.check_basis(records[slot - 1]["basis"], slot)
+            snapshots.append(records)
+        return self.groups, tuple(snapshots)
 
     def assert_binding_failure(self, operation):
         with self.assertRaises(AnswerError) as raised:

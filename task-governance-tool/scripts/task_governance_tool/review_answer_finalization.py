@@ -8,7 +8,7 @@ from .review_handoff_transport import fail
 def prepared_reports(finalizer, record):
     """Use immutable locators for completed reports without reopening a Task."""
     from .review_preparation_repository import PreparationRepository
-    from .review_handoff_originals import read_original
+    from .review_handoff_originals import read_original, read_original_batch
     from .state_paths import path_lexically_exists
     from .review_handoff_scope import error_code
     paths = finalizer.resolution.paths
@@ -25,11 +25,29 @@ def prepared_reports(finalizer, record):
             (initial.packet_path, initial.packet_digest, initial.result_paths)):
         fail("review_packet_stale")
     locations = record.original_locations or tuple((record.packet_path, path) for path in record.result_paths)
+    # An effect-boundary call still reads all physical originals anew. Group
+    # only same-Packet sources; the next call inherits no admission or results.
+    sources = {}
+    packets = dict.fromkeys(packet for packet, _path in locations)
+    for packet in packets:
+        result_paths = tuple(path for source_packet, path in locations if source_packet == packet)
+        if len(result_paths) == 1:
+            continue
+        try:
+            observed = read_original_batch(finalizer.repo, packet, result_paths,
+                preparation=(finalizer.resolution, root), current=False)
+            sources.update(((packet, path), source) for path, source in zip(result_paths, observed))
+        except Exception:
+            # The report must retain each available sibling on partial failure.
+            # Re-observation cannot authorize registration or another effect.
+            pass
     results = []
     for index, (packet, path) in enumerate(locations):
         try:
-            source = read_original(finalizer.repo, packet, path,
-                preparation=(finalizer.resolution, root), current=False)
+            source = sources.get((packet, path))
+            if source is None:
+                source = read_original(finalizer.repo, packet, path,
+                    preparation=(finalizer.resolution, root), current=False)
             saved = source.bound.binding
             if record.originals and record.originals[index] != (saved.session_id, saved.original_result_digest):
                 fail("handoff_file_changed")

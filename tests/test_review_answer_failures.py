@@ -219,6 +219,28 @@ class AdmissionFailureTests(TestCase):
         self.assertEqual(error_code(RuntimeError("PRIVATE_SENTINEL")), "finalization_unavailable")
         self.assertEqual(error_code(AnswerError("PRIVATE_SENTINEL", reason="bad value")), "format_invalid")
 
+    def test_partial_batch_report_retains_available_sibling_without_any_effect(self):
+        from task_governance_tool import review_answer_finalization as finalization
+        root = SimpleNamespace(version=2, route="integrated", finalization_store="finish.sqlite",
+            packet_path="reviews/packet.json", packet_digest="a" * 64,
+            result_paths=("reviews/a.json", "reviews/b.json"))
+        record = SimpleNamespace(basis=dict(parent_thread_id="parent", task_id="task", target_generation=1),
+            original_locations=(), originals=(), packet_path=root.packet_path, result_paths=root.result_paths)
+        finalizer = SimpleNamespace(path=Path("finish.sqlite"), repo=Path.cwd(),
+            resolution=SimpleNamespace(paths=SimpleNamespace(review_preparation_store=lambda *_: Path("unused.sqlite"))),
+            journal=SimpleNamespace(read_rounds=lambda: (root,)))
+        available = SimpleNamespace(bound=SimpleNamespace(binding=object()))
+        failure = AnswerError("save_unknown", reason="effect_unknown")
+        with mock.patch("task_governance_tool.state_paths.path_lexically_exists", return_value=True), \
+                mock.patch("task_governance_tool.review_preparation_repository.PreparationRepository") as repository, \
+                mock.patch("task_governance_tool.review_handoff_originals.read_original_batch", side_effect=failure), \
+                mock.patch("task_governance_tool.review_handoff_originals.read_original", side_effect=[available, failure]), \
+                mock.patch.object(finalization, "review_view", return_value={"summary": "available original"}):
+            repository.return_value.read_current.return_value = root
+            self.assertEqual(finalization.prepared_reports(finalizer, record), [
+                dict(path="reviews/a.json", status="available", review={"summary": "available original"}),
+                dict(path="reviews/b.json", status="unavailable", code="save_unknown")])
+
 
 class InstalledUnknownEffectTests(TestCase):
     def test_public_submit_preserves_real_saved_and_registration_unknowns(self):

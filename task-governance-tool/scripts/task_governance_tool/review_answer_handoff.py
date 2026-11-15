@@ -129,20 +129,31 @@ class _CollectionAdmission:
 
     def __call__(self, value, slot):
         self._issued(value, slot)
+        self._observe(((self, value, slot),))
+
+    def _observe(self, entries):
+        """Observe one already-issued group with this exact root and target."""
+        history = ()
         if self.current:
             self._preparation(self.resolution.paths)
             with closing(connect_initialized_readonly(self.resolution.target, operation_local=True, review_task_id=self.root.basis["task_id"])) as connection:
                 if read_review_basis(connection, project_id=self.root.basis["project_id"],
                         task_id=self.root.basis["task_id"]) != self.root.basis:
                     raise _bad()
-                if not self.retained:
+                if any(not admission.retained for admission, _value, _slot in entries):
                     from .review_continuation_repository import read_continuations
                     history = read_continuations(connection, project_id=self.root.basis["project_id"],
                         task_id=self.root.basis["task_id"])
-            if not self.retained:
-                self._source(self.resolution.paths, value, slot, history)
-        self._packet()
-        self._material(value)
+        packets = {}
+        for admission, value, slot in entries:
+            if admission.current and not admission.retained:
+                admission._source(admission.resolution.paths, value, slot, history)
+            packets.setdefault((admission.packet_path, admission.packet_digest), admission)
+        # Source-selection reads finish before checking any shared Packet.
+        for admission in packets.values():
+            admission._packet()
+        admission, value, _slot = next((entry for entry in entries if entry[1]["version"] == 2), entries[0])
+        admission._material(value)
 
     def check_hook(self, value, slot, *, parent_id, validation_reuse=None):
         """One fresh native observation per hook boundary, never an effect token.
@@ -234,6 +245,49 @@ def root_for(repo, collection_basis):
     if current.preparation_id != collection_basis["preparation_id"]:
         raise _bad()
     return resolution, current
+
+
+def check_collection_bases(entries, *, persist_invalidation=True):
+    """One fresh, bounded observation for synchronous source selection only.
+
+    Entries are (service, saved basis, source slot). No observations escape this
+    call. Each source keeps its issuance, policy, selection and physical Packet
+    checks; only their common native basis/history and Git target are observed
+    together. Callers confirm their complete source records afterwards. This is
+    not publication/registration admission and takes no lease or writer.
+    """
+    groups = []
+    for service, value, slot in entries:
+        admission = service.admit_basis
+        if type(admission) is not _CollectionAdmission:
+            service.check_basis(value, slot, persist_invalidation=persist_invalidation)
+            continue
+        row = service._record(slot)
+        if row["basis"] != value:
+            raise _bad()
+        if value["version"] == 2 and row["tracking_state"] == "invalidated":
+            raise CollectionInvalidated()
+        admission._issued(value, slot)
+        if value["execution_basis"] != admission.root.basis:
+            raise _bad()
+        key = (admission.repo, admission.resolution.target, admission.root, admission.current)
+        group = next((items for expected, items in groups if expected == key), None)
+        if group is None:
+            group = []
+            groups.append((key, group))
+        group.append((service, admission, value, slot))
+    for _key, group in groups:
+        first = group[0][1]
+        # All entries above have the same complete execution basis. Version one
+        # keeps its historical no-Git-check behavior; a v2 entry still checks.
+        selected = next((entry for entry in group if entry[2]["version"] == 2), group[0])
+        service, admission, value, slot = selected
+        try:
+            first._observe(tuple((admission, value, slot) for _service, admission, value, slot in group))
+        except CollectionInvalidated:
+            if persist_invalidation and value["version"] == 2:
+                service._invalidate_basis(value, slot)
+            raise
 
 
 def initial_submission(repo, root, resolution, originals):

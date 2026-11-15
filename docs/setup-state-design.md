@@ -176,6 +176,32 @@ layout admission. Invalid arguments are neutral no-ops. Review save retains
 its existing explicit-repo boundary. No core transaction is opened for writing.
 Setup and the normal Task command loop do not invoke the worker.
 
+Hook admission calls `usage_recovery.admit` before its original intake, with
+the same absolute deadline. The service uses that boundary at initial
+admission, post-lease restart and later opportunities, but recovery additionally
+requires an existing unfinished request with matching roots. Numerical Setup
+uses it before its existing inspect/initialize sequence; preview never recovers.
+After service-lease acquisition, the shared failure classifier normalizes native,
+known wrapped and legacy numerical errors. Fixed busy, permission, budget or repeated
+rollback-required admission failures release the lease and yield the existing
+retry delay before fresh admission. Accepted intent is not reset by that failed
+attempt. Recovery-lock contention retains busy; a wrapped native access denial
+retains permission. A malformed or replaced lock without that cause remains
+unavailable; invalid operational state still ends the observer without repair.
+The [storage recovery boundary](database-design.md#numerical-crash-recovery)
+owns the single native rollback attempt, physical guards and fresh admission.
+After recovery, the existing cursor, source deduplication, participant discovery,
+reconciliation and guarded publication proceed unchanged. Missing input,
+partial tails or unregistered participants do not become collected zero or
+caught-up merely because the database is readable again.
+
+Enabled diagnostics record closed `usage.outcome` events for admission,
+recovery and collection. Core project/binding admission permits service
+diagnostic output before numerical admission, matching the Hook boundary;
+foreign or unadmitted project state never authorizes output. Method return,
+Hook neutral exit and actual catch-up remain distinct. No raw source, payload,
+SQL exception text or path enters these outcome events.
+
 `usage_hook_setup.py` owns only definition preparation selected by `setup_features.py` after outer `run_setup`
 has produced its core and separate numerical outcomes. Private candidate setup,
 ordinary commands and doctor do not call it. It merges the four owned handlers

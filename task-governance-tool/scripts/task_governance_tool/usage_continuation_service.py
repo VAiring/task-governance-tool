@@ -62,9 +62,12 @@ class UsageServiceObserver:
         target = _target(self.skill_root, self.repo, repo_explicit=True, operation_local=True, deadline=deadline)
         repository = repository_for(target)
         repository.deadline = deadline
-        with repository.connection():
-            pass
+        # Core identity/binding already succeeded; numerical admission failure
+        # must also be diagnosable without authorizing output on a foreign root.
         allow_output()
+        from .usage_recovery import admit
+        admit(repository, target, source="service",
+              roots=lambda: locator_root_fingerprints(source_roots(self.environment)))
         return target, repository
 
     def _scope(self):
@@ -76,6 +79,7 @@ class UsageServiceObserver:
         from .usage_lifecycle import EVENT_SECONDS
         while not self._stopped.is_set():
             acquired = False
+            retry_admission = False
             try:
                 with self._scope():
                     admitted = self._admit(monotonic() + EVENT_SECONDS)
@@ -91,7 +95,14 @@ class UsageServiceObserver:
                     acquired = True
                     # A second owner may have waited. Re-admit after acquisition.
                     with self._scope():
-                        admitted = self._admit(monotonic() + EVENT_SECONDS)
+                        try:
+                            admitted = self._admit(monotonic() + EVENT_SECONDS)
+                        except Exception as error:
+                            from .usage_recovery_storage import failure
+                            # Only known transient admission failures may yield
+                            # and try again. Invalid operational state stays closed.
+                            retry_admission = failure(error) in {"busy", "permission", "budget", "readonly_rollback"}
+                            raise
                         if admitted is None or admitted[0] != target or self._stopped.is_set():
                             return
                     roots = source_roots(self.environment)
@@ -115,11 +126,11 @@ class UsageServiceObserver:
                 if acquired or not error.contended:
                     return
             except Exception:
-                if acquired:
+                if acquired and not retry_admission:
                     # Invalid operational state is not silently repaired.
                     return
-                # An unavailable initial DB admission may recover while this
-                # service is still running. No candidate state was written.
+                # A later opportunity freshly admits after releasing the lease.
+                # Do not reset accepted intent or spin inside the failed attempt.
                 self._stopped.wait(RETRY_SECONDS)
             self._stopped.wait(self._poll_seconds)
 
@@ -141,8 +152,19 @@ class UsageServiceObserver:
                                 state.update(target, expected, round_=expected["round"], status="unavailable")
                             return
                         current, repository = admitted
-                        result = run_slice(current, repository, roots, expected, deadline=deadline,
-                                           stopped=self._stopped.is_set)
+                        from .debug_log import usage_diagnostic
+                        try:
+                            result = run_slice(current, repository, roots, expected, deadline=deadline,
+                                               stopped=self._stopped.is_set)
+                        except Exception as error:
+                            from .usage_recovery_storage import failure
+                            usage_diagnostic("collection", "unavailable", failure(error))
+                            raise
+                        status = result["status"] if result is not None else "pending"
+                        outcome = ("succeeded" if status == "caught_up" else
+                                   "unavailable" if status == "unavailable" else "pending")
+                        usage_diagnostic("collection", outcome, "none" if outcome == "succeeded" else
+                                         "unavailable" if outcome == "unavailable" else "input_pending")
                         if result is not None and result["status"] in {"waiting_input", "waiting_review", "unavailable"}:
                             delay = max(self._poll_seconds, RETRY_SECONDS)
             except ArtifactLockError as error:

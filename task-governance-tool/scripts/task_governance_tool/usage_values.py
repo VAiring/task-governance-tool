@@ -22,9 +22,23 @@ GAP_CODES = frozenset({
 class UsageError(Exception):
     """Fixed diagnostic only; never wrap source text or OS/SQLite messages."""
 
-    def __init__(self, code: str = "usage_unavailable") -> None:
+    def __init__(self, code: str = "usage_unavailable", *, reason: str = "unavailable") -> None:
         self.code = code
+        self.reason = reason if reason in USAGE_FAILURE_REASONS else "unavailable"
         super().__init__(code)
+
+
+USAGE_FAILURE_REASONS = frozenset({"unavailable", "readonly_rollback", "busy", "permission",
+    "budget", "physical_changed", "unsupported_journal", "schema", "binding", "missing",
+    "intent_required"})
+
+
+class UsageRecoveryRequired(UsageError):
+    """A failed read admission, not permission to write or a validity certificate."""
+
+    def __init__(self, repository, identity):
+        super().__init__(reason="readonly_rollback")
+        self.repository, self.identity = repository, identity
 
 
 def label(value: object) -> str | None:

@@ -659,6 +659,11 @@ BEGIN
 
 They never use `immutable=1`. Schema history, required objects, project
 identity/binding, and command rows are read from the same transaction.
+An authorized numerical collector or explicit numerical Setup may recover a
+failed read reporting SQLite's exact `READONLY_ROLLBACK` classification through
+the bounded [numerical crash-recovery boundary](database-design.md#numerical-crash-recovery).
+This is SQLite's native interrupted-transaction rollback, not semantic repair.
+General readers, previews and diagnosis never switch to a writable connection.
 `task show` combines task, events, review evidence, handoff summary, Contract,
 checkpoint, completion history, and Verification Receipt evidence in one
 snapshot. Handoff list reads count and rows together. Viewer capture reads

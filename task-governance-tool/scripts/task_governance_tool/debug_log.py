@@ -290,6 +290,22 @@ class Session:
             self.events.clear()
 
 
+def usage_diagnostic(stage, outcome, reason):
+    """Closed numerical outcomes, separate from Python method-return success."""
+    from .usage_values import USAGE_FAILURE_REASONS
+    try:
+        if (type(stage) is not str or stage not in {"admission", "recovery", "collection"}
+                or type(outcome) is not str or outcome not in {"succeeded", "pending", "unavailable"}
+                or type(reason) is not str or reason not in USAGE_FAILURE_REASONS | {"none", "input_pending"}):
+            return
+        session = _current.get()
+        if session is not None and session.usable(active=True):
+            session.emit("usage.outcome", {"stage": stage, "outcome": outcome, "reason": reason},
+                         failed=outcome == "unavailable")
+    except BaseException:
+        pass
+
+
 def allow_output():
     """Called by the existing CLI state-admission boundary, never by the sink."""
     session = _current.get()

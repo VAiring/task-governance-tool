@@ -141,6 +141,16 @@ the service yields before retry and preserves committed progress across restart.
 Hook return and numerical catch-up are separate facts. Neither proves final
 coverage, billing or historical integrity.
 
+An authorized Hook or worker with accepted unfinished work can recover SQLite's
+interrupted-transaction rollback when numerical read admission requires it.
+Explicit Setup can do the same before its numerical setup stage; previews and
+ordinary readers do not write. This does not create, migrate, rebind or repair
+business data, and does not require a new normal-loop command. A busy or failed
+recovery stays unavailable/pending for a later event or service opportunity.
+Readable storage alone does not prove that missing logs or partial input were
+collected. Enabled diagnostics distinguish admission, recovery and collection
+outcomes from the neutral Hook return.
+
 Later events also catch up registered participants, completed Tasks and late
 endpoint-turn records. Disabled/untrusted hooks cannot establish initial intake.
 An absent/incompatible service cannot promise after-return progress; accepted

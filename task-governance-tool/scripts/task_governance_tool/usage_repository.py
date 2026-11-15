@@ -26,7 +26,7 @@ from task_governance_tool.state_paths import (
 from task_governance_tool.no_replace import rename_no_replace
 from task_governance_tool.sqlite_admission import structural_read, same_read_fact, read_epoch
 from task_governance_tool.usage_adapter import CollectionBatch, Cursor
-from task_governance_tool.usage_values import GAP_CODES, METRICS, ResponseUsage, UsageError
+from task_governance_tool.usage_values import GAP_CODES, METRICS, ResponseUsage, UsageError, UsageRecoveryRequired
 
 
 USAGE_SCHEMA = 1
@@ -177,13 +177,15 @@ class UsageRepository:
 
     def _physical(self, *, missing=False):
         inspect_physical_directory(self.path.parent)
+        identity = None
         if path_lexically_exists(self.path):
-            inspect_physical_file(self.path, root=self.path.parent)
+            _, identity = inspect_physical_file(self.path, root=self.path.parent)
         elif path_lexically_exists(Path(str(self.path) + "-journal")):
             raise UsageError()
         elif not missing:
             raise UsageError("usage_not_initialized")
         validate_operational_journal_state(self.path)
+        return identity
 
     def _validate(self, connection):
         version = _structure(connection, self.schema_statements, self.migrations)
@@ -206,8 +208,9 @@ class UsageRepository:
     def _connection(self, *, write=False):
         """Open and admit once; only an explicit shared reader requests reuse."""
         connection = None
+        identity, admitted = None, False
         try:
-            self._physical()
+            identity = self._physical()
             opener = connect_existing if write else connect_readonly
             connection = (opener(self.path) if self.connection_timeout == 5.0
                           else opener(self.path, timeout=self.connection_timeout))
@@ -215,14 +218,24 @@ class UsageRepository:
             if write:
                 connection.execute("BEGIN IMMEDIATE")
             validation = self._validate(connection)
+            admitted = True
             yield connection, validation
             if write:
                 connection.commit()
-        except (sqlite3.Error, OSError, StatePathError, StorageError):
-            raise UsageError() from None
+        except (sqlite3.Error, OSError, StatePathError, StorageError) as error:
+            from .usage_recovery_storage import failure
+            reason = failure(error)
+            if reason == "readonly_rollback" and not write and not admitted and identity is not None:
+                raise UsageRecoveryRequired(self, identity) from None
+            raise UsageError(reason=reason) from None
         finally:
             if connection is not None:
                 connection.close()
+
+    def recover_interrupted_read(self, error, *, setup=False):
+        """Explicit recovery caller owns its permission and execution lease."""
+        from .usage_recovery_storage import recover
+        return recover(self, error, setup=setup)
 
     @contextmanager
     def admitted_read(self):

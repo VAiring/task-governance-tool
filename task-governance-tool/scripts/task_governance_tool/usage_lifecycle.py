@@ -84,11 +84,14 @@ def register_wait_supervisor(repo, caller):
 def collect_event(payload, *, skill_root, repo, environment, repo_explicit=False):
     """Internal report is for tests/diagnosis; never sent as model hook context."""
     started = monotonic()
-    from task_governance_tool.debug_log import operation_scope, span
+    from task_governance_tool.debug_log import operation_scope, span, usage_diagnostic
     with operation_scope(repo, entrypoint=skill_root / "scripts/usage_hook.py", operation="usage_hook",
                           repo_explicit=repo_explicit), span(collect_event):
-        return _collect_event(payload, skill_root=skill_root, repo=repo, environment=environment,
-                              repo_explicit=repo_explicit, started=started)
+        result = _collect_event(payload, skill_root=skill_root, repo=repo, environment=environment,
+                                repo_explicit=repo_explicit, started=started)
+        usage_diagnostic("collection", "unavailable" if result["status"] == "unknown" else "pending",
+                         "input_pending" if result["diagnostics"] else "none")
+        return result
 
 
 def _collect_event(payload, *, skill_root, repo, environment, repo_explicit, started):
@@ -203,7 +206,10 @@ def _collect_event(payload, *, skill_root, repo, environment, repo_explicit, sta
         gaps.update(publication["diagnostics"])
         return {"status": "unknown" if gaps else "pending", "collected_sources": collected,
                 "diagnostics": sorted(gaps)}
-    except Exception:
+    except Exception as error:
+        from .debug_log import usage_diagnostic
+        from .usage_recovery_storage import failure
+        usage_diagnostic("collection", "unavailable", failure(error))
         return unavailable
 
 

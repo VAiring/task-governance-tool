@@ -596,7 +596,11 @@ durable stages.
 Its status is `not_attempted`, `pending_core_setup` (preview before core
 binding is admitted), `not_present`, `initialized`, `migration_required`,
 `migrated`, `current`, or `unavailable`. Writes are `usage_initialize` and
-`usage_migrate` (exact schema 1 through 9 to 10); preview has no completed write.
+`usage_migrate` (exact schema 1 through 9 to 10), plus `usage_recover` for native
+SQLite crash rollback and fresh numerical admission. A hot-journal preview
+remains `unavailable` and plans recovery without writing; schema is not yet
+readable. Explicit Setup performs recovery before normal numerical inspection
+and initialization. Preview has no completed write.
 `schema_to` is 10 and `error` is null or fixed `usage_unavailable`. Numerical
 failure never undoes successful core setup or blocks ordinary Task work;
 do not repeat Task writes to recover usage. This adds no normal-loop action,

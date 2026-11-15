@@ -241,6 +241,7 @@ LANE_MODULES: dict[str, tuple[str, ...]] = {
         "test_usage_reconciliation_reviews",
         "test_usage_reconciliation_runtime",
         "test_usage_reconciliation_scale",
+        "test_usage_recovery",
         "test_usage_relation_inputs",
         "test_usage_response_adapter",
         "test_usage_response_attribution",

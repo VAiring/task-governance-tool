@@ -50,6 +50,32 @@ class DebugLogTests(unittest.TestCase):
                 pass
         self.assertFalse((self.root / '.taskgov/diagnostics/logger').exists())
 
+    def test_usage_outcomes_are_closed_and_separate_from_method_return(self):
+        self.configure()
+        with self.scope(), log.span(example):
+            log.usage_diagnostic("admission", "unavailable", "readonly_rollback")
+            log.usage_diagnostic("recovery", "succeeded", "none")
+            log.usage_diagnostic("collection", "pending", "input_pending")
+            log.usage_diagnostic("collection", "succeeded", "none")
+            log.usage_diagnostic(SECRET, "unavailable", "permission")
+            log.usage_diagnostic("collection", "unavailable", SECRET)
+            log.usage_diagnostic("collection", object(), "none")
+        records = self.records()
+        outcomes = [row for row in records if row["event"] == "usage.outcome"]
+        self.assertEqual([(row["stage"], row["outcome"], row["reason"]) for row in outcomes], [
+            ("admission", "unavailable", "readonly_rollback"), ("recovery", "succeeded", "none"),
+            ("collection", "pending", "input_pending"), ("collection", "succeeded", "none")])
+        self.assertNotIn(SECRET, json.dumps(records))
+
+    def test_usage_failure_is_visible_in_errors_mode_without_success_events(self):
+        self.configure("errors")
+        with self.scope():
+            log.usage_diagnostic("recovery", "succeeded", "none")
+            log.usage_diagnostic("collection", "unavailable", "permission")
+        records = [row for row in self.records() if row["event"] == "usage.outcome"]
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["reason"], "permission")
+
     def test_values_and_short_api_mask_before_the_buffer(self):
         self.configure()
         with self.scope() as session:

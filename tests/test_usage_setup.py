@@ -80,3 +80,41 @@ class UsageSetupTests(unittest.TestCase):
         before = file_snapshot(self.install.project_root)
         self.assertIsNone(self.resolution().error_code)
         self.assertEqual(file_snapshot(self.install.project_root), before)
+
+    def test_hot_usage_preview_is_readonly_and_explicit_setup_recovers_once(self):
+        from tests.test_usage_recovery import crash, snapshot
+        self.assertTrue(self.run_setup().ok)
+        resolution = self.resolution()
+        core = resolution.paths.database.read_bytes()
+        path = resolution.paths.usage_database
+        crash(path)
+        before = snapshot(path)
+        preview = self.run_setup(True)
+        self.assertTrue(preview.ok, preview)
+        self.assertEqual(preview.data["usage"]["status"], "unavailable")
+        self.assertEqual(preview.data["usage"]["planned_writes"], ["usage_recover"])
+        self.assertEqual(preview.data["usage"]["completed_writes"], [])
+        self.assertEqual(snapshot(path), before)
+        recovered = self.run_setup()
+        self.assertTrue(recovered.ok, recovered)
+        self.assertEqual(recovered.data["usage"]["status"], "current")
+        self.assertEqual(recovered.data["usage"]["completed_writes"], ["usage_recover"])
+        self.assertEqual(self.run_setup().data["usage"]["completed_writes"], [])
+        self.assertEqual(resolution.paths.database.read_bytes(), core)
+
+    def test_hot_previous_schema_recovery_is_separate_from_setup_migration(self):
+        from tests.test_usage_recovery import crash
+        from task_governance_tool.usage_work_order_repository import UsageWorkOrderRepository
+        self.assertTrue(self.run_setup().ok)
+        resolution = self.resolution()
+        target, path = resolution.target, resolution.paths.usage_database
+        path.unlink()  # isolated fixture only: construct the supported previous schema
+        old = UsageWorkOrderRepository(path, target.project.project_id,
+                                       target.binding_path_hash, target.binding_generation)
+        self.assertEqual(old.migrations[-1][0], 9)
+        old.initialize()
+        crash(path)
+        recovered = self.run_setup()
+        self.assertTrue(recovered.ok, recovered)
+        self.assertEqual(recovered.data["usage"]["status"], "migrated")
+        self.assertEqual(recovered.data["usage"]["completed_writes"], ["usage_recover", "usage_migrate"])

@@ -75,17 +75,26 @@ def setup_usage(inspection, core_result, *, read_only: bool) -> dict:
         target = resolution.target
         repository = repository_type(resolution.paths.usage_database, target.project.project_id,
                                      target.binding_path_hash, target.binding_generation)
-        status = repository.inspect()
+        from .usage_recovery import admit
+        from .usage_values import UsageRecoveryRequired
+        try:
+            status, recovered = admit(repository, target, source="setup", read_only=read_only)
+        except UsageRecoveryRequired:
+            result["planned_writes"] = ["usage_recover"]
+            raise
+        if recovered:
+            result["planned_writes"] = ["usage_recover"]
+            result["completed_writes"] = ["usage_recover"]
         if status == "not_present":
-            result["planned_writes"] = ["usage_initialize"]
+            result["planned_writes"].append("usage_initialize")
         elif status == "migration_required":
-            result["planned_writes"] = ["usage_migrate"]
+            result["planned_writes"].append("usage_migrate")
         if not read_only:
             status = repository.initialize()
             if status == "initialized":
-                result["completed_writes"] = ["usage_initialize"]
+                result["completed_writes"].append("usage_initialize")
             elif status == "migrated":
-                result["completed_writes"] = ["usage_migrate"]
+                result["completed_writes"].append("usage_migrate")
         result["status"] = status
     except Exception:
         # No raw diagnostic crosses setup, and valid core state stays committed.

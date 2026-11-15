@@ -21,8 +21,9 @@ def collect_hook(repository, target, payload, roots, project, thread, deadline, 
     from .usage_evidence_service import refresh_usage
     from .usage_continuation_intake import capture
     gaps, hint = set(), None
-    with repository.connection():
-        pass
+    from .usage_recovery import admit
+    repository.deadline = deadline
+    admit(repository, target, source="hook")
     with state.lease(target, "state", create=True) as root:
         state.request(root, target, locator_root_fingerprints(roots),
                       intake=capture(payload, roots, project, thread))

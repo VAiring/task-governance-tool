@@ -81,6 +81,13 @@ args_truncatedで示し、コンテナーの超過は各値のtruncatedで示す
 
 ## APIと相関
 
+数値処理は `usage_diagnostic(stage, outcome, reason)` で固定の `usage.outcome` を
+記録する。stageはadmission/recovery/collection、outcomeはsucceeded/pending/unavailable、
+reasonは数値復旧層の閉じた理由とnone/input_pendingだけを受理する。未知の文字列や
+オブジェクトは破棄し、payload・パス・例外本文を受け取らない。通常のスコープ、保存許可、
+容量、errorsモード、失敗非干渉の規則を共有する。method.endのsucceededはPythonの
+正常returnであり、この数値処理結果やcaught_upを代替しない。
+
 ```python
 from task_governance_tool.debug_log import span, record_exception
 

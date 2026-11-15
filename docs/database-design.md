@@ -932,6 +932,34 @@ uses existing rollback-journal preflight, query-only read transactions or a
 short `BEGIN IMMEDIATE`; no log reads occur under the writer. Setup quick/FK
 checks and exact schema/binding checks apply independently of main admission.
 
+<a id="numerical-crash-recovery"></a>
+
+`usage_repository` preserves a fixed reason for native SQLite failures. Only
+an exact `SQLITE_READONLY_ROLLBACK` before read admission succeeds produces a
+`UsageRecoveryRequired` observation, retaining that repository and the physical
+identity already checked before opening. This adds no healthy-path file read.
+The observation grants no write permission and is not a validity certificate.
+
+`usage_recovery` admits permitted Hook, accepted worker or explicit Setup work;
+all other readers continue to return numerical unavailability. On the failed
+read only, it checks the resolver-owned path/binding and takes the existing
+zero-wait execution lease. A service must first find valid unfinished intent
+with current roots, then recheck that intent under the lease. Merely starting
+the configured service cannot create recovery intent or repair storage.
+
+`usage_recovery_storage` compares physical identity before opening an
+existing-only read/write connection, rejects nonphysical or multiply linked
+database/journal entries and WAL, and uses query-only SQL in one read
+transaction. SQLite performs its own locked rollback before schema reads.
+Schema/binding admission is fresh on that connection and physical identity is
+checked again before returning. Only explicit Setup accepts an exact supported
+predecessor; its later initialization/migration remains separately owned.
+No application transaction updates numerical rows, and no journal is manually
+deleted. The original absolute deadline and connection wait apply; one failed
+recovery yields to a later opportunity without a new budget or local retry.
+Failed post-rollback validation does not imply that native rollback made no
+physical changes, nor authorize semantic repair.
+
 `sqlite_admission.structural_read` owns the lexical structural facts for an
 actual connection and its observed transaction epoch. `usage_repository._structure`
 compares exact DDL and all migration rows once per unchanged read; the separate

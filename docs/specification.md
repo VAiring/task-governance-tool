@@ -1165,6 +1165,14 @@ exception messages, source lines, locals and cause chains are omitted.
 The exact bounds and simple call examples are in the
 [logger design](logger-design.md#argument-policy).
 
+Numerical processing also records closed admission, recovery and collection
+outcomes through `usage.outcome` under the same enablement, admission, capacity
+and secret-protection rules. Fixed failure reasons distinguish required crash
+rollback, contention, permissions, budgets, physical replacement, journal,
+schema, binding and missing intent. Successful method return or neutral Hook
+output is not numerical collection success. These diagnostic events contain no
+source data or exception text and never alter the primary result.
+
 Repeated processing may use an explicit, bounded aggregate API that emits
 call counts, cumulative/maximum elapsed time and already-known item counts
 at operation exit, without per-iteration detail. Ordinary method ends may

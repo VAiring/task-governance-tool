@@ -742,7 +742,13 @@ Evidence status, and Viewer status describe durable post-command state.
 `not_present` for an admitted missing-store preview, `initialized` after
 publication, `migration_required` for exact schema 1 through 9 in preview, `migrated`
 after the atomic schema-1-through-9-to-10 transaction, `current` after validation, or `unavailable`.
-Write stages are `usage_initialize` and `usage_migrate`; completed writes are empty in preview. `error` is null
+Write stages are `usage_initialize`, `usage_migrate` and `usage_recover`;
+completed writes are empty in preview. A hot-journal preview remains
+`unavailable` and plans only `usage_recover`, since schema cannot yet be read.
+Explicit Setup uses the numerical crash-recovery boundary before its normal
+inspect/initialize sequence. Successful rollback and re-admission records
+`usage_recover`; any separately required migration is then reported separately.
+`error` is null
 except the fixed `usage_unavailable` for numerical failure. Core `ok`, errors,
 status and write lists remain about core setup: numerical failure does not
 roll back valid core state or require re-running a completed migration.
@@ -1122,7 +1128,13 @@ writer and immutable usage publisher. Delayed endpoint records, completed Tasks
 and previous participants are retried at later events. Interrupted/concurrent
 work remains replayable; stale batches do not rerun a Task command. Missing or
 invalid sources preserve observed totals with gaps. Existing schema10 is required:
-events never initialize, migrate, repair or rebind a database.
+events never initialize, migrate, semantically repair or rebind a database.
+Their already authorized numerical processing may perform the bounded
+[SQLite crash rollback](database-specification.md#numerical-usage-store) when
+read admission reports that exact requirement. General read-only operations
+remain write-free. A worker without valid accepted work cannot recover merely
+because collection is configured. Failed recovery preserves unfinished work
+for a later opportunity, without changing the event budget or Core gates.
 Saved partial tails and unread backlog remain visible as their existing fixed
 gaps in Task usage and published snapshots until later collection clears the
 source pending state. Hook silence alone never clears those gaps.

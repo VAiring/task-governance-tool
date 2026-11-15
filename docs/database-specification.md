@@ -970,12 +970,26 @@ Numerical collection uses independent schema 10 in the resolver-owned
 `current/taskgov-usage.sqlite`, not the main schema sequence. Explicit setup
 initializes an absent store, migrates exact schema 1 through 9, and validates
 current state. Normal reads and
-collection never initialize, migrate or repair it. Incompatible structure,
+collection never initialize, migrate or semantically repair it. Incompatible structure,
 WAL, corruption, contention or project/binding mismatch produces unavailable
 usage, never a core admission failure or a weakened quality gate. Existing
 core backup/restore does not copy this store or claim a paired numerical
 snapshot. Attribution revalidates Task/execution references against restored
 core state; immutable cycle-linked snapshots follow the contract below.
+
+After an exact native `SQLITE_READONLY_ROLLBACK` failure at read admission,
+an already permitted Hook, a worker with valid unfinished accepted intent, or
+explicit numerical Setup may make one existing-only read/write connection for
+SQLite's standard crash rollback. They hold the shared numerical execution
+lease, recheck the admitted physical file and rollback-journal preflight, and
+validate schema and binding afresh after rollback. No business SQL write, new
+store, schema repair, migration, rebind or manual journal removal belongs to
+this recovery. Setup's separately authorized initialize/migrate stage remains
+separate. A replaced or missing file, WAL, contention, permission failure or
+failed re-admission leaves usage unavailable/pending. No immediate retry loop
+or deadline reset is permitted. Healthy admission retains its ordinary read
+and adds neither a recovery writer nor whole-history validation. General
+read-only inspection and display preserve both database and journal bytes.
 
 Within one numerical read transaction, synchronous consumers share the exact
 schema and complete migration history admission separately from the admitted

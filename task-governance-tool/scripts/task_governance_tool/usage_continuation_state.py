@@ -18,12 +18,12 @@ from .state_paths import (create_exclusive_durable_file, create_physical_directo
 from .usage_values import UsageError
 
 MAX_BYTES = 8 * 1024 * 1024
-STATUSES = frozenset({"requested", "pending", "caught_up", "waiting_input",
+STATUSES = frozenset({"requested", "pending", "caught_up", "available_complete", "waiting_input",
                       "waiting_review", "budget_exhausted", "unavailable"})
 _HASH = re.compile(r"[0-9a-f]{64}\Z")
 _TOKEN = re.compile(r"[0-9a-f]{32}\Z")
 _FIELDS = {"v", "project_id", "binding_path_hash", "binding_generation", "roots",
-           "request", "round", "status", "intakes"}
+           "request", "round", "status", "intakes", "missing"}
 
 
 def _fail():
@@ -39,8 +39,16 @@ def _hex(value, pattern):
 
 
 def validate(value):
+    # Read-only compatibility: accepted v1 intent is normalized in memory;
+    # only the next authorized operational write publishes the v2 record.
+    if (type(value) is dict and type(value.get("v")) is int and value["v"] == 1
+            and set(value) == _FIELDS - {"missing"}
+            and value.get("status") != "available_complete"
+            and (not isinstance(value.get("round"), dict)
+                 or value["round"].get("reason") != "available_complete")):
+        value = {**value, "v": 2, "missing": {}}
     if (type(value) is not dict or set(value) != _FIELDS
-            or type(value["v"]) is not int or value["v"] != 1
+            or type(value["v"]) is not int or value["v"] != 2
             or type(value["project_id"]) is not str
             or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}", value["project_id"]) is None
             or not _hex(value["binding_path_hash"], _HASH)
@@ -49,6 +57,11 @@ def validate(value):
             or type(value["status"]) is not str or value["status"] not in STATUSES
             or type(value["roots"]) is not dict or set(value["roots"]) != {"sessions", "archive"}
             or any(not _hex(item, _HASH) for item in value["roots"].values())):
+        raise _fail()
+    from .usage_missing_inputs import MAX_MISSING
+    if (type(value["missing"]) is not dict or len(value["missing"]) > MAX_MISSING
+            or any(not _hex(key, _HASH) or not _integer(due)
+                   for key, due in value["missing"].items())):
         raise _fail()
     round_ = value["round"]
     if round_ is not None and (type(round_) is not dict
@@ -62,14 +75,18 @@ def validate(value):
             or not (round_["after_source"] == "" or _hex(round_["after_source"], _HASH))
             or type(round_["reason"]) is not str or round_["reason"] not in STATUSES - {"caught_up", "requested"}):
         raise _fail()
-    if value["status"] == "caught_up" and (round_ is None or round_["phase"] not in {"publish", "confirm"}):
+    if value["status"] in {"caught_up", "available_complete"} and (round_ is None or round_["phase"] not in {"publish", "confirm"}):
         raise _fail()
     from .usage_continuation_intake import validate as validate_intake
     if type(value["intakes"]) is not list or len(value["intakes"]) > 1024:
         raise _fail()
     for item in value["intakes"]:
         validate_intake(item)
-    if value["status"] == "caught_up" and value["intakes"]:
+    if value["status"] in {"caught_up", "available_complete"} and value["intakes"]:
+        raise _fail()
+    if value["status"] == "caught_up" and value["missing"]:
+        raise _fail()
+    if value["status"] == "available_complete" and not value["missing"]:
         raise _fail()
     return value
 
@@ -158,20 +175,33 @@ def request(root, target, roots, *, intake=None):
     intakes = [] if previous is None else list(previous["intakes"])
     if intake is not None and intake not in intakes:
         intakes.append(intake)
-    value = dict(v=1, project_id=target.project.project_id,
+    same_roots = previous is not None and previous["roots"] == roots
+    resume = same_roots and previous["status"] not in {"caught_up", "available_complete"}
+    missing = dict(previous["missing"]) if same_roots else {}
+    if intake is not None:
+        from .usage_continuation_intake import validate as validate_intake
+        validate_intake(intake)
+        if intake["locator"] is not None:
+            # Fresh admitted host metadata schedules only its own location now;
+            # it never certifies that location or resets other absence delays.
+            missing.pop(intake["locator"]["source_id"], None)
+    value = dict(v=2, project_id=target.project.project_id,
         binding_path_hash=target.binding_path_hash, binding_generation=target.binding_generation,
-        roots=dict(roots), request=uuid4().hex, round=None, status="requested", intakes=intakes)
+        roots=dict(roots), request=uuid4().hex,
+        round=previous["round"] if resume else None, status="requested", intakes=intakes,
+        missing=missing)
     write(root, value)
     return value
 
 
-def update(target, expected, *, round_, status, intakes=None):
+def update(target, expected, *, round_, status, intakes=None, missing=None):
     with lease(target, "state") as root:
         current = read(root, target)
         if current != expected:
             return None
         result = {**current, "round": round_, "status": status,
-                  "intakes": current["intakes"] if intakes is None else intakes}
+                  "intakes": current["intakes"] if intakes is None else intakes,
+                  "missing": dict(current["missing"] if missing is None else missing)}
         if result != current:
             write(root, result)
         return result

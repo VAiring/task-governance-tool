@@ -1205,8 +1205,20 @@ intakes and 8 MiB, refusing excess input without evicting accepted work.
 
 Catch-up acknowledgment requires a completed bounded source pass and current
 guarded numerical publication. Candidate rotation, an attempted operation or
-a successful Hook return cannot substitute. Missing/unreadable input, partial
-tails, pending reviewer admission and unavailable execution remain distinct
+a successful Hook return cannot substitute. A physically absent, admitted log
+location may instead enter a ten-minute recheck schedule. Its existing numbers
+and unknown coverage remain; it is never measured zero, collected or deleted.
+After obtainable work and guarded publication finish, `available_complete`
+distinguishes that processing result from `caught_up`. It requires no pending
+intake, reviewer, inventory, partial tail, invalid or unavailable work; missing
+participants must have retained, admitted missing locations. A participant with
+no known location remains unfinished. Neither result establishes final coverage.
+Missing locations do not consume ordinary body-read slots while deferred; an
+explicit current Hook hint may retry its own location sooner. Low-frequency
+rechecks resume the existing identity/header/cursor checks when files reappear,
+including replacement handling and the exact archive lookup. They do not infer
+validity from existence, mtime or size. Permission errors, invalid inputs, partial
+tails, pending reviewer admission and unavailable execution retain their separate
 unfinished conditions and yield before retry. One inaccessible candidate cannot
 prevent other accepted sources from progressing. Existing page/deadline policy,
 source deduplication, fresh Core checks and last-good publication remain intact.
@@ -1226,6 +1238,12 @@ restarting an already completed history audit; changed publication inputs return
 to reconciliation. No prior admission success is retained across slices.
 The runtime checkpoint is operational state, never a Receipt, sealed Evidence,
 Task gate, billing total or proof of current historical integrity.
+New admitted Hook intake still replaces the request identity and rejects stale
+acknowledgments, but preserves valid unfinished traversal under the same roots
+and project binding. Appended queue work extends its ceiling without restarting
+the completed prefix. Restart revalidates unfinished checkpoints before reuse;
+changed numerical identity/epoch or regressed generation restarts traversal.
+Absent-input delays are bounded scheduling metadata, not an admission cache.
 
 Stop, quiet files and elapsed time never establish final coverage. Disabled or
 untrusted hooks perform no collection. An absent/incompatible execution service

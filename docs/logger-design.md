@@ -83,7 +83,10 @@ args_truncatedで示し、コンテナーの超過は各値のtruncatedで示す
 
 数値処理は `usage_diagnostic(stage, outcome, reason)` で固定の `usage.outcome` を
 記録する。stageはadmission/recovery/collection、outcomeはsucceeded/pending/unavailable、
-reasonは数値復旧層の閉じた理由とnone/input_pendingだけを受理する。未知の文字列や
+reasonは数値復旧層の閉じた理由とnone/input_pendingを受理する。
+collectionだけはavailable_complete/missing_inputの組も受理し、取得可能分の処理完了と
+欠落分のunknownを区別する。他stageや別の組合せには使わず、errorsモードでは成功系と
+同様に省略する。これはcaught_upや完全な数値取得の証明ではない。未知の文字列や
 オブジェクトは破棄し、payload・パス・例外本文を受け取らない。通常のスコープ、保存許可、
 容量、errorsモード、失敗非干渉の規則を共有する。method.endのsucceededはPythonの
 正常returnであり、この数値処理結果やcaught_upを代替しない。

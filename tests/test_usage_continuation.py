@@ -600,7 +600,7 @@ class ContinuationTests(unittest.TestCase):
         report = self.repo.summary()
         self.assertIn("source_unreadable", report["diagnostics"])
         self.assertEqual(report["models"][0]["response_count"], 20)
-        self.assertIn("waiting_input", [result["status"] for result in results])
+        self.assertIn("available_complete", [result["status"] for result in results])
         from task_governance_tool.usage_evidence_service import refresh_usage
         published = refresh_usage(self.target)
         self.assertEqual(published["publication"], "current")
@@ -613,7 +613,8 @@ class ContinuationTests(unittest.TestCase):
         self.source_pass()
         self.path.rename(self.path.with_suffix(".unavailable"))
         result = self.run_slice()
-        self.assertEqual(result["status"], "waiting_input")
+        self.assertEqual(result["status"], "pending")  # Inventory is not finished yet.
+        self.assertTrue(result["missing"])
         report = self.repo.summary()
         self.assertEqual(report["models"][0]["response_count"], 21)
         self.assertIn("source_unreadable", report["diagnostics"])
@@ -827,7 +828,8 @@ class ServiceBoundaryTests(unittest.TestCase):
         helper.source.path.rename(helper.source.path.with_suffix(".unavailable"))
         with mock.patch.object(service, "repository_for", return_value=repository):
             result = continuation.run_slice(target, repository, roots, saved, deadline=monotonic() + 20)
-            self.assertEqual(result["status"], "waiting_input")
+            self.assertEqual(result["status"], "pending")  # No claim before inventory completes.
+            self.assertTrue(result["missing"])
             self.assertEqual(service.refresh_usage(target)["publication"], "current")
         with helper.reader() as core:
             period = repository.read(core, task_id=helper.task_id)["periods"][0]

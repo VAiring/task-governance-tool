@@ -1172,6 +1172,9 @@ rollback, contention, permissions, budgets, physical replacement, journal,
 schema, binding and missing intent. Successful method return or neutral Hook
 output is not numerical collection success. These diagnostic events contain no
 source data or exception text and never alter the primary result.
+Collection can also report the closed outcome `available_complete` with reason
+`missing_input`: obtainable work is processed but absent-source coverage remains
+unknown. It is neither `succeeded` nor proof that missing records were collected.
 
 Repeated processing may use an explicit, bounded aggregate API that emits
 call counts, cumulative/maximum elapsed time and already-known item counts

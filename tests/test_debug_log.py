@@ -57,6 +57,9 @@ class DebugLogTests(unittest.TestCase):
             log.usage_diagnostic("recovery", "succeeded", "none")
             log.usage_diagnostic("collection", "pending", "input_pending")
             log.usage_diagnostic("collection", "succeeded", "none")
+            log.usage_diagnostic("collection", "available_complete", "missing_input")
+            log.usage_diagnostic("admission", "available_complete", "missing_input")
+            log.usage_diagnostic("collection", "succeeded", "missing_input")
             log.usage_diagnostic(SECRET, "unavailable", "permission")
             log.usage_diagnostic("collection", "unavailable", SECRET)
             log.usage_diagnostic("collection", object(), "none")
@@ -64,7 +67,8 @@ class DebugLogTests(unittest.TestCase):
         outcomes = [row for row in records if row["event"] == "usage.outcome"]
         self.assertEqual([(row["stage"], row["outcome"], row["reason"]) for row in outcomes], [
             ("admission", "unavailable", "readonly_rollback"), ("recovery", "succeeded", "none"),
-            ("collection", "pending", "input_pending"), ("collection", "succeeded", "none")])
+            ("collection", "pending", "input_pending"), ("collection", "succeeded", "none"),
+            ("collection", "available_complete", "missing_input")])
         self.assertNotIn(SECRET, json.dumps(records))
 
     def test_usage_failure_is_visible_in_errors_mode_without_success_events(self):

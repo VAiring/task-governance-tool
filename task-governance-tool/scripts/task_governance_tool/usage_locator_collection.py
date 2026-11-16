@@ -85,7 +85,7 @@ def _pending(repository, target, roots, deadline, clock, gaps, *, limit=PENDING_
             gaps.add("usage_pending")
 
 
-def _direct(repository, roots, project, hint, work, ceiling):
+def _direct(repository, roots, project, hint, work, ceiling, *, deferred_sources=()):
     with repository.admitted_read() as admission:
         entries = list(repository.locator_page(locator_root_fingerprints(roots), limit=DIRECT_PAGE, admission=admission))
         if hint is not None and all(item.locator.source_id != hint.source_id for item in entries):
@@ -101,6 +101,10 @@ def _direct(repository, roots, project, hint, work, ceiling):
             work.gaps.add("usage_pending")
             break
         identity = entry.locator.source_id
+        if identity in deferred_sources and (hint is None or identity != hint.source_id):
+            if repository.begin_locator_attempt(entry) is not None:
+                work.gaps.add("source_unreadable")
+            continue
         try:
             source = source_from_locator(entry.locator, roots, project)
             sources[identity] = source
@@ -179,10 +183,11 @@ def _inventory(repository, target, roots, project, hint, work, *, collect=True):
                                     locator_root_fingerprints=locator_root_fingerprints(roots))
         if complete and repository.missing_sessions(sessions, position["cycle"]):
             work.gaps.add("source_unreadable")
+    return sessions
 
 
 def collect_located(repository, target, payload, roots, project, thread, deadline, *, limit, current_limit, clock,
-                    capture=True, hint=None, inventory=True, resume_audits=False):
+                    capture=True, hint=None, inventory=True, resume_audits=False, deferred_sources=()):
     """No stage resets the deadline; failed discovery cannot discard direct work."""
     from task_governance_tool.debug_log import aggregate
     work = IngestWork(repository, (), thread, deadline, limit=limit, current_limit=current_limit, clock=clock,
@@ -211,7 +216,7 @@ def collect_located(repository, target, payload, roots, project, thread, deadlin
     try:
         # Reserve source slots for inventory while serving known locations first.
         with aggregate(_direct):
-            _direct(repository, roots, Path(project), hint, work, max(1, limit - 4))
+            _direct(repository, roots, Path(project), hint, work, max(1, limit - 4), deferred_sources=deferred_sources)
     except UsageError as error:
         work.gaps.add(error.code)
     try:

@@ -25,6 +25,9 @@ native SQL dispatch, connection bypass or core writer is added.
 
 usage_continuation_repository borrows the same admitted observed numerical
 connection for bounded traversal. Operational state adds no SQL opener.
+usage_recovery_storage's existing query-only rollback admission uses
+sqlite_connection.connect_existing, retaining the observed connection for its
+PRAGMA and transaction start; no new dispatch was added by absence scheduling.
 
 protection_repository reads isolated copies through sqlite_connection's observed
 reader. Source copying borrows the existing backup/Usage repositories; the

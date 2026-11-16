@@ -390,8 +390,12 @@ stage; they grant no participation. A pending discovery page yields to the finit
 source pass, whose committed attempt watermarks permit that page to advance on
 the next inventory opportunity. The page's original cycle stays pending until
 completed, and publication alone cannot acknowledge incomplete discovery.
-Missing-source diagnostics from a completed inventory remain in the round's
-unfinished reason through subsequent source traversal and guarded publication.
+Missing-source diagnostics from a completed inventory remain numerical gaps;
+confirmation reconstructs unlocated participant coverage from its fresh registry
+and distinguishes deferred known locations from other unfinished input.
+Inventory also retains an unfinished reason when its own admitted participant
+set has neither a source nor a current-root location; a later publication view
+cannot erase that earlier unlocated-input observation.
 After a guarded publication observes no retained intake or pending reviewer,
 the same request can resume that discovery page directly; a new Hook supersedes
 the request and rejects its old scheduling CAS.
@@ -401,7 +405,7 @@ certificate is cached, numerical unit is split, or page/Hook budget is extended.
 `DatabaseTarget.resolved_usage_runtime` derives `current/usage/runtime` from
 the existing fixed resolver. `usage_continuation_state.py` owns only
 `continuation.json`, reserved `.continuation-next.json` and the `state.lock`,
-`execution.lock`, `service.lock` OS leases there. The ASCII version-one record
+`execution.lock`, `service.lock` OS leases there. The ASCII record
 has closed project/binding/root identities, a random coalesced request identity,
 pending intake metadata, traversal checkpoint and fixed status. Duplicate keys,
 nonphysical/linklike entries, wrong bindings, unsupported fields or excess size
@@ -410,12 +414,22 @@ uses atomic replace under the state lease; only that reserved interrupted
 temporary is recoverable. This adds no numerical schema migration. Runtime
 intent is not part of database backups, sealed Evidence or recovery proof.
 
+The current operational record is version two, adding a closed map of at most
+16,384 absent source IDs to integer UTC recheck times; the 8 MiB bound still
+applies. Version-one intent is strictly validated and normalized in memory with
+an empty map; read-only access never rewrites it. The next authorized operational
+write uses version two. A full map keeps excess sources unfinished rather than
+evicting accepted entries or claiming completion. Root changes discard these
+scheduling hints. A new request preserves valid unfinished traversal but always
+gets a fresh request identity. Its old CAS cannot acknowledge the new intake.
+
 `usage_continuation_repository.py` uses the existing schema-10 repository for
 finite inventory/source traversal. A checkpoint binds the numerical epoch,
 physical/schema/algorithm identity and nonregressing generation, inventory
 cycle and indexed source queue ceiling/cursor. It is never an admission cache.
 Actual collection results, not attempt counters, determine completion; failed
-passes retry with bounded delay. Newly promoted sources extend the next pass.
+passes retry with bounded delay. Newly promoted or queue-rotated sources extend
+the current pass ceiling without resetting its completed prefix.
 Continuation resumes an unfinished prefix-audit goal but does not start another
 full audit of an already finished goal each slice. Later real events can begin
 the next audit. This preserves the existing deferred-integrity meaning.
@@ -436,7 +450,8 @@ guard readers remain open. A timeout retains confirmation; a rejected publicatio
 basis returns to publication. No file identity, index or admission result is
 retained between opportunities, and confirmation does not prepare a new audit.
 Operational CAS acknowledges only the exact request it consumed. Process restart
-reestablishes traversal while preserving committed numerical positions.
+preserves unfinished traversal subject to the next fresh checkpoint validation;
+terminal results are reconsidered while preserving committed numerical positions.
 Each completed source opportunity saves its operational frontier before another
 deadline-checked database operation. A later timeout or stop cannot discard that
 frontier. This save does not refresh an identity certificate or establish catch-up;
@@ -454,6 +469,31 @@ Every non-budget source failure commits the existing attempt watermark before
 advancing that frontier, including a candidate never admitted as a source. This
 allows its inventory page to advance; neither the attempt nor queue movement
 certifies successful ingestion. Budget interruption still retains the source.
+
+`usage_continuation_sources.py` owns finite source opportunities and
+`usage_missing_inputs.py` owns absence scheduling. Only a missing-file result
+after current-root physical locator admission can defer a location; generic
+unreadability, access denial or invalid identity cannot. Existing gap writers
+retain known totals and unknown coverage. An attempt watermark releases inventory
+page coverage without advancing the data cursor. Each slice visits at most 128
+locations and starts at most eight body-work opportunities under the unchanged
+deadline. Deferred entries receive no file read or numerical writer; their
+operational frontier is batched. Real opportunities retain individual checkpoints.
+The normal Hook rotates deferred direct candidates without body work, while its
+explicit current hint remains eligible for immediate normal validation.
+
+Absence schedules use 600-second UTC deadlines. Expiry or an implausibly distant
+deadline after clock rollback permits another bounded check; process restart does
+not restart each absence delay. A reappearing location leaves the map and follows
+normal audit/ingest/replay. Exact archive counterparts can be enqueued without
+clearing the original gap. Confirmation resolves missing participant coverage
+using primary-key lookups of the deferred locations on its fresh numerical reader.
+Only completed discovery and source/publication work with no other pending reason
+can produce `available_complete`; the missing map prevents `caught_up`.
+While parked in that state, the observer polls accepted intent but performs no
+numerical work until a recheck is due or a new Hook request arrives. This status
+does not clear any Task or snapshot diagnostic. Partial tails, unknown participant
+admission and all other failures retain their separate retry behavior.
 
 `usage_continuation_service.py` runs one daemon thread within the already
 configured project MCP process, started/closed by `project_server.py` independently

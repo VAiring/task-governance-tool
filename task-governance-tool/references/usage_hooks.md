@@ -136,8 +136,13 @@ not authorize those writes.
 After actual admitted Hook intake, the compatible project MCP service continues
 known backlog without another event while it remains available. Finite stable
 obtainable input and work units that can commit within a slice are required.
-Missing input, partial tails and pending reviewer admission remain unfinished;
-the service yields before retry and preserves committed progress across restart.
+Physically missing known logs retain unknown coverage and observed totals, with
+low-frequency rechecks. Obtainable work may finish as `available_complete`
+(`missing_input` in enabled diagnostics); this is not full catch-up or complete
+data. Reappearing logs go through normal validation and collection. Partial tails,
+unlocated participants and pending reviewer admission remain unfinished.
+The service yields before retry and preserves committed progress across restart;
+new intake preserves valid unfinished traversal while replacing its request ID.
 Hook return and numerical catch-up are separate facts. Neither proves final
 coverage, billing or historical integrity.
 

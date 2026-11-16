@@ -111,10 +111,11 @@ class UsageServiceObserver:
                             with state.lease(target, "state", create=True) as root:
                                 previous = state.read(root, target)
                                 if previous is not None and previous["roots"] == locator_root_fingerprints(roots):
-                                    # Re-admit physical stores after process restart. Numerical
-                                    # cursors/queues keep their committed positions; only the
-                                    # operational traversal is restarted (including a restore).
-                                    state.write(root, {**previous, "round": None, "status": "pending"})
+                                    # Unfinished checkpoints are freshly fenced by run_slice.
+                                    # Recheck terminal results after restart (including restore),
+                                    # retaining absent-input delays and numerical positions.
+                                    if previous["status"] in {"caught_up", "available_complete"}:
+                                        state.write(root, {**previous, "round": None, "status": "pending"})
                             break
                         except ArtifactLockError as error:
                             if not error.contended:
@@ -143,7 +144,10 @@ class UsageServiceObserver:
             try:
                 with state.lease(target, "state") as root:
                     expected = state.read(root, target)
-                if expected is not None and expected["status"] != "caught_up":
+                from .usage_missing_inputs import ready
+                parked = (expected is not None and expected["status"] == "available_complete"
+                          and not ready(expected["missing"]))
+                if expected is not None and expected["status"] != "caught_up" and not parked:
                     with self._scope():
                         deadline = monotonic() + EVENT_SECONDS
                         admitted = self._admit(deadline)
@@ -161,9 +165,11 @@ class UsageServiceObserver:
                             usage_diagnostic("collection", "unavailable", failure(error))
                             raise
                         status = result["status"] if result is not None else "pending"
-                        outcome = ("succeeded" if status == "caught_up" else
+                        outcome = ("available_complete" if status == "available_complete" else
+                                   "succeeded" if status == "caught_up" else
                                    "unavailable" if status == "unavailable" else "pending")
-                        usage_diagnostic("collection", outcome, "none" if outcome == "succeeded" else
+                        usage_diagnostic("collection", outcome, "missing_input" if outcome == "available_complete" else
+                                         "none" if outcome == "succeeded" else
                                          "unavailable" if outcome == "unavailable" else "input_pending")
                         if result is not None and result["status"] in {"waiting_input", "waiting_review", "unavailable"}:
                             delay = max(self._poll_seconds, RETRY_SECONDS)

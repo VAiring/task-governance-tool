@@ -25,8 +25,8 @@ def collect_hook(repository, target, payload, roots, project, thread, deadline, 
     repository.deadline = deadline
     admit(repository, target, source="hook")
     with state.lease(target, "state", create=True) as root:
-        state.request(root, target, locator_root_fingerprints(roots),
-                      intake=capture(payload, roots, project, thread))
+        request = state.request(root, target, locator_root_fingerprints(roots),
+                                intake=capture(payload, roots, project, thread))
         metadata_deadline = min(deadline, monotonic() + min(1.0, max(0, deadline - monotonic()) / 4))
         repository.deadline = metadata_deadline
         try:
@@ -37,8 +37,10 @@ def collect_hook(repository, target, payload, roots, project, thread, deadline, 
             repository.deadline = deadline
     try:
         with state.lease(target, "execution"):
+            from .usage_missing_inputs import deferred
             count, observed = collect_located(repository, target, payload, roots, project, thread, deadline,
-                limit=limit, current_limit=current_limit, clock=monotonic, capture=False, hint=hint)
+                limit=limit, current_limit=current_limit, clock=monotonic, capture=False, hint=hint,
+                deferred_sources={key for key in request["missing"] if deferred(request["missing"], key)})
             gaps.update(observed)
             gaps.update(refresh_usage(target, deadline=deadline)["diagnostics"])
             return count, gaps
@@ -60,6 +62,14 @@ def run_slice(target, repository, roots, expected, *, deadline, stopped=lambda: 
     with state.lease(target, "execution"):
         if stopped():
             return expected
+        from .usage_missing_inputs import ready
+        if expected["status"] == "available_complete":
+            if not ready(expected["missing"]):
+                return state.update(target, expected, round_=expected["round"], status="available_complete")
+            saved = state.update(target, expected, round_=None, status="pending")
+            if saved is None:
+                return None
+            expected = saved
         round_ = expected["round"]
         if round_ is None:
             round_ = progress.begin(repository)
@@ -74,7 +84,7 @@ def run_slice(target, repository, roots, expected, *, deadline, stopped=lambda: 
                 raise
             # The current admitted epoch, never the old cursor, owns restart.
             round_ = progress.begin(repository)
-            saved = state.update(target, expected, round_=round_, status="pending")
+            saved = state.update(target, expected, round_=round_, status="pending", missing={})
             if saved is None:
                 return None
             expected = saved
@@ -109,7 +119,7 @@ def run_slice(target, repository, roots, expected, *, deadline, stopped=lambda: 
             _pending(repository, target, roots, deadline, monotonic, set(), limit=1)
             return saved
         if round_["phase"] in {"sources", "publish", "confirm"} and progress.added_sources(repository, round_, expected["roots"]):
-            round_ = {**progress.source_round(repository, round_), "reason": round_["reason"]}
+            round_ = progress.extend_sources(repository, round_)
         if round_["phase"] == "inventory":
             saved = state.update(target, expected, round_=progress.source_round(repository, round_), status="pending")
             if saved is None:
@@ -127,61 +137,21 @@ def run_slice(target, repository, roots, expected, *, deadline, stopped=lambda: 
                         pass
                 work = IngestWork(repository, (), None, deadline, limit=16, current_limit=0,
                                   clock=monotonic, resume_audits=True)
-                _inventory(repository, target, roots, target.project.canonical_repo, hint, work, collect=False)
-                if work.gaps - {"usage_pending", "prefix_verification_deferred", "evidence_verification_deferred"}:
+                participants = _inventory(repository, target, roots, target.project.canonical_repo, hint, work, collect=False)
+                # Missing-participant coverage is reconstructed by confirmation
+                # against its fresh admitted registry and deferred locations.
+                if (work.gaps - {"usage_pending", "source_unreadable", "prefix_verification_deferred", "evidence_verification_deferred"}
+                        or ("source_unreadable" in work.gaps
+                            and progress.unlocated_participant(repository, participants, expected["roots"]))):
                     return state.update(target, saved, round_={**saved["round"], "reason": "waiting_input"},
                                         status="pending")
             return saved
         if round_["phase"] == "sources":
-            entries = progress.sources(repository, round_, expected["roots"])
-            for entry in entries:
-                if stopped() or monotonic() >= deadline:
-                    break
-                outcome = "pending"
-                try:
-                    source = source_from_locator(entry.locator, roots, target.project.canonical_repo)
-                    audit = repository.collect_source(source, lane="audit", resume_audit_only=True)
-                    result = repository.collect_source(source, record_attempt=True)
-                    if (audit.get("replay") or result.get("replay") or audit["pending"] != "none"
-                            or result["pending"] == "more_records"):
-                        outcome = "budget_exhausted"
-                    elif result["pending"] == "partial_tail":
-                        outcome = "waiting_input"
-                except UsageError as error:
-                    outcome = "budget_exhausted" if error.code == "usage_pending" else "waiting_input"
-                    if error.code != "usage_pending":
-                        # Failed non-budget attempts cover discovery candidates,
-                        # never numerical data. Without this, one invalid header
-                        # pins the inventory page before later obtainable files.
-                        repository.attempted(entry.locator.source_id)
-                    if error.code not in {"usage_pending", "cursor_stale", "source_changed"}:
-                        identity = entry.locator.source_id
-                        if identity in repository.known_sources((identity,)):
-                            repository.record_gap(identity, entry.locator.thread_id, error.code)
-                if outcome == "budget_exhausted":
-                    # Retry this unfinished source first in a fresh slice. Moving
-                    # past it would repeat earlier successes on every failed pass,
-                    # permanently leaving only their residual budget for this unit.
-                    # Its numerical cursor retains any partial committed progress.
-                    return state.update(target, expected, round_=round_, status=outcome)
-                # A checkpoint follows the observed result, never queue rotation.
-                round_ = {**round_, "after_order": entry.queue_order,
-                          "after_source": entry.locator.source_id,
-                          "reason": outcome if outcome != "pending" else round_["reason"]}
-                # Keep each completed opportunity even if the next admission or
-                # publication exhausts the deadline. This operational frontier
-                # makes no validity/catch-up claim: the next slice rechecks its
-                # saved identity/epoch, and publication retains its fresh guard.
-                saved = state.update(target, expected, round_=round_, status="pending")
-                if saved is None:
-                    return None
-                expected = saved
-            if not stopped() and monotonic() < deadline and not progress.sources(repository, round_, expected["roots"], limit=1):
-                round_ = {**round_, "phase": "publish"}
-                saved = state.update(target, expected, round_=round_, status="pending")
-                if saved is None:
-                    return None
-                expected = saved
+            from .usage_continuation_sources import run
+            saved = run(target, repository, roots, expected, round_, deadline=deadline, stopped=stopped, clock=monotonic)
+            if saved is None or saved["status"] == "budget_exhausted":
+                return saved
+            expected, round_ = saved, saved["round"]
         if stopped() or monotonic() >= deadline:
             return state.update(target, expected, round_=round_,
                                 status="pending" if stopped() else "budget_exhausted")
@@ -205,7 +175,8 @@ def run_slice(target, repository, roots, expected, *, deadline, stopped=lambda: 
             try:
                 with confirm_usage(target, repository, deadline=deadline) as (connection, recheck):
                     admitted = True
-                    status, checked = progress.completion(repository, round_, expected["roots"], expected["intakes"], connection)
+                    status, checked = progress.completion(repository, round_, expected["roots"], expected["intakes"], connection,
+                                                          missing=expected["missing"])
                     recheck()
                     return state.update(target, expected, round_=checked, status=status)
             except UsageError as error:

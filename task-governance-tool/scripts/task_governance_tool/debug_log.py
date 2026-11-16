@@ -295,8 +295,10 @@ def usage_diagnostic(stage, outcome, reason):
     from .usage_values import USAGE_FAILURE_REASONS
     try:
         if (type(stage) is not str or stage not in {"admission", "recovery", "collection"}
-                or type(outcome) is not str or outcome not in {"succeeded", "pending", "unavailable"}
-                or type(reason) is not str or reason not in USAGE_FAILURE_REASONS | {"none", "input_pending"}):
+                or type(outcome) is not str or outcome not in {"succeeded", "pending", "unavailable", "available_complete"}
+                or type(reason) is not str or reason not in USAGE_FAILURE_REASONS | {"none", "input_pending", "missing_input"}
+                or (outcome == "available_complete" and (stage != "collection" or reason != "missing_input"))
+                or (reason == "missing_input" and outcome != "available_complete")):
             return
         session = _current.get()
         if session is not None and session.usable(active=True):

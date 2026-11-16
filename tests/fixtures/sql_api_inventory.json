@@ -493,8 +493,8 @@
     },
     "usage_continuation_repository.py": {
       "attributes": {
-        "execute": 8,
-        "fetchone": 7
+        "execute": 10,
+        "fetchone": 5
       },
       "kind": "observed_connection"
     },
@@ -709,6 +709,12 @@
       "attributes": {
         "execute": 19,
         "fetchone": 4
+      },
+      "kind": "observed_connection"
+    },
+    "usage_recovery_storage.py": {
+      "attributes": {
+        "execute": 2
       },
       "kind": "observed_connection"
     },

@@ -45,7 +45,7 @@ _CALL_ID_KEYS = ("openai/toolCallId", "openai/tool_call_id", "codexCallId",
 _CONFIG_FIELDS = {
     "version", "id", "kind", "name", "prompt", "status", "rrule",
     "target_thread_id", "created_at", "updated_at", "model", "reasoning_effort",
-    "notification_policy",
+    "notification_policy", "model_prompt_sha256",
 }
 
 
@@ -509,6 +509,11 @@ def _read_config(codex_home: Path, automation_id: str, parent_id: str,
                     "target_thread_id", "created_at", "updated_at"}
         if set(obj) - _CONFIG_FIELDS or not required <= set(obj):
             _fail("automation_config_invalid")
+        if "model_prompt_sha256" in obj:
+            auxiliary_hash = obj["model_prompt_sha256"]
+            if type(auxiliary_hash) is not str or re.fullmatch(r"[0-9a-f]{64}", auxiliary_hash) is None:
+                _fail("automation_config_invalid")
+            # Host-owned metadata, not an identity field, model override or receipt.
         if (type(obj["version"]) is not int or obj["version"] != 1
                 or obj["id"] != automation_id or obj["kind"] != "heartbeat"
                 or obj["status"] not in {"ACTIVE", "PAUSED"}

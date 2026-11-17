@@ -101,12 +101,15 @@ class ManagedHostTests(unittest.TestCase):
             root = Path(directory)
             host = self.host(root)
             values = {**config_values(), "status": "PAUSED", "prompt": fallback_prompt(TASK)}
-            write_config(root, values)
             with mock.patch.object(host, "_call", return_value=("card",)):
-                self.assertEqual("PAUSED", host.verify_created(RULE).status)
-                write_config(root, {**values, "prompt": "unrelated"})
-                with self.assertRaises(HostAdapterError):
-                    host.verify_created(RULE)
+                for extra in ({}, {"model_prompt_sha256": "a" * 64}):
+                    write_config(root, {**values, **extra})
+                    self.assertEqual("PAUSED", host.verify_created(RULE).status)
+                    for change in ({"prompt": "unrelated"}, {"rrule": "FREQ=DAILY;COUNT=2"},
+                                   {"status": "ACTIVE"}, {"target_thread_id": OTHER}):
+                        write_config(root, {**values, **extra, **change})
+                        with self.subTest(extra=extra, change=change), self.assertRaises(HostAdapterError):
+                            host.verify_created(RULE)
 
     def test_untruncated_report_receipt_requires_exact_body(self):
         host = self.host()
@@ -436,6 +439,106 @@ class ManagedHostTests(unittest.TestCase):
         with mock.patch.object(host, "_json_call") as call:
             self.assertIsNone(host.observe_receipt(OTHER, ORIGINAL, deadline=time.monotonic() - 1))
             call.assert_not_called()
+
+
+class ManagedConfigCompatibilityTests(unittest.TestCase):
+    """Real config adapter, request journals and workers; only public host I/O is fake."""
+
+    def fixture(self, with_hash):
+        fixture = ManagedFlowTests()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        original_factory = fixture.factory
+        home = fixture.root / "codex-home"
+
+        def factory(**kwargs):
+            simulated = original_factory(**kwargs)
+            if getattr(simulated, "config_peer_installed", False):
+                return simulated
+            simulated.config_peer_installed = True
+            actual = ManagedHost(metadata=kwargs["metadata"], task_id=kwargs["task_id"],
+                automation_id=kwargs["automation_id"], codex_home=home,
+                confirmed_timezone="UTC", timezone_source="host_node_intl",
+                reviewer_ids=[CHILD], command=["offline-peer"])
+            values = {}
+
+            def call(name, args, **unused):
+                self.assertEqual(name, "automation_update")
+                self.assertNotIn("model_prompt_sha256", args)
+                mode = args["mode"]
+                if mode == "create":
+                    fixture.effects.append("create")
+                    identity = "managed-" + str(len(fixture.hosts) + 1)
+                    values.update(config_values(), id=identity, name=args["name"], prompt=args["prompt"],
+                                  status=args["status"], rrule=args["rrule"])
+                    values.pop("notification_policy")
+                    if with_hash:
+                        values["model_prompt_sha256"] = "a" * 64
+                    simulated.automation_id = identity
+                    fixture.hosts[identity] = simulated
+                else:
+                    self.assertEqual(args["id"], values["id"])
+                path = home / "automations" / values["id"] / "automation.toml"
+                if mode == "view":
+                    return ("card",)
+                if mode == "update":
+                    action = "pause" if args["status"] == "PAUSED" else "arm"
+                    fixture.effects.append(action)
+                    values.update(status=args["status"], rrule=args["rrule"], updated_at=values["updated_at"] + 1)
+                if mode == "delete":
+                    fixture.effects.append("delete")
+                    path.unlink()
+                    if fixture.fail_delete:
+                        raise HostAdapterError("host_call_failed")  # Effect happened, response lost.
+                    return ("card", json.dumps({"automationId": values["id"], "mode": "delete", "deleteStatus": "deleted",
+                        "snapshot": {"kind": "heartbeat", "name": values["name"], "rrule": values["rrule"]}}),)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("\n".join(f"{key} = {json.dumps(value)}" for key, value in values.items()), encoding="utf-8")
+                if (mode == "create" and fixture.fail_create) or (mode == "update" and fixture.fail_arm):
+                    raise HostAdapterError("host_call_failed")
+                return ("card", json.dumps({"automationId": values["id"], "mode": mode, "status": values["status"]}))
+
+            actual._call = call
+            for method in ("create_heartbeat", "verify_created", "view_heartbeat", "update_heartbeat", "delete_heartbeat"):
+                setattr(simulated, method, getattr(actual, method))
+            return simulated
+
+        fixture.factory = factory
+        fixture.session = fixture.make()
+        return fixture
+
+    def test_current_and_legacy_configs_cover_lifecycle_stop_and_rewait(self):
+        for with_hash in (False, True):
+            for scenario in (
+                    "test_one_wait_call_covers_create_prepare_start_send_and_receipt",
+                    "test_explicit_stop_deletes_known_timer_and_stays_stopped",
+                    "test_normal_ten_minute_check_rewait_cleans_and_creates_with_one_call",
+                    "test_restart_and_inspection_never_resume_worker"):
+                with self.subTest(with_hash=with_hash, scenario=scenario):
+                    fixture = self.fixture(with_hash)
+                    try:
+                        getattr(fixture, scenario)()
+                    finally:
+                        fixture.doCleanups()
+
+    def test_current_config_never_recovers_unknown_effects_by_replay(self):
+        for scenario in ("test_unknown_creation_blocks_duplicates_and_restart",
+                         "test_unknown_arm_blocks_competing_cleanup_or_new_wait",
+                         "test_unknown_delete_never_sends_or_creates_replacement"):
+            with self.subTest(scenario=scenario):
+                fixture = self.fixture(True)
+                try:
+                    getattr(fixture, scenario)()
+                finally:
+                    fixture.doCleanups()
+
+    def test_current_config_failed_preparation_cleans_known_effect_once(self):
+        fixture = self.fixture(True)
+        with mock.patch.object(fixture.session, "_session", side_effect=HostAdapterError("invalid_host_configuration")):
+            result = fixture.call()
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(fixture.effects, ["create", "delete"])
+        self.assertEqual(fixture.inspect()["phase"], "closed")
 
 
 class ManagedFlowTests(unittest.TestCase):

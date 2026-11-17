@@ -2156,6 +2156,17 @@ rule, PAUSED status and fixed prompt. No assumed slug or display text supplies
 an ID. Missing/malformed/lost create results stay unknown and prevent another
 creation, including across process restart.
 
+The shared reservation-config reader also accepts the optional host-owned
+`model_prompt_sha256` field, only as a string of exactly 64 lowercase hexadecimal
+characters. Its absence remains supported. This auxiliary metadata is neither
+a model override nor Taskgov identity or success evidence; Taskgov does not
+derive or validate its relationship to the prompt, retain it in snapshots, or
+send it in create/update requests. All other unknown fields, missing required
+fields, binding mismatches and unsafe physical files remain rejected. The same
+reader applies to creation verification, preparation/start, updates, stop/delete,
+failure cleanup, compatible controls and diagnosis. Admitting this field does
+not settle a previously unknown attempt or authorize replay or replacement.
+
 Each confirmed reservation owns an immutable association under the resolver's
 canonical `.taskgov/current/review-wait/` subtree; its direct-state sibling
 retains timer and send intent/result separately. Preparation rechecks basis and

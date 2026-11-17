@@ -151,7 +151,7 @@
     "scripts/task_governance_tool/review_wait_runtime/review_wait_controller.py": "sha256:10c5f74522d20c8e063254f7ecb2c7efcdee4f2539bbe9390e0cf1521eee94d2",
     "scripts/task_governance_tool/review_wait_runtime/review_wait_direct.py": "sha256:bb38333bc5cc2417c8f418a137f318eef5e47d23ae524ec4745086d73c7fd962",
     "scripts/task_governance_tool/review_wait_runtime/review_wait_direct_repository.py": "sha256:a976fbed851adde0a7515ca470505ba3be60b4bb8f853d0253c409b4c43d6442",
-    "scripts/task_governance_tool/review_wait_runtime/review_wait_host.py": "sha256:30569a239666c68234af607c85770011b9d42beb6bd665a40ad0215771059319",
+    "scripts/task_governance_tool/review_wait_runtime/review_wait_host.py": "sha256:168ba074a88150bb67b67c2a1b84046144ac74d8d596c5295cabbd1f8f439550",
     "scripts/task_governance_tool/review_wait_runtime/review_wait_mcp_relay.py": "sha256:1a2cb7928b122dac331bfca2fd82c0c3e6261bee8cc95a17d5e04603b8c29c57",
     "scripts/task_governance_tool/review_wait_runtime/review_wait_observer.py": "sha256:5d5ceb0e2c912f62f9a5332afaa561db8faf44c03f5c7d1a20e8037b1585e510",
     "scripts/task_governance_tool/review_wait_runtime/review_wait_repository.py": "sha256:3b83683312283199fac89bdb01dbb473f749354d95f97b4f04fea02abe4cd7bb",

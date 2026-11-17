@@ -287,6 +287,51 @@ class ConfigFixture:
 
 
 class ConfigTests(ConfigFixture, unittest.TestCase):
+    def test_optional_host_hash_is_not_retained_or_used_as_identity(self):
+        original = self.read()
+        for digest in ("0" * 64, "abcdef0123456789" * 4):
+            write_config(self.home, {**config_values(), "model_prompt_sha256": digest})
+            self.assertEqual(self.read(), original)
+            self.assertNotIn("model_prompt_sha256", json.dumps(asdict(self.read())))
+        write_config(self.home, config_values())
+        self.assertEqual(self.read(), original)
+
+    def test_optional_host_hash_requires_exact_bounded_shape(self):
+        for value in ("", "a" * 63, "a" * 65, "A" * 64, "g" * 64,
+                      "a" * 64 + "\n", 1, True, [], ["a" * 64]):
+            write_config(self.home, {**config_values(), "model_prompt_sha256": value})
+            with self.subTest(value=value), self.assertRaisesRegex(
+                    host.HostAdapterError, "^automation_config_invalid$"):
+                self.read()
+        # A TOML table is also invalid, with no rejected value in the error.
+        write_config(self.home, config_values())
+        with self.path.open("a", encoding="utf-8") as stream:
+            stream.write('[model_prompt_sha256]\nprivate = "' + SECRET + '"\n')
+        with self.assertRaisesRegex(host.HostAdapterError, "^automation_config_invalid$"):
+            self.read()
+
+    def test_host_hash_does_not_relax_required_or_identity_fields(self):
+        values = {**config_values(), "model_prompt_sha256": "a" * 64}
+        for key in ("version", "id", "kind", "name", "prompt", "status", "rrule",
+                    "target_thread_id", "created_at", "updated_at"):
+            write_config(self.home, {k: v for k, v in values.items() if k != key})
+            with self.subTest(missing=key), self.assertRaisesRegex(
+                    host.HostAdapterError, "^automation_config_invalid$"):
+                self.read()
+        for changes in ({"other_hash": "a" * 64}, {"id": "other"}, {"target_thread_id": OTHER},
+                        {"kind": "cron"}, {"version": 2}, {"status": "DELETED"},
+                        {"model": "other-model"}, {"reasoning_effort": "high"},
+                        {"notification_policy": "unknown"}, {"updated_at": 0}):
+            write_config(self.home, {**values, **changes})
+            with self.subTest(changes=changes), self.assertRaisesRegex(
+                    host.HostAdapterError, "^automation_config_invalid$"):
+                self.read()
+        for changes in ({"prompt": "changed"}, {"name": "changed"}):
+            write_config(self.home, values)
+            original = self.read().snapshot.identity_digest
+            write_config(self.home, {**values, **changes})
+            self.assertNotEqual(self.read().snapshot.identity_digest, original)
+
     def test_exact_file_has_no_prompt_or_inferred_due_in_public_snapshot(self):
         snapshot = self.read().snapshot
         self.assertEqual(snapshot.rule, RULE)
@@ -489,7 +534,7 @@ class ExternalDeletionEvidenceTests(ConfigFixture, unittest.TestCase):
 
 
 class AdmissionAndUpdateTests(ConfigFixture, unittest.TestCase):
-    def simulated(self, *, stale_after_view=False, wrong_receipt=False):
+    def simulated(self, *, stale_after_view=False, wrong_receipt=False, auxiliary_after=None):
         service = adapter(self.home)
         calls = []
 
@@ -506,13 +551,24 @@ class AdmissionAndUpdateTests(ConfigFixture, unittest.TestCase):
             self.assertEqual(args["prompt"], SECRET)
             self.assertEqual(args["targetThreadId"], PARENT)
             self.assertEqual(args["notificationPolicy"], "failed_runs_only")
-            write_config(self.home, {**config_values(), "rrule": args["rrule"],
+            extra = {} if auxiliary_after is None else {"model_prompt_sha256": auxiliary_after}
+            write_config(self.home, {**config_values(), **extra, "rrule": args["rrule"],
                                     "status": args["status"], "updated_at": 3})
             return ("Updated automation in the app.", json.dumps({"automationId": "wrong" if wrong_receipt else AUTOMATION,
                     "mode": "update", "status": args["status"]}))
 
         service._call = mock.Mock(side_effect=call)
         return service, calls
+
+    def test_auxiliary_change_on_update_is_not_identity_or_outbound_data(self):
+        for auxiliary_after in (None, "b" * 64):
+            write_config(self.home, {**config_values(), "model_prompt_sha256": "a" * 64})
+            service, calls = self.simulated(auxiliary_after=auxiliary_after)
+            before = service.view_heartbeat()
+            after = service.update_heartbeat(before, "shorten")
+            self.assertEqual(after.identity_digest, before.identity_digest)
+            self.assertEqual(after.rule, host.SHORTEN_RULE)
+            self.assertTrue(all("model_prompt_sha256" not in args for _, args in calls))
 
     def test_updates_preserve_identity_and_read_back_exact_status_rule(self):
         for action, rule, expected_status, expected_rule in [

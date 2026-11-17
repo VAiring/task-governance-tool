@@ -1884,6 +1884,16 @@ Unknown creation remains durable and cannot be retried or replaced. Fresh
 before the existing version-two direct start. Duplicate same-turn calls return
 readiness only from the same live owned worker and confirmed active state.
 
+`review_wait_host._read_config` has one explicit optional-field admission for
+host metadata `model_prompt_sha256`: exact string type and a full-match
+`[0-9a-f]{64}` shape. It remains outside the immutable identity digest,
+`HeartbeatSnapshot`, retained controller data and outbound automation arguments.
+No prompt-hash equality is assumed. The existing strict field allowlist,
+required keys, inherited model checks, physical-file limits and replacement
+checks remain common to managed and compatible adapter operations. This changes
+fresh configuration admission only; request phases and unknown-effect cleanup
+rules do not change.
+
 `ManagedDirectProbe` adds integrated finalization before sending when an exact
 prepared intent exists, and post-send observation for both routes.
 Ordinary polling follows the

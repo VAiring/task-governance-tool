@@ -14,7 +14,7 @@ from time import monotonic
 from .artifact_lock import ArtifactLockError
 from . import usage_continuation_state as state
 from .usage_sources import source_roots, locator_root_fingerprints
-from .state_paths import path_lexically_exists
+from .state_paths import inspect_physical_file
 
 POLL_SECONDS = 10.0
 RETRY_SECONDS = 60.0
@@ -52,14 +52,16 @@ class UsageServiceObserver:
             thread.join(CLOSE_SECONDS)
         return thread is None or not thread.is_alive()
 
-    def _admit(self, deadline):
+    def _eligible_target(self, deadline):
         from .setup_feature_config import collection_allowed
         from .usage_lifecycle import _target
-        from .usage_evidence_service import repository_for
-        from .debug_log import allow_output
         if not collection_allowed(self.skill_root) or self.compatible() is not True:
             return None
-        target = _target(self.skill_root, self.repo, repo_explicit=True, operation_local=True, deadline=deadline)
+        return _target(self.skill_root, self.repo, repo_explicit=True, operation_local=True, deadline=deadline)
+
+    def _admit(self, target, deadline):
+        from .usage_evidence_service import repository_for
+        from .debug_log import allow_output
         repository = repository_for(target)
         repository.deadline = deadline
         # Core identity/binding already succeeded; numerical admission failure
@@ -68,7 +70,7 @@ class UsageServiceObserver:
         from .usage_recovery import admit
         admit(repository, target, source="service",
               roots=lambda: locator_root_fingerprints(source_roots(self.environment)))
-        return target, repository
+        return repository
 
     def _scope(self):
         from .debug_log import operation_scope
@@ -82,40 +84,43 @@ class UsageServiceObserver:
             retry_admission = False
             try:
                 with self._scope():
-                    admitted = self._admit(monotonic() + EVENT_SECONDS)
-                    if admitted is None:
+                    target = self._eligible_target(monotonic() + EVENT_SECONDS)
+                    if target is None:
                         return
-                    target, _ = admitted
-                # Config alone is not evidence that a trusted Hook ever ran.
-                # Only actual intake creates this directory and work intent.
-                while not path_lexically_exists(target.resolved_usage_runtime):
-                    if self._stopped.wait(self._poll_seconds):
-                        return
+                if not state.intent_exists(target):
+                    while not self._stopped.wait(self._poll_seconds):
+                        if state.intent_exists(target):
+                            break
+                    # Refresh the project and policy after waiting for first intake.
+                    continue
+                # Standby needs only the physical paths. SQLite admission and
+                # interrupted-write recovery belong to the actual lease owner.
+                inspect_physical_file(target.resolved_usage_database, root=target.db_path.parent)
                 with state.lease(target, "service"):
                     acquired = True
                     # A second owner may have waited. Re-admit after acquisition.
                     with self._scope():
                         try:
-                            admitted = self._admit(monotonic() + EVENT_SECONDS)
+                            deadline = monotonic() + EVENT_SECONDS
+                            if self._eligible_target(deadline) != target or self._stopped.is_set():
+                                return
+                            self._admit(target, deadline)
                         except Exception as error:
                             from .usage_recovery_storage import failure
                             # Only known transient admission failures may yield
                             # and try again. Invalid operational state stays closed.
                             retry_admission = failure(error) in {"busy", "permission", "budget", "readonly_rollback"}
                             raise
-                        if admitted is None or admitted[0] != target or self._stopped.is_set():
-                            return
                     roots = source_roots(self.environment)
                     while not self._stopped.is_set():
                         try:
-                            with state.lease(target, "state", create=True) as root:
+                            with state.lease(target, "state") as root:
                                 previous = state.read(root, target)
-                                if previous is not None and previous["roots"] == locator_root_fingerprints(roots):
-                                    # Unfinished checkpoints are freshly fenced by run_slice.
-                                    # Recheck terminal results after restart (including restore),
-                                    # retaining absent-input delays and numerical positions.
-                                    if previous["status"] in {"caught_up", "available_complete"}:
-                                        state.write(root, {**previous, "round": None, "status": "pending"})
+                                # Recheck terminal results after restart (including restore),
+                                # retaining absent-input delays and numerical positions.
+                                if (previous is not None and previous["roots"] == locator_root_fingerprints(roots)
+                                        and previous["status"] in {"caught_up", "available_complete"}):
+                                    state.write(root, {**previous, "round": None, "status": "pending"})
                             break
                         except ArtifactLockError as error:
                             if not error.contended:
@@ -147,15 +152,16 @@ class UsageServiceObserver:
                 from .usage_missing_inputs import ready
                 parked = (expected is not None and expected["status"] == "available_complete"
                           and not ready(expected["missing"]))
-                if expected is not None and expected["status"] != "caught_up" and not parked:
+                if (expected is not None and expected["roots"] == locator_root_fingerprints(roots)
+                        and expected["status"] != "caught_up" and not parked):
                     with self._scope():
                         deadline = monotonic() + EVENT_SECONDS
-                        admitted = self._admit(deadline)
-                        if admitted is None or admitted[0] != target:
-                            if admitted is None:
+                        current = self._eligible_target(deadline)
+                        if current != target:
+                            if current is None:
                                 state.update(target, expected, round_=expected["round"], status="unavailable")
                             return
-                        current, repository = admitted
+                        repository = self._admit(current, deadline)
                         from .debug_log import usage_diagnostic
                         try:
                             result = run_slice(current, repository, roots, expected, deadline=deadline,

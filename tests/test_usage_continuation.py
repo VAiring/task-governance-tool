@@ -746,7 +746,7 @@ class ContinuationTests(unittest.TestCase):
     def observer(self):
         item = UsageServiceObserver(skill_root=self.root, repo=self.target.project.canonical_repo,
             environment=self.environment, compatible=lambda: True, _poll_seconds=0.01)
-        item._admit = lambda deadline: (self.target, repository_for(self.target))
+        item._eligible_target = lambda deadline: self.target
         self.addCleanup(item.close)
         return item
 
@@ -845,7 +845,7 @@ class ServiceBoundaryTests(unittest.TestCase):
         observer = UsageServiceObserver(skill_root=Path.cwd(), repo=Path.cwd(), environment={}, compatible=lambda: True)
         with mock.patch("task_governance_tool.setup_feature_config.collection_allowed", return_value=False), \
                 mock.patch("task_governance_tool.usage_lifecycle._target") as target:
-            self.assertIsNone(observer._admit(monotonic() + 20))
+            self.assertIsNone(observer._eligible_target(monotonic() + 20))
         target.assert_not_called()
 
     def test_project_service_owns_once_and_reports_unfinished_close(self):

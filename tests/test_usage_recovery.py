@@ -1,7 +1,7 @@
 """Real interrupted SQLite writers and permission-bounded numerical recovery."""
 
 import hashlib
-from contextlib import closing
+from contextlib import ExitStack, closing
 import io
 import json
 import os
@@ -249,11 +249,96 @@ class RecoveryTests(unittest.TestCase):
                                        environment=f.environment, compatible=lambda: True)
         with mock.patch.object(lifecycle, "_target", return_value=self.target), \
                 mock.patch("task_governance_tool.setup_feature_config.collection_allowed", return_value=True):
-            target, repository = service._admit(monotonic() + 20)
+            target = service._eligible_target(monotonic() + 20)
+            with state.lease(target, "service"):
+                repository = service._admit(target, monotonic() + 20)
         self.assertEqual(target, self.target)
         self.assertEqual(repository.inspect(), "current")
         f.drain()
         self.assertEqual(self.repo.summary()["models"][0]["response_count"], 20)
+
+    def test_standby_leaves_hot_database_untouched_then_takes_over_once(self):
+        from task_governance_tool import usage_continuation, usage_recovery, usage_recovery_storage
+        f = self.fixture
+        request = f.intake()
+        collect = self.repo.collect_source
+        with mock.patch.object(self.repo, "collect_source", side_effect=lambda *args, **kwargs:
+                collect(*args, **{**kwargs, "max_records": 3})):
+            for _ in range(6):
+                f.run_slice()
+                if self.repo.summary()["models"]:
+                    break
+        partial = self.repo.summary()["models"][0]["response_count"]
+        self.assertTrue(0 < partial < 20)
+        self.hot()
+        saved, database = f.read(), snapshot(self.repo.path)
+        service = f.observer()
+        waits = 0
+        with ExitStack() as owner, \
+                mock.patch.object(usage_recovery, "admit", wraps=admit) as admission, \
+                mock.patch.object(usage_recovery_storage, "recover", wraps=usage_recovery_storage.recover) as recovery, \
+                mock.patch.object(usage_continuation, "run_slice", wraps=usage_continuation.run_slice) as work:
+            owner.enter_context(state.lease(self.target, "service"))
+            def advance(seconds):
+                nonlocal waits
+                waits += 1
+                if waits <= 3:
+                    self.assertEqual(seconds, service._poll_seconds)
+                    self.assertEqual((admission.call_count, recovery.call_count, work.call_count), (0, 0, 0))
+                    self.assertEqual((f.read(), snapshot(self.repo.path)), (saved, database))
+                    if waits == 3:
+                        owner.close()
+                elif f.read()["status"] == "caught_up" or waits > 40:
+                    service._stopped.set()
+                return service._stopped.is_set()
+            with mock.patch.object(service._stopped, "wait", side_effect=advance):
+                service._run()
+            self.assertGreater(waits, 3)
+            self.assertGreater(work.call_count, 0)
+            recovery.assert_called_once()
+        self.assertEqual((f.read()["request"], f.read()["status"]), (request["request"], "caught_up"))
+        self.assertEqual(self.repo.summary()["models"][0]["response_count"], 20)
+
+    def test_takeover_rechecks_policy_binding_and_replaced_database(self):
+        from dataclasses import replace
+        from task_governance_tool import usage_recovery
+        from task_governance_tool.usage_evidence_service import repository_for
+        f = self.fixture
+        saved = f.intake()
+        foreign = replace(self.target, binding_generation=self.target.binding_generation + 1)
+        for change in ("policy", "binding", "database"):
+            with self.subTest(change=change):
+                service = f.observer()
+                def select(deadline):
+                    if selection.call_count == 2:
+                        if change == "policy":
+                            return None
+                        if change == "binding":
+                            return foreign
+                        self.repo.path.rename(self.repo.path.with_suffix(".original"))
+                        repository_for(foreign).initialize()
+                    return self.target
+                with mock.patch.object(service, "_eligible_target", side_effect=select) as selection, \
+                        mock.patch.object(usage_recovery, "admit", wraps=admit) as admission, \
+                        mock.patch.object(service, "_observe") as observe:
+                    service._run()
+                self.assertEqual(selection.call_count, 2)
+                self.assertEqual(admission.call_count, int(change == "database"))
+                observe.assert_not_called()
+                self.assertEqual(f.read(), saved)
+                if change == "database":
+                    self.assertEqual(repository_for(foreign).summary()["models"], [])
+
+    def test_service_without_an_intent_leaves_existing_runtime_directory_empty(self):
+        from task_governance_tool import usage_recovery
+        f = self.fixture
+        root = state.root_for(self.target, create=True)
+        service = f.observer()
+        with mock.patch.object(service._stopped, "wait", side_effect=lambda _: service._stopped.set() or True), \
+                mock.patch.object(usage_recovery, "admit") as admission:
+            service._run()
+        admission.assert_not_called()
+        self.assertEqual(list(root.iterdir()), [])
 
     def test_crash_then_partial_tail_and_missing_participant_remain_pending(self):
         f = self.fixture
@@ -383,12 +468,14 @@ except UsageRecoveryRequired as needed:
                 mock.patch("task_governance_tool.setup_feature_config.collection_allowed", return_value=True):
             with mock.patch("task_governance_tool.usage_recovery_storage.connect_existing", side_effect=PermissionError):
                 with self.assertRaises(UsageError):
-                    service._admit(monotonic() + 20)
+                    with state.lease(self.target, "service"):
+                        service._admit(self.target, monotonic() + 20)
             self.assertEqual(f.read()["request"], request["request"])
             # A fresh observer simulates process restart; no new Hook or intent.
             restarted = UsageServiceObserver(skill_root=f.root, repo=f.target.project.canonical_repo,
                                               environment=f.environment, compatible=lambda: True)
-            _, f.repo = restarted._admit(monotonic() + 20)
+            with state.lease(self.target, "service"):
+                f.repo = restarted._admit(self.target, monotonic() + 20)
             self.assertEqual(f.repo.summary()["models"][0]["response_count"], partial)
             self.assertEqual(f.drain()["request"], request["request"])
             self.assertEqual(f.repo.summary()["models"][0]["response_count"], 20)
@@ -405,7 +492,8 @@ except UsageRecoveryRequired as needed:
                 def one_slice(*args, **kwargs):
                     service._stopped.set()
                     return {"status": status}
-                with mock.patch.object(service, "_admit", return_value=(self.target, self.repo)), \
+                with mock.patch.object(service, "_eligible_target", return_value=self.target), \
+                        mock.patch.object(service, "_admit", return_value=self.repo), \
                         mock.patch.object(usage_continuation, "run_slice", side_effect=one_slice), \
                         mock.patch("task_governance_tool.debug_log.usage_diagnostic") as diagnostic:
                     service._observe(self.target, f.roots)
@@ -425,15 +513,15 @@ except UsageRecoveryRequired as needed:
                 admissions, waits = [], []
                 failed_request = None
                 failed_bytes = None
-                def admission(deadline):
+                def admission(target, deadline):
                     nonlocal failed_request, failed_bytes
                     admissions.append(deadline)
-                    if len(admissions) == 2:
+                    if len(admissions) == 1:
                         self.hot()
                         failed_request, failed_bytes = f.read(), snapshot(self.repo.path)
                         if reason == "expired_budget":
                             # Exercise the producer's real usage_pending shape.
-                            return original_admit(monotonic() - 1)
+                            return original_admit(target, monotonic() - 1)
                         if reason in {"intent_permission", "execution_permission", "state_permission"}:
                             filename = {"intent_permission": "continuation.json",
                                         "execution_permission": "execution.lock",
@@ -445,10 +533,10 @@ except UsageRecoveryRequired as needed:
                                 return original_open(path, *args, **kwargs)
                             # Actual physical-reader and lock wrappers retain native causes.
                             with mock.patch("task_governance_tool.state_paths.os.open", side_effect=denied_intent):
-                                return original_admit(deadline)
+                                return original_admit(target, deadline)
                         with mock.patch.object(recovery, "connect_existing", side_effect=UsageError(reason=reason)):
-                            return original_admit(deadline)
-                    return original_admit(deadline)
+                            return original_admit(target, deadline)
+                    return original_admit(target, deadline)
                 def yielded(seconds):
                     waits.append(seconds)
                     self.assertEqual(f.read(), failed_request)
@@ -470,7 +558,7 @@ except UsageRecoveryRequired as needed:
                         mock.patch.object(service._stopped, "wait", side_effect=yielded), \
                         mock.patch.object(service, "_observe", side_effect=observed) as observe:
                     service._run()
-                self.assertEqual(len(admissions), 4)
+                self.assertEqual(len(admissions), 2)
                 self.assertEqual(waits, [RETRY_SECONDS, service._poll_seconds])
                 observe.assert_called_once()
                 self.assertIsNone(snapshot(self.repo.path)[1])
@@ -480,7 +568,7 @@ except UsageRecoveryRequired as needed:
         f.intake()
         service = UsageServiceObserver(skill_root=f.root, repo=f.target.project.canonical_repo,
                                        environment=f.environment, compatible=lambda: True)
-        with mock.patch.object(service, "_admit", return_value=(self.target, self.repo)), \
+        with mock.patch.object(service, "_eligible_target", return_value=self.target), \
                 mock.patch.object(state, "read", side_effect=UsageError()), \
                 mock.patch.object(service._stopped, "wait") as wait, \
                 mock.patch.object(service, "_observe") as observe:
@@ -499,13 +587,13 @@ except UsageRecoveryRequired as needed:
                 original_admit = service._admit
                 calls, saved = [], {}
                 path = self.target.resolved_usage_runtime / name
-                def admission(deadline):
+                def admission(target, deadline):
                     calls.append(deadline)
-                    if len(calls) == 2:
+                    if len(calls) == 1:
                         self.hot()
                         saved.update(request=f.read(), database=snapshot(self.repo.path), lock=path.read_bytes())
                         path.write_bytes(b"invalid")
-                    return original_admit(deadline)
+                    return original_admit(target, deadline)
                 try:
                     with mock.patch.object(lifecycle, "_target", return_value=self.target), \
                             mock.patch("task_governance_tool.setup_feature_config.collection_allowed", return_value=True), \
@@ -513,7 +601,7 @@ except UsageRecoveryRequired as needed:
                             mock.patch.object(service._stopped, "wait") as wait, \
                             mock.patch.object(service, "_observe") as observe:
                         service._run()
-                    self.assertEqual(len(calls), 2)
+                    self.assertEqual(len(calls), 1)
                     wait.assert_not_called()
                     observe.assert_not_called()
                     self.assertEqual(path.read_bytes(), b"invalid")

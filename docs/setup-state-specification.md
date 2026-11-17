@@ -1187,7 +1187,11 @@ project MCP service. With that compatible service available, finite stable
 obtainable input and work units that can commit within a slice, known backlog
 continues after the Hook returns without another Hook, command or LLM turn.
 The service owns a separate project-scoped OS lease throughout execution;
-duplicate services cannot execute the same work concurrently. Hook and service
+duplicate services cannot execute the same work concurrently. A service
+waiting for ownership performs no numerical
+admission, recovery or collection. After acquiring ownership, it rechecks the
+current policy, compatible runtime and matching project binding, then admits
+the current numerical database before using saved progress. Hook and service
 numerical work use a shared zero-wait execution lease. A busy service never
 extends the Hook's original deadline. Unfinished work and committed numerical
 positions survive interruption; superseded requests cannot receive an old

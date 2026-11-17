@@ -177,9 +177,14 @@ its existing explicit-repo boundary. No core transaction is opened for writing.
 Setup and the normal Task command loop do not invoke the worker.
 
 Hook admission calls `usage_recovery.admit` before its original intake, with
-the same absolute deadline. The service uses that boundary at initial
-admission, post-lease restart and later opportunities, but recovery additionally
-requires an existing unfinished request with matching roots. Numerical Setup
+the same absolute deadline. Before attempting service ownership, the observer
+checks policy, runtime, project binding and physical paths. It waits for the
+fixed intake file before creating a service lock. A contended service lock
+yields without numerical admission, rollback or collection. After obtaining
+ownership, the observer rechecks policy, runtime and the exact target before
+opening the numerical database. It repeats those checks for each eligible
+collection opportunity. Recovery additionally requires an existing unfinished
+request with matching roots. Numerical Setup
 uses it before its existing inspect/initialize sequence; preview never recovers.
 After service-lease acquisition, the shared failure classifier normalizes native,
 known wrapped and legacy numerical errors. Fixed busy, permission, budget or repeated
@@ -499,8 +504,8 @@ admission and all other failures retain their separate retry behavior.
 
 `usage_continuation_service.py` runs one daemon thread within the already
 configured project MCP process, started/closed by `project_server.py` independently
-of backup and review ownership. Startup requires compatible runtime, existing
-numerical schema and policy; source work also requires real persisted Hook intent.
+of backup and review ownership. Numerical schema admission occurs under the
+service lease. Source work requires real persisted Hook intent with matching roots.
 The service lease spans the actual thread, including a shutdown that has not
 finished. Close signals stop and joins for at most 0.5 seconds; it never releases
 an active thread's lease. An unfinished close contributes the existing

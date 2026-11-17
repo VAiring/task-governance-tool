@@ -112,6 +112,17 @@ def root_for(target, *, create=False):
     return root
 
 
+def intent_exists(target):
+    """Check the physical intake file without creating a lock or reading its contents."""
+    path = target.resolved_usage_runtime / "continuation.json"
+    if not path_lexically_exists(path):
+        return False
+    inspect_physical_file(path, root=root_for(target), max_bytes=MAX_BYTES)
+    if path.lstat().st_nlink != 1:
+        raise _fail()
+    return True
+
+
 @contextmanager
 def lease(target, name, *, create=False):
     if name not in {"state", "execution", "service"}:

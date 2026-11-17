@@ -58,7 +58,14 @@ def bind_initial(service, host, reviewer_ids, *, creation_context=False,
         return records
     if creation_context is not True or known_conflict is not False:
         _fail()
-    observed = host.bind_reviewers(children, creation_context=True, known_conflict=False)
+    try:
+        observed = host.bind_reviewers(children, creation_context=True, known_conflict=False)
+    except AnswerError as error:
+        if error.failure["reason"] == "initial_dispatch_unobserved" and len(missing) != len(records):
+            # A partially saved assignment retains its existing reconciliation
+            # boundary; it is not a completely unestablished initial dispatch.
+            _fail("conflict")
+        raise
     if type(observed) is not tuple or len(observed) != len(records):
         _fail()
     candidates = []

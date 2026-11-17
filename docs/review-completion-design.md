@@ -588,6 +588,21 @@ failures, including the all-reviewers-ended collection path. Parent
 preparation, MCP wait description and Skill guidance use returned handles before
 extra contact; workerless collection retains its separate UUID-only contract.
 
+The same activity reader distinguishes `initial_dispatch_unobserved` only after
+complete current-parent observation with no matching activity. It validates
+remaining activity identity and completeness before making that negative
+observation; it never follows older turns. The multi-reviewer adapter defers
+this reason while checking every other requested reviewer. Other observed
+activity failures take precedence over absence regardless of slot order, before
+child-turn reads. `bind_initial` exposes this reason
+only for a completely unbound initial set. A partially saved set retains its
+existing conflict boundary, and exact saved bindings still bypass dispatch I/O.
+The closed failure validator restricts both initial reasons to
+`binding_mismatch` with null field. Managed wait retains these first-binding
+diagnostics ahead of subsequent unbound-source failures, including the ended
+branch. Public guidance describes current facts, never inferred historical
+causes or a new permission to repeat or reconstruct dispatch.
+
 `review_answer.py` owns pure bounded UTF-8/JSON decoding and exact original/
 payload byte ranges. `DecodedAnswer` retains complete bytes, all five sanitized
 fields, offsets/length and separate original/payload digests. `AnswerError`

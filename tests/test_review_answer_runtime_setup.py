@@ -75,6 +75,115 @@ class RuntimeTests(unittest.TestCase):
             collect_hook_event(event, service=self.service, host=self.host)
 
 
+class InitialBindingStateTests(unittest.TestCase):
+    def service(self, tracking, count=2):
+        from task_governance_tool.review_answer_collection import CollectionService
+        from task_governance_tool.review_answer_collection_repository import CollectionRepository
+        from tests.test_review_answer_tracking_collection import tracking_fixture
+        temporary = tempfile.TemporaryDirectory(prefix="taskgov-initial-binding-")
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        metadata, _ = tracking_fixture() if tracking else metadata_fixture()
+        repository = CollectionRepository(root / "collection.sqlite")
+        repository.initialize(tuple(copy.deepcopy(metadata["basis"]) for _ in range(count)))
+        return CollectionService(root, repository, original_paths=tuple(
+            f".tmp-review/result-{n}.json" for n in range(count)), admit_basis=Mock()), metadata
+
+    def host(self, metadata, *, present=True, turn_suffix="1", child_turn_suffix="1"):
+        from task_governance_tool.review_answer_host import PublicAnswerHost
+        from tests.test_review_answer_host import page, turn
+        from tests.test_review_continuation import A, B
+        parent = metadata["binding"]["parent_session_id"]
+        parent_turn = "30000000-0000-4000-8000-00000000000" + turn_suffix
+        public = Mock()
+        def read(_operation, arguments):
+            child = arguments["threadId"]
+            if child == parent:
+                activities = [dict(type="subAgentActivity", id="dispatch-" + str(n), kind="started",
+                                   agentThreadId=actor) for n, actor in enumerate((A, B))] if present else []
+                return page(parent, 1, turn(parent_turn, items=activities))
+            return page(child, 1, turn("10000000-0000-4000-8000-00000000000" + child_turn_suffix))
+        public._json_call.side_effect = read
+        return PublicAnswerHost(public, parent, parent_turn), public
+
+    def test_missing_initial_binding_differs_from_saved_restart_reuse_for_both_versions(self):
+        from tests.test_review_continuation import A, B
+        for tracking in (False, True):
+            with self.subTest(tracking=tracking):
+                service, metadata = self.service(tracking)
+                host, public = self.host(metadata, present=False, turn_suffix="2")
+                before = service.repository.read()
+                with self.assertRaises(AnswerError) as raised:
+                    bind_initial(service, host, (A, B), creation_context=True)
+                self.assertEqual(raised.exception.failure["reason"], "initial_dispatch_unobserved")
+                self.assertEqual(service.repository.read(), before)
+                public._json_call.assert_called_once()
+                host, public = self.host(metadata)
+                bind_initial(service, host, (A, B), creation_context=True)
+                saved = service.repository.read()
+                later, later_public = self.host(metadata, present=False, turn_suffix="2")
+                self.assertEqual(bind_initial(service, later, (A, B), creation_context=False), saved)
+                later_public._json_call.assert_not_called()
+                self.assertEqual(service.repository.read(), saved)
+                with self.assertRaises(AnswerError) as wrong:
+                    bind_initial(service, later, (B, A), creation_context=True)
+                self.assertEqual(wrong.exception.failure["reason"], "conflict")
+                later_public._json_call.assert_not_called()
+
+    def test_partial_saved_binding_retains_conflict_without_rebinding(self):
+        from tests.test_review_continuation import A, B
+        for tracking in (False, True):
+            with self.subTest(tracking=tracking):
+                complete, metadata = self.service(tracking)
+                host, _ = self.host(metadata)
+                saved = bind_initial(complete, host, (A, B), creation_context=True)
+                partial, _ = self.service(tracking)
+                partial.bind(1, saved[0]["binding"])
+                before = partial.repository.read()
+                later, public = self.host(metadata, present=False, turn_suffix="2")
+                with self.assertRaises(AnswerError) as raised:
+                    bind_initial(partial, later, (A, B), creation_context=True)
+                self.assertEqual(raised.exception.failure["reason"], "conflict")
+                self.assertEqual(partial.repository.read(), before)
+                public._json_call.assert_called_once()
+
+    def test_partial_assignment_rejects_conflicting_observed_binding_before_any_write(self):
+        from tests.test_review_continuation import A, B
+        for tracking in (False, True):
+            with self.subTest(tracking=tracking):
+                complete, metadata = self.service(tracking)
+                host, _ = self.host(metadata)
+                saved = bind_initial(complete, host, (A, B), creation_context=True)
+                partial, _ = self.service(tracking)
+                partial.bind(1, saved[0]["binding"])
+                before = partial.repository.read()
+                conflicting, public = self.host(metadata, child_turn_suffix="2")
+                with self.assertRaises(AnswerError) as raised:
+                    bind_initial(partial, conflicting, (A, B), creation_context=True)
+                self.assertEqual(raised.exception.failure["reason"], "conflict")
+                self.assertEqual(partial.repository.read(), before)
+                self.assertEqual(public._json_call.call_count, 3)
+
+    def test_mixed_missing_and_duplicate_dispatch_preserves_conflict_without_writes(self):
+        from tests.test_review_continuation import A, B
+        from tests.test_review_answer_host import page, turn
+        for tracking in (False, True):
+            for children in ((A, B), (B, A)):
+                with self.subTest(tracking=tracking, children=children):
+                    service, metadata = self.service(tracking)
+                    host, public = self.host(metadata)
+                    public._json_call.side_effect = None
+                    public._json_call.return_value = page(host.parent_session_id, 1,
+                        turn(host.parent_turn_id, items=[dict(type="subAgentActivity", id=f"dispatch-{i}",
+                            kind="started", agentThreadId=B) for i in (1, 2)]))
+                    before = service.repository.read()
+                    with self.assertRaises(AnswerError) as raised:
+                        bind_initial(service, host, children, creation_context=True)
+                    self.assertEqual(raised.exception.failure["reason"], "conflict")
+                    self.assertEqual(service.repository.read(), before)
+                    public._json_call.assert_called_once()
+
+
 class HookSetupTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

@@ -669,6 +669,27 @@ have already ended. Wait readiness never establishes successful answer collectio
 The reason changes no binding admission, continuation, deadline or fallback
 timer behavior and authorizes no recovery effect.
 
+When no initial slot has a saved binding and a complete observation of the
+actual current parent turn contains no activity for a requested reviewer,
+initial admission returns `{class:"binding_mismatch",field:null,
+reason:"initial_dispatch_unobserved"}`. This reports only unestablished initial
+binding and absence of that dispatch in this turn. It does not infer a previous
+wait failure, restart, lost request or wrong reviewer. Older-turn pagination is
+not followed. The single-dispatch adapter requires the same complete observation;
+an expected dispatch naming another reviewer remains a conflict. Malformed or
+clipped activity, unreadable pages, duplicate/ambiguous dispatch, missing caller
+context and known uncertain sends retain their existing rejection categories.
+For multiple requested reviewers, defer the absence diagnosis until the other
+requested reviewers' activity has been checked. An observed non-absence failure
+for another requested reviewer takes precedence in either slot order, before
+any child-turn read or binding write.
+Partial saved bindings retain their existing conflict/reconciliation boundary;
+complete exact saved bindings remain reusable across parent turns without a
+fresh dispatch read. Wait and collect preserve the new reason even after all
+reviewers end. Report the missing initial proof and retain the original review
+route; this diagnosis permits no redispatch, rebinding, overwrite, historical
+answer adoption or new recovery path.
+
 Fresh collection rechecks the current preparation and issued continuation at
 each admission boundary, including after a host observation and before original
 publication. An unchanged execution basis or old Packet alone cannot admit a

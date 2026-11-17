@@ -1332,6 +1332,83 @@ class ManagedFlowTests(unittest.TestCase):
         self.assertEqual(repository.lock_path.read_bytes(), b"")
 
 
+class InitialDispatchPublicTests(unittest.TestCase):
+    def advance_parent(self, fixture):
+        original_page = fixture.public_page
+        def later_page(operation, arguments):
+            result = original_page(operation, arguments)
+            if arguments["threadId"] == fixture.parent:
+                result["turns"][0].update(id=NEW_TURN, items=[])
+                result["page"].update(hasMore=True, nextCursor="previous-dispatch")
+            return result
+        fixture.public_page = later_page
+        fixture.metadata["turnId"] = NEW_TURN
+        fixture.flow.current_parent = ChildTurn(fixture.parent, NEW_TURN, "inProgress", "active")
+
+    def call(self, fixture, name):
+        from task_governance_tool.review_wait_runtime.review_wait_server import _call
+        result = _call(dict(name=name, arguments=dict(task_id=fixture.task,
+            reviewer_ids=list(fixture.reviewers)), _meta=fixture.metadata), fixture.flow.session)
+        return json.loads(result["content"][0]["text"])
+
+    def test_failed_project_admission_then_new_turn_retains_missing_dispatch_diagnosis(self):
+        for tracking in (False, True):
+            for name in ("review_wait_wait", "review_answer_collect"):
+                for ended in (False, True):
+                    with self.subTest(tracking=tracking, name=name, ended=ended):
+                        fixture = ManagedTrackingAdmissionTests(methodName="runTest")
+                        fixture.setUp()
+                        try:
+                            fixture.issued_collection(tracking=tracking)
+                            before = fixture.selection.service().repository.read()
+                            with mock.patch.object(fixture.flow.session, "_location",
+                                    side_effect=HostAdapterError("project_state_unreadable")):
+                                failed = fixture.wait()
+                            self.assertFalse(failed["ok"], failed)
+                            self.assertEqual(fixture.flow.effects, [])
+                            self.assertEqual(fixture.answer_reads, [])
+                            self.assertEqual(fixture.selection.service().repository.read(), before)
+                            self.advance_parent(fixture)
+                            fixture.completed = ended
+                            result = self.call(fixture, name)
+                            if name == "review_wait_wait":
+                                self.assertTrue(result["ok"], result)
+                                self.assertEqual(result["status"], "reviews_ended" if ended else "waiting")
+                                failure = result["answer_collection"]["unavailable"][0]["failure"]
+                                if not ended:
+                                    fixture.assert_waiting(result)
+                            else:
+                                self.assertFalse(result["ok"], result)
+                                failure = result["failure"]
+                            self.assertEqual(failure, {"class":"binding_mismatch", "field":None,
+                                                      "reason":"initial_dispatch_unobserved"})
+                            self.assertEqual(fixture.answer_reads, [(fixture.parent, 1)])
+                            self.assertEqual(fixture.selection.service().repository.read(), before)
+                            self.assertNotIn("previous-dispatch", json.dumps(result))
+                        finally:
+                            fixture.doCleanups()
+
+    def test_complete_saved_assignment_reuses_from_new_parent_turn_without_dispatch_read(self):
+        for tracking in (False, True):
+            with self.subTest(tracking=tracking):
+                fixture = ManagedTrackingAdmissionTests(methodName="runTest")
+                fixture.setUp()
+                try:
+                    fixture.issued_collection(tracking=tracking)
+                    fixture.bind_public()
+                    bindings = [row["binding"] for row in fixture.selection.service().repository.read()]
+                    self.advance_parent(fixture)
+                    fixture.answer_reads.clear()
+                    result = self.call(fixture, "review_answer_collect")
+                    self.assertTrue(result["bound"], result)
+                    self.assertNotIn((fixture.parent, 1), fixture.answer_reads)
+                    self.assertNotIn("initial_dispatch_unobserved", json.dumps(result))
+                    self.assertEqual([row["binding"] for row in fixture.selection.service().repository.read()], bindings)
+                    self.assertEqual(fixture.flow.effects, [])
+                finally:
+                    fixture.doCleanups()
+
+
 class ManagedTrackingAdmissionTests(unittest.TestCase):
     """Real issued collection/native admission through the public wait entry."""
 

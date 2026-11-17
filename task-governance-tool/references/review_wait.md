@@ -104,6 +104,11 @@ name and schema; no routine lookup or confirmation is needed.
    `answer_collection.unavailable` failure: `binding_mismatch` with reason
    `initial_binding_interacted` means the host observed additional contact before
    initial binding. Other binding failures do not establish that cause.
+   `initial_dispatch_unobserved` means the initial bindings are absent and the
+   complete current parent turn does not contain a requested dispatch. Report
+   missing initial proof; do not infer restart damage or resend/rebind. Exact
+   saved bindings remain reusable; partial bindings retain their existing
+   recovery boundary. Preserve the original route and evidence.
    Failed calls use the linked failure procedure for ordinary turn
    ending after reporting a limitation.
 4. Report a received integrated body directly when it matches the original

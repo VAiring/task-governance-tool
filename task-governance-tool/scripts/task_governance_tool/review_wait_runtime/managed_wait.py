@@ -225,7 +225,8 @@ class ManagedWait:
                 diagnostic.answer_collection = {"collected": [], "unavailable": [
                     {"failure": error.failure if isinstance(error, AnswerError) else
                      {"class": "collection_unavailable", "field": None, "reason": "incomplete"}}]}
-                if isinstance(error, AnswerError) and error.failure["reason"] == "initial_binding_interacted":
+                if isinstance(error, AnswerError) and error.failure["reason"] in (
+                        "initial_binding_interacted", "initial_dispatch_unobserved"):
                     initial_binding_failure = diagnostic.answer_collection
         pairs = []
         tracking = {}

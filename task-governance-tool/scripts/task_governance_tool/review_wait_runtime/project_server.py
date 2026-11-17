@@ -176,7 +176,9 @@ class ProjectReviewWaitSession:
             "before any extra reviewer message. No reviewer UUID query or manual transcription is needed. "
             "Wait readiness does not prove answer collection succeeded: retain answer_collection.unavailable. "
             "binding_mismatch with reason initial_binding_interacted identifies observed additional contact "
-            "before initial binding; other binding failures do not prove that cause. "
+            "before initial binding. initial_dispatch_unobserved identifies absent initial bindings and no "
+            "requested dispatch in the complete current parent turn; it authorizes no resend or rebinding. "
+            "Other binding failures do not prove either cause. "
         )
         descriptions = {
             "answer_collect": "Explicitly enabled answer collection, independent of waiting. Hook arm accepts typed event identity hints only. Parent arm accepts the original Task and ordered actual child UUIDs. New tracking requests bind a fresh dedicated child once, then observe its latest complete final until the first valid completed answer is frozen. Invalid format remains unadopted; valid negative/unable results also freeze. For a newly prepared continuation, call with action=arm BEFORE sending its follow-up: the existing dedicated reviewer must have ended its prior turn, which becomes the excluded baseline. Repeating arm reuses that baseline, never resends. Old issued requests retain exact-turn recovery. Only the parent arm may reconcile an interrupted publication against its saved intent, exact path and full bytes. Returns bounded facts without answer bodies. No correction sends, workers, timers, registration or completion. Unknown sends never authorize replay or prove delivery; use the existing parent recovery.",

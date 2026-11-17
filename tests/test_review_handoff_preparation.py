@@ -87,7 +87,7 @@ class ReviewRequestLayoutTests(unittest.TestCase):
         wait = next(tool for tool in ProjectReviewWaitSession.catalogue() if tool["name"] == "review_wait_wait")
         for text in (instructions, wait["description"]):
             for required in ("actual returned /root/...", "prepared slot order", "before any extra",
-                             "initial_binding_interacted", "answer_collection.unavailable"):
+                             "initial_binding_interacted", "initial_dispatch_unobserved", "answer_collection.unavailable"):
                 self.assertIn(required, text)
         self.assertIn("canonical reviewer UUIDs only, not /root/... handles", instructions)
 

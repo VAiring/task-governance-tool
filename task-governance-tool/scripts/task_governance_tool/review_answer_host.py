@@ -91,6 +91,22 @@ def _dispatch_activity(items, child, expected_dispatch=None):
                   and item.get("type") == "subAgentActivity"
                   and (item.get("agentThreadId") == child
                        or expected_dispatch is not None and item.get("id") == expected_dispatch)]
+    if not activities:
+        # Absence is a fact about this complete current turn only. Malformed
+        # or clipped activity cannot establish it, nor can this recover history.
+        seen = set()
+        for item in items:
+            if type(item) is not dict or type(item.get("type")) is not str:
+                _fail("conflict", "binding_mismatch")
+            if item["type"] != "subAgentActivity":
+                continue
+            _content_complete(item)
+            _uuid(item.get("agentThreadId"))
+            identifier = _host_id(item.get("id"))
+            if identifier in seen or item.get("kind") not in ("started", "completed", "interacted", "failed", "interrupted"):
+                _fail("conflict", "binding_mismatch")
+            seen.add(identifier)
+        _fail("initial_dispatch_unobserved", "binding_mismatch")
     starts = [item for item in activities if item.get("kind") == "started"]
     completions = [item for item in activities if item.get("kind") == "completed"]
     interactions = [item for item in activities if item.get("kind") == "interacted"]
@@ -170,7 +186,19 @@ class PublicAnswerHost:
         _content_complete(parent)
         if parent["id"] != self.parent_turn_id or parent["error"] is not None:
             _fail("identity", "binding_mismatch")
-        dispatches = [_dispatch_activity(parent["items"], child) for child in children]
+        dispatches = []
+        missing_dispatch = False
+        for child in children:
+            try:
+                dispatches.append(_dispatch_activity(parent["items"], child))
+            except AnswerError as error:
+                if error.failure["reason"] != "initial_dispatch_unobserved":
+                    raise
+                # Absence must not mask an observed failure for another
+                # requested reviewer, regardless of prepared slot order.
+                missing_dispatch = True
+        if missing_dispatch:
+            _fail("initial_dispatch_unobserved", "binding_mismatch")
         if len(set(dispatches)) != len(dispatches):
             _fail("conflict", "binding_mismatch")
         results = []

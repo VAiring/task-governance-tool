@@ -56,6 +56,57 @@ class HostTests(unittest.TestCase):
             self.host.bind_dispatch("dispatch-1", self.child)
         self.assertFalse(self.public._json_call.called)
 
+    def test_absent_dispatch_is_distinct_only_on_a_complete_current_parent_turn(self):
+        other = "40000000-0000-4000-8000-000000000001"
+        for single in (False, True):
+            for fault in (None, "transport", "page", "turn", "activity", "identity", "duplicate", "wrong_dispatch", "malformed"):
+                with self.subTest(single=single, fault=fault):
+                    item = dict(self.started, id="other-dispatch", agentThreadId=other)
+                    value = page(self.parent, 1, turn(self.parent_turn, items=[item]))
+                    if fault == "page": value["page"]["truncated"] = True
+                    elif fault == "turn": value["turns"][0]["truncated"] = True
+                    elif fault == "activity": item["truncated"] = True
+                    elif fault == "identity": item["agentThreadId"] = "invalid"
+                    elif fault == "duplicate": value["turns"][0]["items"].append(dict(item))
+                    elif fault == "wrong_dispatch": item.update(id="dispatch-1", agentThreadId=self.child)
+                    elif fault == "malformed": value["turns"][0]["items"].append(None)
+                    self.public.reset_mock()
+                    self.public._json_call.side_effect = OSError("private") if fault == "transport" else None
+                    self.public._json_call.return_value = value
+                    # A real dispatch is the control, not an absence diagnosis.
+                    if fault == "wrong_dispatch":
+                        value["turns"][0]["items"].append(dict(item, id="duplicate-start"))
+                    with self.assertRaises(AnswerError) as raised:
+                        if single:
+                            self.host.bind_dispatch("dispatch-1", self.child, creation_context=True)
+                        else:
+                            self.host.bind_reviewers((self.child,), creation_context=True)
+                    failure = raised.exception.failure
+                    if fault is None:
+                        self.assertEqual(failure, {"class":"binding_mismatch", "field":None,
+                                                   "reason":"initial_dispatch_unobserved"})
+                    else:
+                        self.assertNotEqual(failure["reason"], "initial_dispatch_unobserved")
+                    self.assertNotIn("private", json.dumps(failure))
+                    self.public._json_call.assert_called_once()
+
+    def test_absent_dispatch_does_not_follow_older_parent_turns(self):
+        value = page(self.parent, 1, turn(self.parent_turn))
+        value["page"].update(hasMore=True, nextCursor="older-dispatch-turn")
+        self.public._json_call.return_value = value
+        with self.assertRaises(AnswerError) as raised:
+            self.host.bind_reviewers((self.child,), creation_context=True)
+        self.assertEqual(raised.exception.failure["reason"], "initial_dispatch_unobserved")
+        self.public._json_call.assert_called_once()
+
+    def test_expected_dispatch_for_wrong_child_keeps_identity_conflict(self):
+        other = "40000000-0000-4000-8000-000000000001"
+        self.public._json_call.return_value = page(self.parent, 1,
+            turn(self.parent_turn, items=[dict(self.started, agentThreadId=other)]))
+        with self.assertRaises(AnswerError) as raised:
+            self.host.bind_dispatch("dispatch-1", self.child, creation_context=True)
+        self.assertEqual(raised.exception.failure["reason"], "conflict")
+
     def test_parent_completion_notice_keeps_the_original_dispatch(self):
         for single in (False, True):
             for status in ("inProgress", "completed"):
@@ -127,6 +178,35 @@ class HostTests(unittest.TestCase):
         with self.assertRaises(AnswerError):
             self.host.bind_reviewers((self.child,), creation_context=True)
         self.public._json_call.assert_called_once()
+
+    def test_missing_dispatch_never_masks_another_requested_reviewers_failure(self):
+        missing = "40000000-0000-4000-8000-000000000001"
+        cases = {
+            "duplicate_start": "conflict", "duplicate_completion": "conflict",
+            "interaction": "initial_binding_interacted", "unknown_kind": "conflict",
+            "clipped": "incomplete", "duplicate_id": "conflict",
+            "complete": "initial_dispatch_unobserved", "absent": "initial_dispatch_unobserved",
+        }
+        for fault, reason in cases.items():
+            for children in ((missing, self.child), (self.child, missing)):
+                with self.subTest(fault=fault, children=children):
+                    items = [dict(self.started)]
+                    if fault == "duplicate_start": items.append(dict(self.started, id="second-start"))
+                    elif fault == "duplicate_completion":
+                        items.extend(dict(self.started, id=f"completion-{i}", kind="completed") for i in (1, 2))
+                    elif fault == "interaction": items.append(dict(self.started, id="contact", kind="interacted"))
+                    elif fault == "unknown_kind": items.append(dict(self.started, id="unknown", kind="unknown"))
+                    elif fault == "clipped": items[0]["truncated"] = True
+                    elif fault == "duplicate_id": items.append(dict(self.started, kind="completed"))
+                    elif fault == "complete": items.append(dict(self.started, id="completion", kind="completed"))
+                    elif fault == "absent": items = []
+                    self.public.reset_mock()
+                    self.public._json_call.side_effect = None
+                    self.public._json_call.return_value = page(self.parent, 1, turn(self.parent_turn, items=items))
+                    with self.assertRaises(AnswerError) as raised:
+                        self.host.bind_reviewers(children, creation_context=True)
+                    self.assertEqual(raised.exception.failure["reason"], reason)
+                    self.public._json_call.assert_called_once()
 
     def test_failed_or_interrupted_turn_can_bind_without_becoming_success(self):
         for status in ("failed", "interrupted"):

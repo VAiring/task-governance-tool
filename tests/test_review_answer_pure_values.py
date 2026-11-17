@@ -40,6 +40,17 @@ def record_fixture():
         correction=None, registration=dict(state="not_started", submission_digest=None, receipt_id=None))
 
 class ValueTests(unittest.TestCase):
+    def test_unobserved_dispatch_failure_is_closed_and_has_no_caller_field(self):
+        record = record_fixture()
+        failure = {"class":"binding_mismatch", "field":None, "reason":"initial_dispatch_unobserved"}
+        record["attempts"][0]["failure"] = failure
+        self.assertEqual(v.validate_record(record)["attempts"][0]["failure"], failure)
+        for change in ({"class":"collection_unavailable"}, {"field":"summary"}, {"reason":"guessed_restart_loss"}):
+            invalid = copy.deepcopy(record)
+            invalid["attempts"][0]["failure"].update(change)
+            with self.subTest(change=change), self.assertRaises(AnswerError):
+                v.validate_record(invalid)
+
     def test_initial_interaction_failure_preserves_closed_class_and_field(self):
         record = record_fixture()
         failure = {"class": "binding_mismatch", "field": None,

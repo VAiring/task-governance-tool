@@ -1,15 +1,21 @@
 """A newer operational journal cannot replace restored core review evidence."""
 
 from contextlib import ExitStack
+import errno
 import json
+from pathlib import Path
 import subprocess
 import sys
+import tempfile
+from types import SimpleNamespace
+import unittest
 from unittest import mock
 
 from tests import test_review_finalization as original
 from tests import test_review_handoff_preparation as fixtures
 from tests import test_review_answer_installed_finalization as collected
 from tests.test_review_results import encode, receipt
+from tests import setup_restore_environment_support as restore_environment
 from task_governance_tool import backup
 from task_governance_tool import review_finalization as finalization
 
@@ -41,6 +47,7 @@ class RestoredFinalizationTests(fixtures.PreparationFixture):
     def restore_core(self):
         # Only this test's physically installed canonical database is removed.
         self.assertTrue(self.install.db_path.is_relative_to(self.root))
+        restore_environment.require_restore_hardlinks(self.install.db_path.parent)
         self.install.db_path.unlink()
         restored = self.cli("setup")
         self.assertIn("database_restore", restored["completed_writes"])
@@ -195,3 +202,66 @@ class CollectedRestoreTests(fixtures.PreparationFixture):
         self.assertEqual(len(registered["registered_receipt_ids"]), 2)
         self.restore_core()
         self.assert_no_later_effects(service)
+
+
+class RestoreEnvironmentTests(unittest.TestCase):
+    def test_real_probe_cleans_up_and_keeps_existing_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            sentinel = directory / "existing.sqlite"
+            sentinel.write_bytes(b"untouched")
+            restore_environment.require_restore_hardlinks(directory)
+            self.assertEqual(list(directory.iterdir()), [sentinel])
+            self.assertEqual(sentinel.read_bytes(), b"untouched")
+
+    def test_permission_denial_is_an_error_not_a_skip_or_restore_pass(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            database = directory / "isolated.sqlite"
+            database.write_bytes(b"not removed")
+            case = RestoredFinalizationTests(methodName="runTest")
+            case.root = directory
+            case.install = SimpleNamespace(db_path=database)
+            case.cli = mock.Mock()
+            case.runTest = case.restore_core
+            denied = PermissionError(errno.EACCES, "injected link denial")
+            with mock.patch.object(restore_environment.os, "link", side_effect=denied):
+                result = unittest.TestResult()
+                # Do not run the physical-install setUp for this limited control.
+                with mock.patch.object(case, "setUp"):
+                    case.run(result)
+            self.assertFalse(result.wasSuccessful())
+            self.assertEqual(len(result.errors), 1)
+            self.assertEqual(result.skipped, [])
+            self.assertIn("restore_environment_unavailable", result.errors[0][1])
+            self.assertIn("errno=13", result.errors[0][1])
+            case.cli.assert_not_called()
+            self.assertEqual(database.read_bytes(), b"not removed")
+            self.assertEqual(list(directory.iterdir()), [database])
+
+    def test_other_probe_errors_are_not_reclassified(self):
+        for error in (OSError(errno.EIO, "injected I/O failure"),
+                      FileExistsError(errno.EEXIST, "injected collision")):
+            with self.subTest(error=type(error).__name__), tempfile.TemporaryDirectory() as temporary:
+                directory = Path(temporary)
+                with mock.patch.object(restore_environment.os, "link", side_effect=error):
+                    with self.assertRaises(OSError) as caught:
+                        restore_environment.require_restore_hardlinks(directory)
+                self.assertIs(caught.exception, error)
+                self.assertEqual(list(directory.iterdir()), [])
+
+    def test_setup_failure_remains_a_setup_failure_after_successful_probe(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            database = directory / "isolated.sqlite"
+            database.write_bytes(b"test only")
+            case = RestoredFinalizationTests(methodName="runTest")
+            case.root = directory
+            case.install = SimpleNamespace(db_path=database)
+            failure = AssertionError("setup_restore_failed")
+            case.cli = mock.Mock(side_effect=failure)
+            with mock.patch.object(restore_environment, "require_restore_hardlinks"):
+                with self.assertRaises(AssertionError) as caught:
+                    case.restore_core()
+            self.assertIs(caught.exception, failure)
+            case.cli.assert_called_once_with("setup")

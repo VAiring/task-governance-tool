@@ -780,6 +780,36 @@ not an installable `taskgov` command. The suite separately retains isolated
 physical-install, no-write, migration, upgrade, and paired-rollback behavior
 coverage.
 
+### Setup restore test environment
+
+Real Setup restore tests require a filesystem and execution identity that allow
+hard-link creation for closed regular files. The review-finalization restore
+fixture checks this prerequisite using disposable files beside its isolated DB
+before removing that DB. A permission denial reports
+`restore_environment_unavailable` as a test error, never a skip or a successful
+restore. Other probe errors remain errors; `setup_restore_failed` alone does
+not establish an environmental cause. A successful probe also does not prove
+that Setup restore will succeed.
+
+Run the unchanged real restore and exact-Receipt checks in an **authorized**
+hard-link-capable environment, using a private physical temporary project:
+
+```powershell
+python -B -m unittest tests.test_review_finalization_restore.CollectedRestoreTests -v
+python -B -m unittest tests.test_review_finalization_restore -v
+```
+
+These tests create and clean up their own fixtures. Never remove or restore a
+live project's DB for this check. Do not change host trust, sandbox policy or
+permissions automatically. If the execution environment denies the probe,
+report the observed error and that real restore/Receipt checks remain
+unverified; arrange an authorized environment before rerunning the same code
+and assertions. A mock, skipped or unexecuted restore cannot qualify as PASS.
+The normal commands above need no retained temporary directories or exception
+tracing inserted into Setup. Preserve the actual result and limitations of
+each run; one successful case does not establish all recovery tests or CI.
+The product's no-replace publication and CI success conditions are unchanged.
+
 ## Project Docs
 
 - `AGENTS.md`: durable agent behavior, safety, and workflow gates.

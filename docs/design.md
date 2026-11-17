@@ -1271,7 +1271,14 @@ Current detail is owned by the [Runner execution design](runner-execution-design
 ## Validation And Test Design
 
 The suite is standard-library-first, offline, and isolated. It must not mutate
-a real consuming project or Git state. Tests cover:
+a real consuming project or Git state. Review-finalization restore fixtures
+use `tests/setup_restore_environment_support.py` to probe hard-link permission
+with disposable closed files on their private filesystem before DB removal.
+Only permission denial from that probe is labeled an unmet environment
+prerequisite; it fails the test without skipping or substituting for real
+Setup/Receipt verification. Product errors are not reclassified. See the
+[restore test procedure](../README.md#setup-restore-test-environment).
+Tests cover:
 
 - all 23 parser leaves, removed commands/options, help, text/JSON/error/compact
   envelopes, and byte limits;

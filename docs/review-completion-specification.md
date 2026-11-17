@@ -2392,6 +2392,11 @@ must be settled; a known PAUSED timer uses existing cleanup and a deleted timer
 is not deleted again. Receipt absence alone does not block this transition and
 never permits resend. Unknown creation, sending or timer effects, incomplete
 closing, missing/mismatched exit proof and same-generation drift remain closed.
+Once settlement is proven, an unfinished ordinary review that needs a new
+attempt requires a different actual parent turn. A call from the older
+attempt's turn returns `review_wait_unavailable` with diagnostic reason
+`new_parent_turn_required` before closing the old request or deleting its
+reservation. A later parent turn can start the new wait with the same reviewers.
 Only after this proof may the existing cleanup advance the old request to
 closed. Revalidate the new basis before creating one new attempt under the same
 lease. Retain prior identities and history; never reuse an old judgment or

@@ -81,6 +81,47 @@ class GenerationSwitchTests(unittest.TestCase):
         self.assertEqual(self.fresh()["status"], "waiting")
         self.assertEqual(self.effects, ["create", "arm"])
 
+    def test_same_turn_preserves_settled_older_attempt_until_a_later_turn(self):
+        for paused in (False, True):
+            with self.subTest(paused=paused):
+                self.setUp()
+                direct = self.previous()
+                if paused:
+                    self.rewrite(replace(direct, status="suppressed", timer_phase="paused",
+                                         acknowledged_turn=None))
+                    host = self.hosts[self.old.automation_id]
+                    host.value = replace(host.value, status="PAUSED")
+                    host.deleted = False
+                session = self.make()
+                next_parent = self.current_parent
+                self.current_parent = replace(next_parent, turn_id=self.old.parent_turn)
+                old_metadata = {**self.metadata, "turnId": self.old.parent_turn}
+                before = self.journal.path.read_bytes()
+                for _ in range(2):
+                    result = self.call(metadata=old_metadata, session=session)
+                    self.assertEqual(result["error"], "review_wait_unavailable")
+                    diagnostic = result["diagnostic"]
+                    self.assertEqual(diagnostic["reason"], "new_parent_turn_required")
+                    self.assertEqual(diagnostic["cleanup"], "not_attempted")
+                    self.assertEqual(diagnostic["host_mutation"], "not_dispatched")
+                    self.assertEqual(self.journal.path.read_bytes(), before)
+                    self.assertEqual(self.effects, [])
+                self.current_parent = next_parent
+                self.assertEqual(self.fresh(session=session)["status"], "waiting")
+                self.assertTrue(self.fresh(session=session)["replayed"])
+                self.assertEqual(self.journal.read()[0], 2)
+                self.assertEqual(self.effects, (["delete"] if paused else []) + ["create", "arm"])
+                self.close_all()
+
+    def test_same_turn_checks_unsettled_effects_before_turn_admission(self):
+        direct = self.previous()
+        self.rewrite(replace(direct, status="unknown", acknowledged_turn=None))
+        self.current_parent = replace(self.current_parent, turn_id=self.old.parent_turn)
+        result = self.call(metadata={**self.metadata, "turnId": self.old.parent_turn}, session=self.make())
+        self.assertEqual(result["diagnostic"]["reason"], "review_continuation_effect_unknown")
+        self.assertEqual(self.journal.read(), (1, self.old))
+        self.assertEqual(self.effects, [])
+
     def test_historical_round_keeps_direct_exit_proof_when_saving_continues_to_fail(self):
         for ended in (False, True):
             for closed in (False, True):
@@ -168,13 +209,20 @@ class GenerationSwitchTests(unittest.TestCase):
                 self.close_all()
 
     def test_already_ended_new_review_closes_old_request_without_new_wait(self):
-        self.previous()
-        self.child = replace(self.child, status="completed", thread_status="idle")
-        result = self.fresh()
-        self.assertEqual(result["status"], "reviews_ended", result)
-        self.assertFalse(result["parent_may_end"])
-        self.assertEqual(self.effects, [])
-        self.assertEqual(self.journal.read(), (1, replace(self.old, phase="closed")))
+        for same_turn in (False, True):
+            with self.subTest(same_turn=same_turn):
+                self.setUp()
+                self.previous()
+                if same_turn:
+                    self.metadata["turnId"] = self.old.parent_turn
+                    self.current_parent = replace(self.current_parent, turn_id=self.old.parent_turn)
+                self.child = replace(self.child, status="completed", thread_status="idle")
+                result = self.fresh()
+                self.assertEqual(result["status"], "reviews_ended", result)
+                self.assertFalse(result["parent_may_end"])
+                self.assertEqual(self.effects, [])
+                self.assertEqual(self.journal.read(), (1, replace(self.old, phase="closed")))
+                self.close_all()
 
     def test_confirmed_paused_timer_uses_existing_cleanup_once(self):
         direct = self.previous()

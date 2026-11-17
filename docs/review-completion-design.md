@@ -2100,8 +2100,11 @@ It shares settled timer/send and worker-exit checks with continuation cleanup;
 `worker_observation.observe_worker` admits an exact joined local thread or the
 matching saved join proof, and rejects conflicting live evidence. The reader
 creates no session or effects. Only this positive proof permits `ManagedWait`
-to invoke its existing `_cleanup` for the older generation and continue under
-the same lease. The new basis is checked again before appending. A known paused
+to proceed to replacement admission. Under the same lease, an unfinished
+ordinary review compares the executor turn with the old request's parent turn
+before `_cleanup`. A match returns `new_parent_turn_required`. The request
+repository independently enforces its turn rule when appending. The new basis
+is checked again after cleanup and before appending. A known paused
 timer is deleted through existing cleanup; already-deleted timers and settled
 sends are not repeated. A missing receipt is not a new gate. An unknown result,
 unfinished closing or missing exit proof preserves the old request for recovery.

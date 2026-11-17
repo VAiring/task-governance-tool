@@ -469,6 +469,8 @@ class ManagedWait:
                     if proof.state != "settled":
                         diagnostic.invalidate_record()
                         raise DiagnosticError(proof.reason)
+                    if not ended and continued is None and previous.parent_turn == current_turn:
+                        raise DiagnosticError("new_parent_turn_required")
                 elif previous.reviewers != pairs:
                     if previous.phase != "closed":
                         return self._failure("review_wait_binding_changed")

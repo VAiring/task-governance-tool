@@ -26,7 +26,7 @@ PROJECT_REASONS = frozenset({
 })
 REASONS = _BOOTSTRAP_REASONS | HOST_BOUNDARY_REASONS | DIRECT_REASONS | PROJECT_REASONS | frozenset({
     "unavailable", "policy_unreadable", "review_wait_not_enabled", "service_closed",
-    "binding_mismatch", "parent_turn_changed", "reviewer_turn_changed", "binding_changed",
+    "binding_mismatch", "parent_turn_changed", "new_parent_turn_required", "reviewer_turn_changed", "binding_changed",
     "session_limit", "heartbeat_create_unknown", "heartbeat_changed", "preparation_failed",
     "start_unavailable", "cleanup_unresolved", "review_wait_unresolved",
     "review_wait_restart_requires_recovery", "review_wait_binding_changed",

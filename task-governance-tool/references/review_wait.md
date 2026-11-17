@@ -168,6 +168,10 @@ user action, end the ordinary turn after this report. Do not promise automatic
 resumption or mark the Task complete. Do not repeat the same failed operation
 without a changed relevant condition or new evidence.
 
+With `diagnostic.reason=new_parent_turn_required`, the new target still has
+running reviews and the old request and reservation are preserved. Resume in
+a later actual parent turn with the same Task and reviewers.
+
 Normal service failures retain `ok/error` and provide a fixed `diagnostic`:
 `stage/reason` identify the failure; `local_state` and `host_mutation` describe
 this call; `retained_effects` describes admitted saved-state observations;

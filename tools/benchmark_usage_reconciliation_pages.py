@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def writer_wait(source):
-    """Measure a real Core commit blocked by one selected overlay page."""
+    """Measure a real Core commit racing one selected overlay page."""
     from concurrent.futures import ThreadPoolExecutor
     from contextlib import closing
     import inspect
@@ -66,7 +66,6 @@ def writer_wait(source):
             if not entered.is_set():
                 entered.set()
                 assert committing.wait(10)
-                assert not editor.done()
             return original(connection, *key)
         options = ({"committed_phases": {"turn_overlays"}}
                    if "committed_phases" in inspect.signature(runtime.advance_effects).parameters else {})
@@ -74,11 +73,19 @@ def writer_wait(source):
             editor = pool.submit(edit)
             with mock.patch.object(overlays, "apply_turn", apply):
                 started = time.monotonic()
-                runtime.advance_effects(fixture.repository, fixture.reader, **options)
+                try:
+                    runtime.advance_effects(fixture.repository, fixture.reader, **options)
+                except UsageError as error:
+                    if error.code != "usage_pending":
+                        raise
+                    measured["stale_at_adoption"] = True
+                else:
+                    measured["stale_at_adoption"] = False
                 measured["page_ms"] = (time.monotonic() - started) * 1000
             editor.result(timeout=10)
         with fixture.repository.connection() as connection:
             measured["units"] = 129 - connection.execute("SELECT COUNT(*) FROM usage_reconcile_overlay_turn_work").fetchone()[0]
+        assert (measured["units"] == 0) == measured["stale_at_adoption"]
         try:
             runtime.advance_effects(fixture.repository, fixture.reader, **options)
         except UsageError as error:

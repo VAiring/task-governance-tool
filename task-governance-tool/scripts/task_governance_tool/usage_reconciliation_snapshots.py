@@ -154,9 +154,12 @@ def _component(repository, connection, identity):
 
 
 def advance(repository, core_reader):
-    with repository.connection(write=True) as connection, core_reader() as core:
+    from .usage_reconciliation_basis import page_writer
+    with page_writer(repository, core_reader) as (connection, page):
         repository.check_budget()
-        basis = digest(require_inputs(repository, core, connection, classified=True))
+        inputs = require_inputs(repository, page.read(), connection, classified=True)
+        page.release(inputs["core"])
+        basis = digest(inputs)
         bootstrap = bootstrap_page(repository, connection)
         if bootstrap is not None:
             return {"phase": "snapshot_baseline", "selected": bootstrap}

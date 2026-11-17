@@ -17,7 +17,7 @@ from .usage_reconciliation_intervals import reconcile_intervals
 from .usage_reconciliation_inputs import stage_one
 from .usage_reconciliation_turns import replay_one
 from .usage_reconciliation_membership import apply_base_one
-from .usage_reconciliation_basis import admit_identity, capture_inputs, require_inputs, global_page
+from .usage_reconciliation_basis import admit_identity, capture_inputs, require_inputs, global_page, page_writer
 from .usage_values import UsageError
 
 
@@ -60,12 +60,13 @@ def _profile(repository, core, connection, task):
     return value
 
 
-def _resolve_one(repository, core, connection):
+def _resolve_one(repository, page, connection):
     work = connection.execute("SELECT task_id FROM usage_reconcile_core_work ORDER BY generation,task_id LIMIT 1").fetchone()
     if work is None:
         work = connection.execute("SELECT task_id FROM usage_reconcile_task_work ORDER BY rowid LIMIT 1").fetchone()
     if work is None:
         return None
+    core = page.read()
     task = work[0]
     profile = _profile(repository, core, connection, task)
     reconcile_task(repository, core, connection, task,
@@ -95,13 +96,15 @@ def _participant_one(connection):
 def advance_initial(repository, core_reader, *, committed_phases=()):
     """Commit one admission unit or one bounded selected-phase page."""
     started = monotonic()
-    with repository.connection(write=True) as connection, core_reader() as core:
+    with page_writer(repository, core_reader) as (connection, page):
         repository.check_budget()
         admit_identity(repository, connection)
+        core = page.read()
         current, previous = revision(core, repository.basis[0]), cursor(connection)
         if (previous is None or previous["identity"] != current.identity() or previous["through"] != current.generation
                 or not previous["complete"]):
             return {"phase": "core", **sync_page(repository, core, connection)}
+        page.release([current.identity(), current.generation])
         baseline = connection.execute("SELECT complete FROM usage_reconcile_baseline WHERE singleton=1").fetchone()
         if baseline is None or not baseline[0]:
             return {"phase": "baseline", **establish_page(repository, connection)}
@@ -110,20 +113,22 @@ def advance_initial(repository, core_reader, *, committed_phases=()):
         source = expand_source_page(repository, connection)
         if source is not None:
             return {"phase": "source", **source}
-        resolved = _resolve_one(repository, core, connection)
+        resolved = _resolve_one(repository, page, connection)
         if resolved is not None:
             return _phase_page(repository, "operations", resolved,
-                lambda: _resolve_one(repository, core, connection), started, committed_phases)
+                lambda: _resolve_one(repository, page, connection), started, committed_phases)
         participant = _participant_one(connection)
         if participant is not None:
             return _phase_page(repository, "participants", participant,
                 lambda: _participant_one(connection), started, committed_phases)
         work = connection.execute("SELECT task_id FROM usage_reconcile_relation_task_work ORDER BY rowid LIMIT 1").fetchone()
         if work is not None:
+            core = page.read()
             changed = reconcile_intervals(repository, core, connection, work[0], _profile(repository, core, connection, work[0]))
             return {"phase": "intervals", "task_id": work[0], "changed": changed}
-        staged = stage_one(repository, core, connection)
-        if staged is not None:
+        if _exists(connection, "usage_reconcile_input_turn_work"):
+            core = page.read()
+            staged = stage_one(repository, core, connection)
             return _phase_page(repository, "turn_inputs", staged,
                 lambda: stage_one(repository, core, connection), started, committed_phases)
         def execution_task(execution):
@@ -139,7 +144,7 @@ def advance_initial(repository, core_reader, *, committed_phases=()):
         if base is not None:
             return _phase_page(repository, "base_effects", base,
                 lambda: apply_base_one(connection), started, committed_phases)
-        capture_inputs(repository, core, connection)
+        capture_inputs(repository, page.read(), connection)
         return {"phase": "effects_pending"}
 
 
@@ -151,9 +156,10 @@ def advance_effects(repository, core_reader, *, single_response=False, committed
     from . import usage_reconciliation_membership as membership
     from . import usage_reconciliation_pending as pending
     started = monotonic()
-    with repository.connection(write=True) as connection, core_reader() as core:
+    with page_writer(repository, core_reader) as (connection, page):
         repository.check_budget()
-        require_inputs(repository, core, connection)
+        inputs = require_inputs(repository, page.read(), connection)
+        page.release(inputs["core"])
         located = uncertainty.locate_one(connection)
         if located is not None:
             return _phase_page(repository, "event_locations", {"transition_id": located},

@@ -1330,8 +1330,13 @@ For each of `operations`, `participants`, `turn_inputs`, `allocation`,
 `base_effects`, `event_locations`, `pending_source`, `uncertainty_rule`,
 `interval_metadata`, `turn_overlays`, `diagnostics` and `execution`,
 the first unit in each reconciliation run commits alone. Subsequent pages use
-one admitted numerical writer and its subsequently opened Core read for at most
-128 units of that phase. The ordinary unit algorithms and queue order are
+one admitted numerical writer for at most 128 units of that phase.
+Core discovery, Task operation resolution, interval reconstruction and turn
+input qualification use a consistent Core snapshot to resolve their inputs.
+Baseline, changes, source expansion, participant queues, turn allocation and
+base contributions use numerical inputs alone. The effect phases, snapshot
+construction and index preparation also release their Core read before
+numerical computation. The ordinary unit algorithms and queue order are
 unchanged; no full-history prefetch or outer batching of response pages is used.
 After 250 ms from page entry, or within 50 ms of the existing event deadline,
 no additional unit starts. A single indivisible unit and commit can take longer:
@@ -1340,10 +1345,15 @@ Results and queue consumption commit atomically; failure rolls back the whole
 uncommitted page while earlier pages remain durable. Run-local first-unit
 tracking advances only after a successful commit and resets on a later run.
 Every page reopens admission and checks Core revisions and higher-priority work;
-no validated state is cached across transactions or connections. A Core writer
-can proceed between pages. Baseline establishment, source ingestion, interval
-reconstruction, snapshot construction and immutable-history audit retain their
-existing boundaries, as does the independent fresh final guard. The shared
+no admission is carried into another page. Before committing numerical work,
+the same writer opens a fresh admitted Core read and compares physical identity,
+epoch, invalidation, schema and input generation with the page's entry basis.
+It also rechecks numerical identity and generation. A mismatch aborts the
+transaction, including queue removals. The final read spans the numerical
+commit so another Core writer cannot invalidate the adopted basis in that
+interval. A Core writer can commit while numerical calculation is in progress.
+The independent final publication guard and immutable-history audit retain
+their existing boundaries. The shared
 page helper never nests a response page or crosses a phase. There is no new
 deadline, configuration, schema or cross-Hook admission cache.
 
@@ -1364,14 +1374,14 @@ retain their deletes. No SELECT is added just to avoid a DELETE.
 
 For response work the first key in each reconciliation run commits on its own.
 Subsequent pages select up to 128 keys in queue order under one numerical
-writer and one fresh Core input check. Each key uses the ordinary response
+writer, with fresh Core checks at entry and adoption. Each key uses the ordinary response
 classifier. The page stops starting additional keys after 250 ms from entry or
 within 50 ms of the existing deadline. The deadline margin is independent of
 the optional-start allowance; one indivisible key and commit can take longer.
 Its result, totals and queue removal commit with the rest of that page.
 An interrupted transaction leaves its keys pending and earlier pages durable.
-The larger page can hold Core readers longer and require more retry work after
-rollback, but is bounded by the selected keys and cooperative allowance. It
+An input change during a larger page can require more retry work after
+rollback, bounded by the selected keys and cooperative allowance. The page
 does not guarantee an absolute transaction duration or writer-wait limit.
 The next page repeats admission and higher-priority selection; diagnostic and
 snapshot work and the final publication guard retain their separate reads.

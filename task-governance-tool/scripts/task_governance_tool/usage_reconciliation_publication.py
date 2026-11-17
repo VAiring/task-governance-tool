@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from .usage_evidence import digest
 from .usage_publication_repository import INTEGRITY
 from .usage_response_attribution import ALGORITHM
-from .usage_reconciliation_basis import require_inputs
+from .usage_reconciliation_basis import require_inputs, page_writer
 from .usage_reconciliation_totals import totals
 from .usage_values import UsageError
 
@@ -36,6 +36,10 @@ def reconcile(repository, core_reader):
 
 def captured_basis(repository, core, connection):
     basis = digest(require_inputs(repository, core, connection, classified=True))
+    return _confirmed_capture(connection, basis)
+
+
+def _confirmed_capture(connection, basis):
     capture = connection.execute("SELECT core_digest FROM usage_capture WHERE singleton=1").fetchone()
     guard = connection.execute("SELECT basis,evidence_generation FROM usage_reconcile_capture_guard WHERE singleton=1").fetchone()
     current = connection.execute("SELECT generation FROM usage_reconcile_evidence_revision WHERE singleton=1").fetchone()
@@ -65,8 +69,10 @@ def metadata(connection):
 
 def prepare(repository, core_reader):
     reconcile(repository, core_reader)
-    with repository.connection(write=True) as connection, core_reader() as core:
-        basis = captured_basis(repository, core, connection)
+    with page_writer(repository, core_reader) as (connection, page):
+        inputs = require_inputs(repository, page.read(), connection, classified=True)
+        page.release(inputs["core"])
+        basis = _confirmed_capture(connection, digest(inputs))
         index = {"format": "taskgov-usage-index-v2", "project_id": repository.basis[0], "core_digest": basis,
                  "attribution": ALGORITHM, "integrity": dict(INTEGRITY), **metadata(connection), "unattributed": totals(connection)}
         identity = digest(index)

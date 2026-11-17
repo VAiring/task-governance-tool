@@ -257,8 +257,10 @@ unknown. [Reconciliation tracking](database-design.md#usage-reconciliation-track
 owns reset, overlap expansion and interruptible progress. There is no
 cross-connection physical-admission cache.
 During refresh, the first pending response commits individually so a short
-event can make progress. Later response pages share that page's Core reader
-and yield between pages for concurrent Task writers. The existing event
+event can make progress. Later response pages release the Core reader during
+numerical calculation. A fresh Core read checks the input generation and
+identity and spans the numerical commit. A concurrent Task update causes
+the stale page to roll back with its work still queued. The existing event
 deadline also governs each response page and the fresh publication check.
 
 `usage_sources.py` locates only registered session IDs in the legacy

@@ -207,17 +207,30 @@ def writer_wait(name):
             if not entered.is_set():
                 entered.set()
                 assert committing.wait(10)
-                assert not editor.done()
             return original(*args, **kwargs)
         with ThreadPoolExecutor(max_workers=1) as pool, policy(name), observe() as (_, pages):
             original = membership.reconcile_response
             editor = pool.submit(edit)
             with mock.patch.object(membership, "reconcile_response", during_page):
-                runtime.advance_effects(fixture.repository, fixture.reader)
+                started = time.perf_counter()
+                try:
+                    runtime.advance_effects(fixture.repository, fixture.reader)
+                except UsageError as error:
+                    if error.code != "usage_pending":
+                        raise
+                    measured["stale_at_adoption"] = True
+                else:
+                    measured["stale_at_adoption"] = False
+                elapsed = (time.perf_counter() - started) * 1000
             editor.result(timeout=10)
         with fixture.repository.connection() as connection:
             remaining = connection.execute("SELECT COUNT(*) FROM usage_reconcile_response_work").fetchone()[0]
-        assert remaining == 129 - pages[0]["units"]
+        if measured["stale_at_adoption"]:
+            assert remaining == 129 and not pages
+            page = {"units": 0, "ms": elapsed}
+        else:
+            page = pages[0]
+            assert remaining == 129 - page["units"]
         try:
             runtime.advance_effects(fixture.repository, fixture.reader)
         except UsageError as error:
@@ -225,7 +238,7 @@ def writer_wait(name):
         else:
             raise AssertionError("stale Core accepted")
         fixture.assert_frozen_same()
-        return {"kind": "contention", "policy": name, "page": pages[0], **measured,
+        return {"kind": "contention", "policy": name, "page": page, **measured,
                 "stale_core_rejected": True, "oracle_equal_after_resume": True}
     finally:
         fixture.doCleanups()

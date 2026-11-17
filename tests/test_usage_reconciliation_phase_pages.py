@@ -179,13 +179,13 @@ class AdditionalPhasePageTests(unittest.TestCase):
                     self.assertEqual(self.state(), before)
                 self.support.assert_same()
 
-    def test_core_writer_between_new_phase_pages_and_fresh_publication_guard(self):
+    def test_core_writer_during_location_page_and_fresh_publication_guard(self):
         advance, committed = self.first_commit("event_locations")
-        entered, committing = Event(), Event()
+        before = self.state()
+        entered = Event()
         def edit():
             self.assertTrue(entered.wait(10))
             with closing(storage.connect_initialized(self.support.fixture.target)) as core:
-                core.set_trace_callback(lambda sql: committing.set() if sql.strip().upper() == "COMMIT" else None)
                 tasks.edit_task(core, self.support.fixture.target.project, self.support.fixture.task_id,
                     database_target=self.support.fixture.target, caller=CallerIdentity(THREAD), title="Between phase pages")
                 core.commit()
@@ -193,15 +193,15 @@ class AdditionalPhasePageTests(unittest.TestCase):
         def locate(connection):
             if not entered.is_set():
                 entered.set()
-                self.assertTrue(committing.wait(10))
-                self.assertFalse(writer.done())
+                writer.result(timeout=10)
             return original(connection)
         with ThreadPoolExecutor(max_workers=1) as pool:
             writer = pool.submit(edit)
             with mock.patch.object(uncertainty, "locate_one", locate), mock.patch.object(runtime, "monotonic", return_value=0):
-                advance(self.repository, self.reader, committed_phases=committed)
+                with self.assertRaisesRegex(UsageError, "usage_pending"):
+                    advance(self.repository, self.reader, committed_phases=committed)
             writer.result(timeout=10)
-        before = self.state()
+        self.assertEqual(self.state(), before)
         with self.assertRaisesRegex(UsageError, "usage_pending"):
             advance(self.repository, self.reader, committed_phases=committed)
         self.assertEqual(self.state(), before)

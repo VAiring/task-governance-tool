@@ -213,15 +213,14 @@ with r.connection(write=True) as connection:
         self.support.assert_same()
 
     @ordinary_current_database
-    def test_core_writer_progresses_between_pages_and_next_page_rejects_stale_basis(self):
+    def test_core_writer_during_overlay_page_rejects_stale_basis(self):
         from concurrent.futures import ThreadPoolExecutor
         from threading import Event
         self.queue_overlays(130)
-        entered, committing = Event(), Event()
+        entered = Event()
         def edit():
             self.assertTrue(entered.wait(5))
             with closing(storage.connect_initialized(self.fixture.target)) as core:
-                core.set_trace_callback(lambda sql: committing.set() if sql.strip().upper() == "COMMIT" else None)
                 tasks.edit_task(core, self.fixture.target.project, self.fixture.task_id,
                     database_target=self.fixture.target, caller=CallerIdentity(THREAD), title="Between turn pages")
                 core.commit()
@@ -229,18 +228,18 @@ with r.connection(write=True) as connection:
         def apply(connection, *key):
             if not entered.is_set():
                 entered.set()
-                self.assertTrue(committing.wait(5))
-                self.assertFalse(writer.done())
+                writer.result(timeout=5)
             return original(connection, *key)
         with ThreadPoolExecutor(max_workers=1) as pool:
             writer = pool.submit(edit)
             with mock.patch.object(overlays, "apply_turn", apply), mock.patch.object(runtime, "monotonic", return_value=0):
-                runtime.advance_effects(self.repository, self.reader, committed_phases=PHASES)
+                with self.assertRaisesRegex(UsageError, "usage_pending"):
+                    runtime.advance_effects(self.repository, self.reader, committed_phases=PHASES)
             writer.result(timeout=5)
-        self.assertEqual(self.remaining(), 2)
+        self.assertEqual(self.remaining(), 130)
         with self.assertRaisesRegex(UsageError, "usage_pending"):
             runtime.advance_effects(self.repository, self.reader, committed_phases=PHASES)
-        self.assertEqual(self.remaining(), 2)
+        self.assertEqual(self.remaining(), 130)
         self.support.assert_same()
 
 

@@ -140,6 +140,23 @@ class ChangedRuntimeTests(unittest.TestCase):
 
     @ordinary_current_database
     def test_competing_task_update_can_commit_between_response_pages(self):
+        from task_governance_tool import usage_reconciliation_runtime as runtime
+        from task_governance_tool.usage_values import UsageError
+        keys, _ = self.queued_responses(2)
+        self.assertEqual(runtime.advance_effects(self.repository, self.reader, single_response=True)["key"], keys[0])
+        with closing(storage.connect_initialized(self.fixture.target)) as writer:
+            tasks.edit_task(writer, self.fixture.target.project, self.fixture.task_id,
+                            database_target=self.fixture.target, caller=CallerIdentity(THREAD), title="Between response pages")
+            writer.commit()
+        with self.assertRaisesRegex(UsageError, "usage_pending"):
+            runtime.advance_effects(self.repository, self.reader)
+        with self.repository.connection() as connection:
+            self.assertEqual(list(map(tuple, connection.execute(
+                "SELECT provider,response_id FROM usage_reconcile_response_work"))), keys[1:])
+        self.assert_same()
+
+    @ordinary_current_database
+    def test_competing_task_update_during_response_page_rejects_the_whole_page(self):
         from concurrent.futures import ThreadPoolExecutor
         from threading import Event
         from task_governance_tool import usage_reconciliation_membership as membership
@@ -147,14 +164,10 @@ class ChangedRuntimeTests(unittest.TestCase):
         from task_governance_tool.usage_values import UsageError
 
         keys, _ = self.queued_responses(runtime._RESPONSE_PAGE_SIZE + 1)
-        page_started, committing = Event(), Event()
+        page_started = Event()
         def edit_task():
             self.assertTrue(page_started.wait(5))
             with closing(storage.connect_initialized(self.fixture.target)) as core:
-                def trace(sql):
-                    if sql.strip().upper() == "COMMIT":
-                        committing.set()
-                core.set_trace_callback(trace)
                 tasks.edit_task(core, self.fixture.target.project, self.fixture.task_id,
                     database_target=self.fixture.target, caller=CallerIdentity(THREAD), title="Concurrent Task update")
                 core.commit()
@@ -163,21 +176,103 @@ class ChangedRuntimeTests(unittest.TestCase):
         def during_page(connection, *key):
             if not page_started.is_set():
                 page_started.set()
-                self.assertTrue(committing.wait(5))
-                self.assertFalse(editor.done())
+                editor.result(timeout=5)
             return apply(connection, *key)
         with ThreadPoolExecutor(max_workers=1) as pool:
             editor = pool.submit(edit_task)
             with mock.patch.object(membership, "reconcile_response", during_page), \
                     mock.patch.object(runtime, "monotonic", return_value=0):
-                self.assertEqual(runtime.advance_effects(self.repository, self.reader)["phase"], "response")
+                with self.assertRaisesRegex(UsageError, "usage_pending"):
+                    runtime.advance_effects(self.repository, self.reader)
             editor.result(timeout=5)
         with self.assertRaisesRegex(UsageError, "usage_pending"):
             runtime.advance_effects(self.repository, self.reader)
         with self.repository.connection() as connection:
             self.assertEqual([tuple(row) for row in connection.execute(
-                "SELECT provider,response_id FROM usage_reconcile_response_work ORDER BY rowid")], keys[-1:])
+                "SELECT provider,response_id FROM usage_reconcile_response_work ORDER BY rowid")], keys)
         self.assert_same()
+
+    @ordinary_current_database
+    def test_task_commit_during_base_calculation_keeps_progress_for_restart(self):
+        from task_governance_tool import usage_reconciliation_runtime as runtime
+        from task_governance_tool.usage_values import UsageError
+        apply = runtime.apply_base_one
+        queue = "SELECT * FROM usage_reconcile_turn_effects ORDER BY rowid"
+        pending = []
+        def changed(connection):
+            before = list(map(tuple, connection.execute(queue)))
+            value = apply(connection)
+            if value is not None:
+                self.assertTrue(before)
+                pending.extend(before)
+                with closing(storage.connect_initialized(self.fixture.target)) as writer:
+                    tasks.edit_task(writer, self.fixture.target.project, self.fixture.task_id,
+                                    database_target=self.fixture.target, caller=CallerIdentity(THREAD),
+                                    title="Core writer during base computation")
+                    writer.commit()
+            return value
+        with mock.patch.object(runtime, "apply_base_one", changed), self.assertRaisesRegex(UsageError, "usage_pending"):
+            self.fixture.drain_initial()
+        with self.repository.connection() as connection:
+            self.assertTrue(pending)
+            self.assertEqual(list(map(tuple, connection.execute(queue))), pending)
+        self.assert_same()
+
+    @ordinary_current_database
+    def test_one_interrupted_response_stays_queued_and_core_guard_spans_adoption(self):
+        from contextlib import contextmanager
+        import sqlite3
+        from task_governance_tool import usage_reconciliation_membership as membership
+        from task_governance_tool import usage_reconciliation_runtime as runtime
+        from task_governance_tool.usage_values import UsageError
+        keys, expected = self.queued_responses(1)
+        original = membership.reconcile_response
+        def interrupt(connection, *key):
+            original(connection, *key)
+            raise UsageError("usage_pending")
+        with mock.patch.object(membership, "reconcile_response", interrupt), self.assertRaisesRegex(UsageError, "usage_pending"):
+            runtime.advance_effects(self.repository, self.reader, single_response=True)
+        with self.repository.connection() as connection:
+            self.assertEqual(list(map(tuple, connection.execute("SELECT * FROM usage_reconcile_response_work"))), keys)
+
+        numerical = self.repository.connection
+        attempts = []
+        @contextmanager
+        def before_commit(*, write=False):
+            with numerical(write=write) as connection:
+                yield connection
+                if write:
+                    with closing(sqlite3.connect(self.fixture.target.db_path, timeout=0)) as writer:
+                        writer.execute("BEGIN IMMEDIATE")
+                        writer.execute("UPDATE tasks SET title=title WHERE task_id=?", (self.fixture.task_id,))
+                        with self.assertRaises(sqlite3.OperationalError) as error:
+                            writer.commit()
+                        attempts.append(error.exception.sqlite_errorname)
+        with mock.patch.object(self.repository, "connection", before_commit):
+            self.assertEqual(runtime.advance_effects(self.repository, self.reader, single_response=True)["key"], keys[0])
+        self.assertEqual(attempts, ["SQLITE_BUSY"])
+        self.assertEqual(self.assert_same(), expected)
+
+    @ordinary_current_database
+    def test_replaced_core_with_equal_generation_rejects_response_adoption(self):
+        from shutil import copyfile
+        from task_governance_tool import usage_reconciliation_membership as membership
+        from task_governance_tool import usage_reconciliation_runtime as runtime
+        from task_governance_tool.usage_values import UsageError
+        keys, expected = self.queued_responses(1)
+        path = self.fixture.target.db_path
+        replacement = path.with_suffix(".replacement")
+        copyfile(path, replacement)
+        original = membership.reconcile_response
+        def replace_after_work(connection, *key):
+            original(connection, *key)
+            replacement.replace(path)
+        with mock.patch.object(membership, "reconcile_response", replace_after_work), self.assertRaisesRegex(UsageError, "usage_pending"):
+            runtime.advance_effects(self.repository, self.reader)
+        with self.repository.connection() as connection:
+            self.assertEqual(list(map(tuple, connection.execute(
+                "SELECT provider,response_id FROM usage_reconcile_response_work"))), keys)
+        self.assertEqual(self.assert_same()["unattributed"], expected["unattributed"])
 
     def transition(self, status, response, **options):
         fixture = self.fixture

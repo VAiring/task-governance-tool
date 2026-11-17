@@ -1,5 +1,7 @@
 """Fresh structural watermarks fence resumable classification and publication."""
 
+from contextlib import ExitStack, contextmanager
+
 from .usage_evidence import digest, encode
 from .usage_reconciliation_core import cursor, revision, _decode
 from .usage_values import UsageError
@@ -31,6 +33,46 @@ def numerical_identity(repository, connection):
     observed = repository.reconciliation_revision(connection)
     return {"basis": list(repository.basis), "epoch": observed.epoch, "schema": repository.migrations[-1][0],
             "algorithm": ALGORITHM, "file": [stat.st_dev, stat.st_ino]}, observed.generation
+
+
+class _PageCore:
+    """A single numerical transaction may release its reader for computation."""
+
+    def __init__(self, repository, connection, reader, stack):
+        self.repository = repository
+        self.connection = connection
+        self.reader = reader
+        self.stack = stack
+        self.core = None
+        self.expected_core = None
+        self.expected_numerical = None
+
+    def release(self, core_basis):
+        self.expected_core = core_basis
+        self.expected_numerical = numerical_identity(self.repository, self.connection)
+        self.stack.close()
+        self.core = None
+
+    def read(self):
+        if self.core is None:
+            self.repository.check_budget()
+            self.core = self.stack.enter_context(self.reader())
+            if self.expected_core is not None:
+                current = revision(self.core, self.repository.basis[0])
+                if ([current.identity(), current.generation] != self.expected_core
+                        or numerical_identity(self.repository, self.connection) != self.expected_numerical):
+                    raise UsageError("usage_pending")
+        return self.core
+
+
+@contextmanager
+def page_writer(repository, core_reader):
+    # Open the writer first. The outer stack holds its final Core read until
+    # AFTER the writer context commits or rolls back, including exceptional exit.
+    with ExitStack() as readers, repository.connection(write=True) as connection:
+        page = _PageCore(repository, connection, core_reader, readers)
+        yield connection, page
+        page.read()
 
 
 def admit_identity(repository, connection):

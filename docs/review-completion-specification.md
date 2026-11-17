@@ -2517,6 +2517,34 @@ Unavailable proof must remain an explicit limitation, not a synthetic success
 or a requirement for repeated failing calls. The existing failure-reporting and
 permitted review-result continuation rules still apply.
 
+#### Conditional Notification Recovery After Confirmed Deletion
+
+This design covers a managed wait whose service confirmed deletion of its own
+timer and then lost the opportunity to notify the original parent. Current
+releases retain their existing suppression and unknown-effect handling. The
+candidate requires a separately implemented, verified one-send record for both
+the normal worker and recovery.
+
+For the exact project, parent, Task, owner, target generation, reviewer set and
+wait occurrence, the service may finish the **first** notification only when
+durable records prove that the send right is still unused. The original due
+cutoff governs starting deletion. The original outer deadline, cancellation,
+parent and reviewer guards govern sending after deletion. An already resumed
+parent can obtain the retained result directly. Recovery creates no timer and
+does not repeat deletion or extend either deadline.
+
+A durable send intent consumes the right even if the process died before the
+host call. A lost reply, uncertain result, rejection or acceptance without a
+correlated receipt permits zero additional sends. A deleted timer, stopped
+worker, absent receipt or diagnostic entry cannot establish an unused right.
+Older or incomplete records lead to explicit recovery in the original parent.
+
+Show the delivery outcome separately from the review judgments, registration,
+Git commit and Task completion. Preserve confirmed stages and identify the first
+unresolved stage and its existing recovery action. Only the original completion
+route can authorize its remaining work. The [decision table and crash boundaries](review-completion-design.md#confirmed-deletion-notification-recovery)
+define the required evidence and permitted action for each case.
+
 #### Accepted Review Wait Query Routing
 
 This routing and bounded-read change is approved for implementation. Each changed

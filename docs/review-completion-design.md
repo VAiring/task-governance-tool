@@ -2436,6 +2436,67 @@ Offline regression, document/package checks and two independent Tier 2 reviews
 must precede that activation. A successful design review or fixture cannot
 replace this host prerequisite or authorize its test mutations.
 
+<a id="confirmed-deletion-notification-recovery"></a>
+
+#### Conditional Notification Recovery After Confirmed Deletion
+
+The [notification recovery contract](review-completion-specification.md#conditional-notification-recovery-after-confirmed-deletion)
+starts after the service's own confirmed deletion. The managed direct worker
+currently saves `deleting`, calls the host, saves `deleted`, rechecks the parent
+and reviewers, and saves `dispatching` before the host send. The same terminal
+suppression reason can follow several different checks. Existing records cannot
+be upgraded to the proof below from timestamps, a worker exit or missing ACK.
+
+**Durable proof.** In a future record version, successful persistence of the
+exact owned deletion also opens one unused send right in the same transaction.
+Bind it to the project/binding, original parent, Task and ownership generation,
+complete review target, preparation/continuation and ordered reviewer bindings,
+attempt, worker/probe and timer occurrence, delivery identity and original
+deadline. Normal delivery and recovery must both consume that same right by
+an atomic transition to send intent *before* calling the host. Admit only a
+compatible writer population for this occurrence. Its history is
+monotonic across worker replacement and service restart. A missing, restored
+or conflicting history whose continuity cannot be proved is unknown. Record
+only structural identities, phases and outcomes in the operational store.
+
+**Recovery entry.** On a reported pre-send failure or service restart, the
+project service can inspect that occurrence. A user can also resume the
+original parent and request the retained result. Reconcile the exact request,
+controller, direct record and original worker's settled exit under their
+existing ownership rules before a replacement can claim delivery. A live
+owner retains its claim. Under the same-parent dispatch lease, reacquire the
+current policy, original parent identity and idle state, reviewer termination,
+Task/target/owner binding, cancellation and clock bounds. Preserve the existing
+exception for owner release caused by this very completion. Read the exact
+finalization report without advancing it, or compose the existing review-only
+notice. Renew the effect guards after these reads, capture a fresh receipt
+fence on the original parent and consume the right once. Competing claims observe the winning
+transition. Uncertain persistence has the same send prohibition as an
+uncertain host result.
+
+| Evidence for this exact occurrence | Permitted next action | Further host sends |
+|---|---|---|
+| Normal confirmed deletion, unused right, all guards valid | Normal worker consumes the right, sends and settles the result. | At most one. |
+| Confirmed pre-send failure or restart, unused right, old worker settled | Rebuild the report and freshly guard the first send. If the original parent is already handling recovery, atomically retire the unused right for direct inspection under the same lease. | At most one across all workers, zero after direct inspection claims the right. |
+| Concurrent or repeated recovery | Read the winning claim or retirement. Only a claimant that successfully persisted intent for this call may invoke the host. | Zero from other calls. |
+| Crash after intent, including before the host call, or lost send response | Inspect retained dispatch and any existing correlation. Report the delivery uncertainty in the original parent. | Zero. |
+| Host rejected, accepted without receipt, or already correlated | Report the saved outcome and receipt scope. An eligible existing observation may establish correlation within its original bound. | Zero. |
+| Cancelled, expired, superseded target, changed owner or reviewer set | Close the unused right for this occurrence and report the reason. A busy parent can defer only inside the original deadline. | Zero while ineligible, zero after retirement. |
+| Missing proof of deletion, settled exit, unique binding or record continuity | Preserve the records. Direct the user to reopen the original parent and inspect the retained attempt and finalization report. | Zero. |
+
+Review PASS alone advances no business stage. For a partially completed
+integrated route, report the saved registration IDs, confirmed commit if any,
+Task status, and the existing next action for the first unfinished or unknown
+stage. Notify or return that report without invoking registration, commit or
+completion again. A manual preparation retains its own submission route.
+
+Before activation, exercise the normal send, failures at each post-deletion
+guard, restart on both sides of intent persistence, lost host reply, accepted
+without receipt, duplicate and simultaneous claimants, parent resumption,
+cancellation, expiry, supersession and each partial business stage. Observe
+actual send/delete counts and unchanged business records. The design introduces
+no operational transition in the current release.
+
 #### Accepted Review Wait Query Design
 
 This approved design implements the [query-routing contract](review-completion-specification.md#accepted-review-wait-query-routing)

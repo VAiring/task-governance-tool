@@ -67,7 +67,7 @@ class CollectionPolicyPollingTests(unittest.TestCase):
         self.control = Mock(return_value=False)
         self.session._control_observer = Mock(return_value=self.control)
         self.session._wait_occurrence_current = Mock()
-        self.sources = self.enterContext(patch.object(runtime, "sources_for_reviewers", side_effect=self.source_groups))
+        self.sources = self.enterContext(patch.object(runtime, "_source_selection", side_effect=self.source_groups))
         self.flow.polling_factory.side_effect = lambda controller, **options: self.session._polling_sources(
             controller.binding, controller.reservation.timer_id,
             tuple(row.reviewer_id for row in controller.reviewers), **options)
@@ -95,10 +95,11 @@ class CollectionPolicyPollingTests(unittest.TestCase):
         if observe_policy is not None:
             observe_policy(enabled)
         if not enabled:
-            return None
+            return None, ()
         slots = {reviewer.reviewer_id: index for index, reviewer in enumerate(self.flow.reviewers, 1)}
-        return (runtime.SourceGroup(self.service, tuple(reviewers),
-            tuple(slots[child] for child in reviewers), tuple(range(1, len(reviewers) + 1))),)
+        group = runtime.SourceGroup(self.service, tuple(reviewers),
+            tuple(slots[child] for child in reviewers), tuple(range(1, len(reviewers) + 1)))
+        return (group,), (self.repository.read(),)
 
     def collect(self, host, controller, reviewer, **options):
         self.collect_times.append((reviewer, self.flow.clock.elapsed))

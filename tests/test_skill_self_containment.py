@@ -1688,7 +1688,8 @@ class ReferenceRetrievalTests(unittest.TestCase):
         recovery = self.reader().read_reference(source + "#coverage-and-recovery", SKILL_ROOT)
         _, details = self.linked_output(source, recovery, "integrity-audit-details")
         for condition in ("prefix_verification_deferred", "evidence_verification_deferred",
-                          "not verified", "does not do so", "Do not redo Task completion",
+                          "not verified", "Disabled/untrusted hooks cannot establish initial intake",
+                          "Merely restarting the app does not prove Hook delivery", "Do not redo Task completion",
                           "preserves prior", "no proof of present integrity"):
             self.assertIn(condition, recovery)
         for internal in ("Changed shared components", "bounded resumable slices", "rotating audit"):

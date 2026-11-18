@@ -33,6 +33,50 @@ class ManagedDirectProbe(DirectProbe):
         self._finalization_prepared = False
         self.read_diagnostic = None
         self._read_diagnostic_identity = None
+        self._skip_exit_pause = False
+
+    def _cleanup(self, host):
+        if not self._skip_exit_pause:
+            super()._cleanup(host)
+
+    def settle_absent_config(self, metadata, expected, host):
+        """Join the exact worker, then persist only a same-store absence observation."""
+        from .review_wait_direct_repository import instant
+        from .worker_observation import observe_worker
+        with self._request:
+            controller = self.wait.read().controller
+            self._admit(metadata, controller)
+            current = self.repository.read()
+            if (self._closed or current != expected or binding_digest(controller) != current.binding_digest
+                    or current.timer_phase not in {"active", "paused"}):
+                return False
+            now = instant(self._now())
+            worker = observe_worker(current, controller, self, now)
+            if worker["status"] not in {"running", "stopped"}:
+                return False
+            self._skip_exit_pause = True
+            try:
+                if not self._stop_worker("cancelled")["ok"]:
+                    return False
+                with self.wait.writer() as lease:
+                    controller = lease.read().controller
+                    current = self.repository.read()
+                    if (current.probe_id != expected.probe_id or current.worker_id != expected.worker_id
+                            or current.binding_digest != expected.binding_digest
+                            or current.timer_phase != expected.timer_phase
+                            or current.timer_store_digest != expected.timer_store_digest
+                            or current.timer_created_at != expected.timer_created_at
+                            or current.timer_updated_at != expected.timer_updated_at
+                            or current.status not in {"cancelled", "suppressed", "expired", "abandoned"}
+                            or not current.worker_stop_identity
+                            or observe_worker(current, controller, self, now)["status"] != "stopped"
+                            or not host.config_absent(current.timer_store_digest)):
+                        return False
+                    self.repository.update(current.probe_id, timer_phase="config_absent",
+                                           timer_absent_at=instant(self._now()))
+                    return True
+            finally:
+                self._skip_exit_pause = False
 
     def _run_scoped(self, host, record, monotonic_deadline):
         try:

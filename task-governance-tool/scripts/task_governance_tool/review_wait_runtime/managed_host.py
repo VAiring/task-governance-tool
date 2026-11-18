@@ -17,11 +17,13 @@ def _host_text_length(value):
     return len(value.encode("utf-16-le", errors="surrogatepass")) // 2
 
 
-def fallback_prompt(task_id):
+def fallback_prompt(task_id, *, legacy=False):
     validate_task_id(task_id)
+    occurrence = "" if legacy else "この通知が終了済み・置換済みの待機に属する場合は、その待機を再開しないでください。"
     return (
         f"元Task {task_id} の独立レビューを確認する時刻です。保存済みの元Packet・レビュー依頼と"
         "実際のレビュワーを使って既存のレビュー結果処理を続けてください。"
+        f"{occurrence}"
         "健全な未完了レビューがある場合は、同じTaskと実レビュワーを渡す review_wait_wait を"
         "一度呼んで再待機してください。予約の作成・削除や個別ACK・状態確認は不要です。"
         "この通知をPASSやTask完了の証拠にせず、不明な操作を再試行しないでください。"
@@ -185,10 +187,11 @@ class ManagedHost(PublicMcpHost):
     def create_heartbeat(self, rule):
         """The caller has already saved creation intent; one call, no retries."""
         try:
+            self._created_name = "Taskgov review wait " + uuid4().hex
             texts = self._call("automation_update", {
                 "mode": "create", "kind": "heartbeat", "destination": "thread",
                 "targetThreadId": self.parent_thread_id,
-                "name": "Taskgov review wait " + uuid4().hex,
+                "name": self._created_name,
                 "prompt": fallback_prompt(self.task_id), "rrule": rule, "status": "PAUSED",
             })
             if len(texts) != 2:
@@ -205,10 +208,12 @@ class ManagedHost(PublicMcpHost):
         except Exception as error:
             raise unknown_host_effect("heartbeat_create_unknown", error) from None
 
-    def verify_created(self, rule):
+    def verify_created(self, rule, *, recovery=False):
         config = self._view_config()
         if (config.snapshot.status != "PAUSED" or config.snapshot.rule != rule
-                or config.prompt != fallback_prompt(self.task_id)):
+                or config.name != getattr(self, "_created_name", config.name)
+                or (config.prompt != fallback_prompt(self.task_id)
+                    and not (recovery and config.prompt == fallback_prompt(self.task_id, legacy=True)))):
             raise HostAdapterError("heartbeat_changed")
         return config.snapshot
 

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from task_governance_tool.state_paths import path_lexically_exists
-from .request_repository import RequestRepository, HistoricalRequestProof, request_identity_digest
+from .request_repository import RequestRepository, HistoricalRequestProof, request_identity_digest, creation_origin
 from .review_wait_repository import ReviewWaitRepository
 from .review_wait_direct_repository import DirectRepository, marker_exists
 
@@ -31,7 +31,10 @@ def _read_bound_state(paths, parent_id, task_id, request):
         or controller.binding.parent_thread_id != parent_id or controller.binding.task_id != task_id
         or controller.reservation.timer_id != request.automation_id
         or controller.reservation.parent_thread_id != parent_id
-        or request.parent_turn != direct.original_parent_turn):
+        or request.parent_turn != direct.original_parent_turn
+        or (direct.timer_store_digest is not None or request.creation_origin is not None)
+        and request.creation_origin != creation_origin(direct.timer_store_digest, direct.timer_created_at,
+                                                      controller.reservation.identity_digest)):
         raise RepositoryError("review_continuation_conflict")
     return controller, direct
 
@@ -54,7 +57,7 @@ def _settled_effects(controller, direct, *, owner=None):
     observed = observe_worker(direct, controller, owner, instant(datetime.now(timezone.utc)))
     if direct.version != 2 or direct.worker_id is None or observed["status"] != "stopped":
         return CleanupObservation("unknown", "review_continuation_worker_exit_unknown")
-    if direct.timer_phase not in ("paused", "deleted"):
+    if direct.timer_phase not in ("paused", "deleted", "config_absent"):
         return CleanupObservation("unknown", "review_continuation_effect_unknown")
     return CleanupObservation("settled", None, direct.worker_stop_identity)
 

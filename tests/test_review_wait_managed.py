@@ -499,13 +499,25 @@ class ManagedConfigCompatibilityTests(unittest.TestCase):
                 return ("card", json.dumps({"automationId": values["id"], "mode": mode, "status": values["status"]}))
 
             actual._call = call
-            for method in ("create_heartbeat", "verify_created", "view_heartbeat", "update_heartbeat", "delete_heartbeat"):
+            for method in ("create_heartbeat", "verify_created", "view_heartbeat", "config_absent",
+                           "update_heartbeat", "delete_heartbeat"):
                 setattr(simulated, method, getattr(actual, method))
             return simulated
 
         fixture.factory = factory
         fixture.session = fixture.make()
         return fixture
+
+    def test_explicit_stop_recovers_physical_removal_without_another_host_operation(self):
+        fixture = self.fixture(True)
+        self.assertTrue(fixture.call()["ok"])
+        identity = fixture.inspect()["automation_id"]
+        path = fixture.root / "codex-home" / "automations" / identity / "automation.toml"
+        path.unlink()
+        stopped = fixture.call("stop")
+        self.assertTrue(stopped["ok"], stopped)
+        self.assertEqual("config_absent", fixture.inspect()["delivery"]["timer_phase"])
+        self.assertEqual(["create", "arm"], fixture.effects)
 
     def test_current_and_legacy_configs_cover_lifecycle_stop_and_rewait(self):
         for with_hash in (False, True):
@@ -559,6 +571,8 @@ class ManagedFlowTests(unittest.TestCase):
         self.current_parent = ChildTurn(PARENT, ORIGINAL, "inProgress", "active")
         self.child = ChildTurn(CHILD, TURN, "inProgress", "active")
         self.hosts, self.effects = {}, []
+        self.store_digest = None
+        self.config_missing = False
         self.fail_create = self.fail_arm = self.fail_delete = self.fail_receipt = False
         self.auto_receive = True
         self.sessions = []
@@ -590,12 +604,18 @@ class ManagedFlowTests(unittest.TestCase):
                 if fixture.fail_create:
                     raise HostAdapterError("heartbeat_create_unknown")
                 self.automation_id = "managed-" + str(len(fixture.hosts) + 1)
-                self.value = replace(self.value, id=self.automation_id, rule=rule, timezone_source="host_node_intl")
+                self.value = replace(self.value, id=self.automation_id, rule=rule, timezone_source="host_node_intl",
+                                     store_digest=fixture.store_digest)
                 fixture.hosts[self.automation_id] = self
                 return self.automation_id
 
-            def verify_created(self, rule):
+            def verify_created(self, rule, *, recovery=False):
                 return self.value
+
+            def config_absent(self, expected):
+                if expected != fixture.store_digest:
+                    raise HostAdapterError("automation_config_changed")
+                return fixture.config_missing
 
             def update_heartbeat(self, before, action, **kwargs):
                 fixture.effects.append(action)
@@ -684,6 +704,71 @@ class ManagedFlowTests(unittest.TestCase):
     def test_duplicate_request_returns_same_readiness_without_host_effect(self):
         self.assertTrue(self.call()["ok"])
         self.assertTrue(self.call()["replayed"])
+        self.assertEqual(["create", "arm"], self.effects)
+
+    def test_bound_absence_settles_worker_and_allows_fresh_wait(self):
+        self.store_digest = "d" * 64
+        self.assertTrue(self.call()["ok"])
+        self.config_missing = True
+        stopped = self.call("stop")
+        self.assertTrue(stopped["ok"], stopped)
+        delivery = self.inspect()["delivery"]
+        self.assertEqual(("config_absent", "cancelled"), (delivery["timer_phase"], delivery["status"]))
+        self.assertIsNotNone(delivery["timer_absent_at"])
+        self.assertNotIn("timer_store_digest", delivery)
+        probe = delivery["probe_id"]
+        self.received[probe] = NEW_TURN
+        restarted = self.make()
+        self.assertEqual("closed", self.call("inspect", session=restarted)["phase"])
+        self.assertTrue(self.call("stop", session=restarted)["ok"])
+        self.assertFalse(self.call(session=restarted)["ok"])
+        self.assertEqual(["create", "arm"], self.effects)
+        self.config_missing = False
+        self.current_parent = ChildTurn(PARENT, NEW_TURN, "inProgress", "active")
+        self.assertTrue(self.call(session=restarted, metadata={"threadId": PARENT, "turnId": NEW_TURN})["ok"])
+        self.assertEqual(["create", "arm", "create", "arm"], self.effects)
+        self.assertNotEqual(probe, self.call("inspect", session=restarted)["delivery"]["probe_id"])
+
+    def test_paused_absence_survives_crash_before_request_close(self):
+        self.store_digest = "d" * 64
+        self.assertTrue(self.call()["ok"])
+        self.session.close()
+        self.config_missing = True
+        restarted = self.make()
+        with mock.patch.object(RequestRepository, "advance", side_effect=OSError("interrupted")):
+            self.assertFalse(self.call("stop", session=restarted)["ok"])
+        self.assertEqual("config_absent", self.call("inspect", session=restarted)["delivery"]["timer_phase"])
+        fresh = self.make()
+        with mock.patch.object(next(iter(self.hosts.values())), "config_absent", side_effect=AssertionError):
+            self.assertTrue(self.call("stop", session=fresh)["ok"])
+        self.assertEqual("closed", self.call("inspect", session=fresh)["phase"])
+        self.assertEqual(["create", "arm", "pause"], self.effects)
+
+    def test_wrong_store_and_replaced_paused_timer_have_no_host_effect(self):
+        self.store_digest = "d" * 64
+        self.assertTrue(self.call()["ok"])
+        self.config_missing = True
+        self.store_digest = "e" * 64
+        self.assertFalse(self.call("stop")["ok"])
+        self.assertEqual(["create", "arm"], self.effects)
+        self.store_digest = "d" * 64
+        self.session.close()
+        self.config_missing = False
+        host = next(iter(self.hosts.values()))
+        host.value = replace(host.value, created_at=host.value.created_at + 1)
+        restarted = self.make()
+        self.assertFalse(self.call("stop", session=restarted)["ok"])
+        self.assertEqual("started", self.call("inspect", session=restarted)["phase"])
+        self.config_missing = True
+        self.assertTrue(self.call("stop", session=restarted)["ok"])
+        self.assertEqual(["create", "arm", "pause"], self.effects)
+
+    def test_absence_cannot_settle_worker_owned_by_another_service(self):
+        self.store_digest = "d" * 64
+        self.assertTrue(self.call()["ok"])
+        self.config_missing = True
+        self.assertFalse(self.call("stop", session=self.make())["ok"])
+        self.assertEqual("active", self.inspect()["delivery"]["timer_phase"])
         self.assertEqual(["create", "arm"], self.effects)
 
     def test_external_removal_blocks_stop_and_fresh_generation_after_restart(self):

@@ -12,8 +12,10 @@ WORKER_FIELDS = ("worker_id", "worker_stopped_at", "worker_stop_basis", "worker_
 def delivery_projection(record):
     value = asdict(record)
     value.pop("binding_digest")
-    for field in WORKER_FIELDS:
+    for field in (*WORKER_FIELDS, "timer_store_digest", "timer_created_at"):
         value.pop(field)
+    if record.timer_absent_at is None:
+        value.pop("timer_absent_at")
     return value
 
 

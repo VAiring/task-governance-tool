@@ -2469,53 +2469,33 @@ successful stages, routes parent submission only from manual preparation, and
 keeps incomplete/unknown recovery conditional. Recovery alone does not require
 new review; changed basis and observed reviewer failures retain their gates.
 
-#### Conditional External Timer Deletion Reconciliation
+<a id="conditional-external-timer-deletion-reconciliation"></a>
 
-This is a design boundary, not an implemented recovery permission. The current
-host-owned waiting, unknown-effect refusal and Skill recovery procedure above
-remain controlling. A separately authorized implementation and its host gates
-are required before activation. Design completion is not restoration of an old
-wait or automatic Task completion.
+#### Recovery When The Original Timer Configuration Is Absent
 
-The candidate extends the existing explicit `review_wait_stop(task_id)` recovery
-path, rather than adding normal parent-side timer management. It would reconcile
-only an exactly bound old occurrence whose timer was externally removed. It
-must not repeat delete, pause, send, original publication, review registration,
-commit or Task completion to obtain evidence of an earlier outcome. A later
-ordinary wait retains its own fresh admission and creates no replacement until
-the old occurrence is positively settled.
+An explicit `review_wait_stop(task_id)` may close an exactly bound managed wait
+whose last confirmed timer state was ACTIVE or PAUSED. New waits retain a
+bounded identifier for the physical automation store observed at creation.
+In the same healthy store, the service checks the original automation ID's
+directory and configuration immediately before recording `config_absent`.
+This records what was observable at recovery time. The earlier proposal
+required a host tombstone to establish who deleted an instance. Current host
+interfaces do not supply that history, and closing the wait requires only the
+narrower observation plus independent worker and send evidence.
 
-The [evidence assessment and conditional design](review-completion-design.md#external-timer-deletion-evidence)
-distinguishes the existing MCP-owned deletion confirmation from an external
-deletion claim. Missing configuration, an absent timer listing, a general tool
-error, human prose, a successful call marker or a delayed notification cannot
-prove deletion of the exact saved occurrence. Not-found also cannot by itself
-distinguish a deleted timer from a wrong identity, inaccessible scope or a
-replacement. No such observation may rewrite an operational record as deleted.
+A matching, physically present configuration follows the existing cleanup
+procedure. A replacement, inaccessible or changed path, missing store, unknown
+effect or missing worker proof leaves cleanup unresolved. Records predating
+store identification remain readable and ineligible for absence recovery.
+The service independently confirms termination of the bound worker and a
+settled send state. It records the observation before closing the original
+request. Restart after that write can finish local closure without a host
+mutation. The ordinary receipt-based deletion and one-send rules still apply.
 
-For the candidate to become implementable, a supported public host source must
-positively attest deletion of the same reservation instance, with a documented
-identity/reuse and retention contract. The service must obtain and validate that
-evidence itself, link it to the saved project/path binding, Task, original parent,
-request attempt, controller, reviewer pairs and direct probe, and reject a
-replacement or conflicting current observation. It must independently prove
-actual worker exit and settled sending under the existing rules. A timer proof
-cannot settle an unknown send or supply missing worker evidence. Historical
-proof is not freshness or a later effect permission.
-
-The initial candidate is limited to known ACTIVE/PAUSED timer state after an
-external removal, with no pending or unknown host-effect intent. Unknown
-creation, arm, pause, deletion or sending remains outside it. Missing,
-ambiguous, unretained or unverifiable evidence after restart remains unknown;
-neither restart nor elapsed time supplies evidence. Existing records and all
-known successful business stages remain intact.
-
-No qualifying external-deletion evidence source has yet been established by the
-available public interface and retained observations assessed in the design.
-Therefore external-deletion reconciliation is not currently an enabled path.
-Unavailable proof must remain an explicit limitation, not a synthetic success
-or a requirement for repeated failing calls. The existing failure-reporting and
-permitted review-result continuation rules still apply.
+A delayed notification for a closed or superseded occurrence grants no action.
+A later ordinary wait requires fresh admission for its own occurrence. Recovery
+does not send a message, register a review, commit work or complete a Task.
+See the [observation and crash boundaries](review-completion-design.md#external-timer-deletion-evidence).
 
 #### Conditional Notification Recovery After Confirmed Deletion
 

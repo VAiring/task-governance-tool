@@ -241,6 +241,12 @@ Use `review_wait_inspect(task_id)` for requested diagnosis or a failure. A
 also includes one best-effort call in that reviewer's own context before review;
 it adds no parent preflight, retry or stop on unavailable connection preparation.
 Use `review_wait_stop(task_id)` for explicit cancellation or known-state recovery.
+For a known active or paused timer, stop may report `config_absent` when the
+original configuration is missing in its identified creation store. Closure
+also requires the exact worker's exit and settled sending. A wait without a
+saved store identity cannot use this evidence. A delayed fallback for a closed
+or replaced attempt never authorizes a new wait. If its identity is unclear,
+compare its automation ID with the current attempt using the inspection above.
 They need no saved automation/probe IDs and add no normal completion gate.
 Discover the applicable exact name in the same connected namespace when needed;
 an already available complete definition needs no repeat lookup.

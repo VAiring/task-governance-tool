@@ -479,6 +479,42 @@ class DeleteHeartbeatTests(ConfigFixture, unittest.TestCase):
 
 
 class ExternalDeletionEvidenceTests(ConfigFixture, unittest.TestCase):
+    def test_absence_is_scoped_to_original_physical_store(self):
+        digest = self.read().snapshot.store_digest
+        root = self.path.parent.parent
+        other = self.home / "other" / "automations"
+        other.mkdir(parents=True)
+        (root / "unrelated").mkdir()
+        self.assertFalse(host._config_absent(root, AUTOMATION, digest))
+        with self.assertRaises(host.HostAdapterError):
+            host._config_absent(other, AUTOMATION, digest)
+        self.path.unlink()
+        self.assertTrue(host._config_absent(root, AUTOMATION, digest))
+        self.path.parent.rmdir()
+        self.assertTrue(host._config_absent(root, AUTOMATION, digest))
+        root.rename(self.home / "original-store")
+        with self.assertRaises(host.HostAdapterError):
+            host._config_absent(root, AUTOMATION, digest)
+        root.mkdir()
+        with self.assertRaises(host.HostAdapterError):
+            host._config_absent(root, AUTOMATION, digest)
+
+    def test_absence_refuses_denied_unsafe_and_changing_paths(self):
+        root, digest = self.path.parent.parent, self.read().snapshot.store_digest
+        for error in (PermissionError(), OSError("sharing violation")):
+            with mock.patch.object(host, "_physical", side_effect=error), self.assertRaises(host.HostAdapterError):
+                host._config_absent(root, AUTOMATION, digest)
+        with self.assertRaises(host.HostAdapterError):
+            host._config_absent(root, "../other", digest)
+        physical = host._physical
+        def disappear(path, **kwargs):
+            result = physical(path, **kwargs)
+            if path == self.path:
+                self.path.unlink()
+            return result
+        with mock.patch.object(host, "_physical", side_effect=disappear), self.assertRaises(host.HostAdapterError):
+            host._config_absent(root, AUTOMATION, digest)
+
     """Current refusal boundaries, not a simulated external-recovery protocol."""
 
     def test_missing_config_and_old_receipt_do_not_authorize_another_delete(self):

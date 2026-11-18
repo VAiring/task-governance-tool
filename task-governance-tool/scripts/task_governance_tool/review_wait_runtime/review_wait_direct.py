@@ -77,6 +77,7 @@ class DirectProbe:
         self._reviewer_observations = {}
         self._observations_lock = threading.Lock()
         self._host = None
+        self.verified_creation = None
         self._closed = False
         self._diagnostic_scope = diagnostic_scope or nullcontext
         self._diagnostic_identity = None
@@ -145,7 +146,7 @@ class DirectProbe:
         if deleting:
             expected = replace(expected, status="ACTIVE", rule=record.timer_rule)
         if (reservation(observed) != expected or deleting and
-                observed.updated_at != record.timer_updated_at):
+                (observed.updated_at != record.timer_updated_at or not record.matches_origin(observed))):
             raise DirectError("heartbeat_changed")
         return observed
 
@@ -155,7 +156,10 @@ class DirectProbe:
         record = self.repository.read()
         state = asdict(record)
         state.pop("binding_digest")
-        for field in ("worker_id", "worker_stopped_at", "worker_stop_basis", "worker_stop_identity"):
+        if record.timer_absent_at is None:
+            state.pop("timer_absent_at")
+        for field in ("worker_id", "worker_stopped_at", "worker_stop_basis", "worker_stop_identity",
+                      "timer_store_digest", "timer_created_at"):
             state.pop(field)
         if record.version == 1:
             for field in ("version", "timer_phase", "timer_rule", "timer_updated_at", "timer_due_at"):
@@ -236,6 +240,10 @@ class DirectProbe:
                 self._prepared(controller)
                 extras = dict(version=2, timer_phase="arming", timer_rule=appointment.rule,
                               timer_updated_at=before.updated_at, timer_due_at=instant(appointment.due_at))
+                if self.verified_creation is not None:
+                    if before != self.verified_creation:
+                        raise DirectError("heartbeat_changed")
+                    extras.update(timer_store_digest=before.store_digest, timer_created_at=before.created_at)
             duration = 1200 if delete_timer else 600
             record = DirectRecord(str(uuid4()), binding_digest(controller), turn_id, "waiting",
                                   instant(now), instant(now + timedelta(seconds=duration)),
@@ -254,7 +262,7 @@ class DirectProbe:
                     diagnostics.checkpoint(urgent=True)
                     after = host.update_heartbeat(before, "arm", rrule=record.timer_rule)
                     if (reservation(after) != replace(controller.reservation, status="ACTIVE", rule=record.timer_rule)
-                            or after.updated_at < before.updated_at):
+                            or after.updated_at < before.updated_at or not record.matches_origin(after)):
                         raise DirectError("heartbeat_update_unknown")
                     timer_confirmed = True
                     diagnostics.event(Stage.TIMER_ARM, Outcome.CONFIRMED)
@@ -646,13 +654,13 @@ class DirectProbe:
         if not self.repository.exists():
             return
         initial = self.repository.read()
-        if initial.version != 2 or initial.timer_phase in {"deleted", "paused"}:
+        if initial.version != 2 or initial.timer_phase in {"deleted", "paused", "config_absent"}:
             return
         if initial.timer_phase != "active":
             raise DirectError("timer_cleanup_unknown")
         with self.wait.writer() as lease:
             current = self.repository.read()
-            if current.timer_phase in {"deleted", "paused"}:
+            if current.timer_phase in {"deleted", "paused", "config_absent"}:
                 return
             if current.timer_phase != "active":
                 raise DirectError("timer_cleanup_unknown")
@@ -668,7 +676,7 @@ class DirectProbe:
                 diagnostics.checkpoint(urgent=True)
                 after = host.update_heartbeat(before, "pause")
                 if (reservation(after) != replace(reservation(before), status="PAUSED")
-                        or after.updated_at < before.updated_at):
+                        or after.updated_at < before.updated_at or not current.matches_origin(after)):
                     raise DirectError("heartbeat_update_unknown")
                 timer_confirmed = True
                 diagnostics.event(Stage.TIMER_PAUSE, Outcome.CONFIRMED)

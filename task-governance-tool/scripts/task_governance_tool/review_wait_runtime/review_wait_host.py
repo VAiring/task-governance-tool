@@ -149,6 +149,7 @@ class HeartbeatSnapshot:
     updated_at: int
     identity_digest: str
     cleanup_only: bool = False
+    store_digest: str | None = None
 
 
 @dataclass(frozen=True, repr=False)
@@ -331,6 +332,45 @@ def _identity(info: os.stat_result) -> tuple:
     return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, created_or_changed
 
 
+def _store_digest(root, info):
+    if not root.is_absolute() or ".." in root.parts or not stat.S_ISDIR(info.st_mode):
+        _fail("automation_config_unsafe")
+    if not info.st_ino:
+        return None
+    # Directory modification time changes when unrelated reservations are created.
+    identity = [os.path.normcase(str(root)), info.st_dev, info.st_ino, getattr(info, "st_birthtime_ns", None)]
+    return hashlib.sha256(relay._encode(identity)).hexdigest()
+
+
+def _config_absent(root, automation_id, expected_store):
+    """Observe only this physical directory and config. Any unstable read fails closed."""
+    directory = root / _automation_id(automation_id)
+
+    def sample():
+        store = _physical(root)
+        if not expected_store or _store_digest(root, store) != expected_store:
+            _fail("automation_config_changed")
+        try:
+            child = _physical(directory)
+        except FileNotFoundError:
+            return _identity(store), None, None
+        if not stat.S_ISDIR(child.st_mode):
+            _fail("automation_config_unsafe")
+        try:
+            config = _physical(directory / "automation.toml", file=True)
+        except FileNotFoundError:
+            config = None
+        return _identity(store), _identity(child), None if config is None else _identity(config)
+
+    try:
+        first = sample()
+        if sample() != first or _identity(_physical(root)) != first[0]:
+            _fail("automation_config_changed")
+        return first[2] is None
+    except OSError:
+        raise HostAdapterError("automation_config_unavailable") from None
+
+
 def _automation_id(value: object) -> str:
     if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,255}", value):
         _fail("invalid_automation_id")
@@ -490,6 +530,8 @@ def _read_config(codex_home: Path, automation_id: str, parent_id: str,
         if not codex_home.is_absolute():
             _fail("automation_config_unsafe")
         path = codex_home / "automations" / _automation_id(automation_id) / "automation.toml"
+        root = path.parent.parent
+        store_digest = _store_digest(root, root.lstat())
         before = _physical(path, file=True)
         if before.st_size > MAX_CONFIG_BYTES:
             _fail("automation_config_invalid")
@@ -502,7 +544,8 @@ def _read_config(codex_home: Path, automation_id: str, parent_id: str,
             raw = stream.read(MAX_CONFIG_BYTES + 1)
             after = os.fstat(stream.fileno())
         if (len(raw) > MAX_CONFIG_BYTES or _identity(after) != _identity(before)
-                or _identity(_physical(path, file=True)) != _identity(before)):
+                or _identity(_physical(path, file=True)) != _identity(before)
+                or _store_digest(root, root.lstat()) != store_digest):
             _fail("automation_config_changed")
         obj = tomllib.loads(raw.decode("utf-8-sig"))
         required = {"version", "id", "kind", "name", "prompt", "status", "rrule",
@@ -535,7 +578,7 @@ def _read_config(codex_home: Path, automation_id: str, parent_id: str,
         digest = hashlib.sha256(relay._encode(immutable)).hexdigest()
         snapshot = HeartbeatSnapshot(automation_id, "heartbeat", parent_id, rule, timezone,
                                      timezone_source, obj["status"], obj["created_at"],
-                                     obj["updated_at"], digest)
+                                     obj["updated_at"], digest, store_digest=store_digest)
         return _HeartbeatConfig(snapshot, name, prompt, policy)
     except HostAdapterError:
         raise
@@ -1012,6 +1055,9 @@ class PublicMcpHost:
 
     def view_heartbeat(self, *, for_pause: bool = False) -> HeartbeatSnapshot:
         return self._view_config(for_pause=for_pause).snapshot
+
+    def config_absent(self, expected_store: str) -> bool:
+        return _config_absent(self._codex_home / "automations", self._automation_id, expected_store)
 
     def delete_heartbeat(self, before: HeartbeatSnapshot, *, cleanup: bool = False) -> None:
         """One admitted public deletion; receipt and exact-path absence required."""

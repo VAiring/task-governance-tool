@@ -41,6 +41,7 @@ class RequestRecord:
     automation_id: str | None = None
     continuation_id: str | None = None
     continuation_sequence: int = 0
+    creation_origin: str | None = None
 
     def __post_init__(self):
         try:
@@ -63,6 +64,10 @@ class RequestRecord:
                 raise ValueError
             if self.phase == "creating" and self.automation_id is not None:
                 raise ValueError
+            if self.creation_origin is not None and (
+                    self.automation_id is None or type(self.creation_origin) is not str
+                    or not re.fullmatch(r"[0-9a-f]{64}", self.creation_origin)):
+                raise ValueError
             from task_governance_tool.review_continuation import identifier, _integer
             if self.continuation_id is None:
                 if type(self.continuation_sequence) is not int or self.continuation_sequence != 0:
@@ -77,6 +82,8 @@ def _encode(record):
     if type(record) is not RequestRecord:
         raise RepositoryError("invalid_snapshot")
     value = asdict(RequestRecord(**asdict(record)))
+    if record.creation_origin is None:
+        value.pop("creation_origin")
     if record.continuation_id is None:
         value.pop("continuation_id")
         value.pop("continuation_sequence")
@@ -91,6 +98,11 @@ def request_identity_digest(record):
     value = json.loads(_encode(record))
     value.pop("phase")
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def creation_origin(store_digest, created_at, identity_digest):
+    return hashlib.sha256(json.dumps([store_digest, created_at, identity_digest],
+                                     separators=(",", ":")).encode()).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -368,14 +380,23 @@ class RequestRepository(ReviewWaitRepository):
             self._load(connection)
         return after
 
-    def advance(self, lease, phase, *, automation_id=None):
+    def advance(self, lease, phase, *, automation_id=None, settled_absence=None, verified_origin=None):
         lease._check()
         with self._connection(write=True) as connection:
             sequence, before = self._load(connection)
-            if before is None or phase not in _TRANSITIONS.get(before.phase, set()):
+            if verified_origin is not None:
+                if (before is None or before.phase != "created" or phase != "created"
+                        or before.creation_origin is not None):
+                    raise RepositoryError("state_transition_invalid")
+            elif settled_absence is not None:
+                if (before != settled_absence or phase != "closed"
+                        or before.phase not in {"prepared", "started", "failed"}):
+                    raise RepositoryError("state_transition_invalid")
+            elif before is None or phase not in _TRANSITIONS.get(before.phase, set()):
                 raise RepositoryError("state_transition_invalid")
             if automation_id is not None and (before.phase != "creating" or phase != "created"):
                 raise RepositoryError("state_transition_invalid")
-            after = replace(before, phase=phase, automation_id=automation_id or before.automation_id)
+            after = replace(before, phase=phase, automation_id=automation_id or before.automation_id,
+                            creation_origin=verified_origin or before.creation_origin)
             connection.execute("UPDATE attempts SET payload = ? WHERE sequence = ?", (_encode(after), sequence))
             return after

@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 
-from .request_repository import RequestRecord, RequestRepository
+from .request_repository import RequestRecord, RequestRepository, creation_origin
 from .review_wait_direct_repository import DirectRepository, marker_exists
 from .review_wait_host import executor_turn_id, reviewer_references
 from .review_wait_repository import ReviewWaitRepository
@@ -302,11 +302,12 @@ class ManagedWait:
         return {"ok": True, "status": "waiting", "task_id": task_id,
                 "parent_may_end": True, "replayed": replayed}
 
-    def _cleanup(self, repository, lease, record, task_id, metadata, paths, diagnostic):
+    def _cleanup(self, repository, lease, record, task_id, metadata, paths, diagnostic, *, explicit_stop=False):
         from . import worker_diagnostics as diagnostics
         from .worker_diagnostics import Outcome
         try:
-            result = self._cleanup_observed(repository, lease, record, task_id, metadata, paths, diagnostic)
+            result = self._cleanup_observed(repository, lease, record, task_id, metadata, paths, diagnostic,
+                                            explicit_stop=explicit_stop)
         except BaseException as error:
             diagnostics.request(diagnostic, error=error, outcome=Outcome.UNKNOWN, secondary=True)
             raise
@@ -315,7 +316,7 @@ class ManagedWait:
                 outcome=Outcome.UNKNOWN, secondary=True)
         return result
 
-    def _cleanup_observed(self, repository, lease, record, task_id, metadata, paths, diagnostic):
+    def _cleanup_observed(self, repository, lease, record, task_id, metadata, paths, diagnostic, *, explicit_stop):
         from . import worker_diagnostics as diagnostics
         from .worker_diagnostics import Stage, Outcome
         diagnostic.stage = "cleanup"
@@ -335,6 +336,26 @@ class ManagedWait:
                     "arming", "deleting", "pausing", "unknown"}:
                 return False
             session = self.owner._session(path, task_id, record.automation_id, managed=True)
+            if direct.timer_phase == "config_absent" or (explicit_stop and direct.timer_store_digest
+                                                         and direct.timer_phase in {"active", "paused"}):
+                from .continuation_cleanup_repository import _read_bound_state, _settled_effects
+                controller, direct = _read_bound_state(paths, metadata["threadId"], task_id, record)
+                if direct.timer_phase != "config_absent":
+                    host = self._host(metadata, task_id, record.automation_id, [r[0] for r in record.reviewers])
+                    if host.config_absent(direct.timer_store_digest):
+                        diagnostic.local_state = "may_have_changed"
+                        if session.service is None:
+                            session._load()
+                        if not session._direct().settle_absent_config(metadata, direct, host):
+                            return False
+                        controller, direct = _read_bound_state(paths, metadata["threadId"], task_id, record)
+                if direct.timer_phase == "config_absent":
+                    if _settled_effects(controller, direct, owner=session.direct).state != "settled":
+                        return False
+                    repository.advance(lease, "closed", settled_absence=record)
+                    diagnostic.cleanup = "confirmed"
+                    diagnostic.retained_effects = "settled"
+                    return True
             diagnostic.local_state = "may_have_changed"
             diagnostic.host_mutation = "may_have_occurred"
             diagnostic.invalidate_record()
@@ -352,7 +373,7 @@ class ManagedWait:
         else:
             direct = None
         diagnostic.local_state = "may_have_changed"
-        repository.advance(lease, "closing")
+        closing = False
         try:
             deleted_here = False
             if direct is None or direct.timer_phase != "deleted":
@@ -360,15 +381,23 @@ class ManagedWait:
                 before = host.view_heartbeat(for_pause=True)
                 if before.status != "PAUSED":
                     raise DiagnosticError("heartbeat_changed")
+                if record.creation_origin is not None and record.creation_origin != creation_origin(
+                        before.store_digest, before.created_at, before.identity_digest):
+                    raise DiagnosticError("heartbeat_changed")
                 if path_lexically_exists(path):
                     with diagnostic.reading_retained():
                         original = ReviewWaitRepository.open_existing(path).read().controller.reservation
                     if (before.id != original.timer_id or before.identity_digest != original.identity_digest
                             or before.parent_thread_id != original.parent_thread_id):
                         raise DiagnosticError("heartbeat_changed")
+                    if direct and (not direct.matches_origin(before) or before.rule != direct.timer_rule
+                                   or before.updated_at != direct.timer_updated_at):
+                        raise DiagnosticError("heartbeat_changed")
                 else:
                     # Before preparation only the fixed creation policy may own cleanup.
-                    host.verify_created(before.rule)
+                    host.verify_created(before.rule, recovery=True)
+                repository.advance(lease, "closing")
+                closing = True
                 diagnostic.host_mutation = "may_have_occurred"
                 diagnostics.event(Stage.TIMER_DELETE, Outcome.ATTEMPT)
                 try:
@@ -378,6 +407,9 @@ class ManagedWait:
                     raise
                 deleted_here = True
                 diagnostics.event(Stage.TIMER_DELETE, Outcome.CONFIRMED)
+            else:
+                repository.advance(lease, "closing")
+                closing = True
             try:
                 repository.advance(lease, "closed")
             except Exception as error:
@@ -391,7 +423,8 @@ class ManagedWait:
             return True
         except Exception as error:
             diagnostics.request(diagnostic, error=error, outcome=Outcome.UNKNOWN, secondary=True)
-            repository.advance(lease, "unknown")
+            if closing:
+                repository.advance(lease, "unknown")
             return False
 
     def handle(self, operation, arguments, metadata, paths, diagnostic=None):
@@ -430,7 +463,8 @@ class ManagedWait:
                 attempt, record = repository.read()
                 diagnostics.bind_request(sequence=attempt)
                 diagnostic.observe_record(record)
-                if record is not None and not self._cleanup(repository, lease, record, task_id, metadata, paths, diagnostic):
+                if record is not None and not self._cleanup(
+                        repository, lease, record, task_id, metadata, paths, diagnostic, explicit_stop=True):
                     diagnostic.reason = "cleanup_unresolved"
                     return {**self._failure(), "observation": self.observe_safely(
                         task_id, metadata, paths, expected=(attempt, record))}
@@ -550,7 +584,10 @@ class ManagedWait:
             record = repository.advance(lease, "created", automation_id=automation)
             try:
                 diagnostic.stage = "verify_created"
-                host.verify_created(appointment.rule)
+                created = host.verify_created(appointment.rule)
+                if created is not None and created.store_digest is not None:
+                    record = repository.advance(lease, "created", verified_origin=creation_origin(
+                        created.store_digest, created.created_at, created.identity_digest))
                 def prepare_reviewer_reader(current_binding, current_host, reviewer):
                     if basis_digest(current_binding) != digest:
                         raise DiagnosticError("binding_changed")
@@ -581,6 +618,8 @@ class ManagedWait:
                         or tuple(sorted((r.reviewer_id, r.turn_id) for r in controller.reviewers)) != pairs):
                     raise DiagnosticError("binding_changed")
                 record = repository.advance(lease, "prepared")
+                if created is not None and created.store_digest is not None:
+                    session._direct().verified_creation = created
                 diagnostic.stage = "start"
                 diagnostic.host_mutation = "may_have_occurred"
                 started = session.handle("direct_delete_start", {}, metadata)

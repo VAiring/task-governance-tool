@@ -108,6 +108,13 @@ class DirectRecord:
     worker_stopped_at: str | None = None
     worker_stop_basis: str | None = None
     worker_stop_identity: str | None = None
+    timer_store_digest: str | None = None
+    timer_created_at: int | None = None
+    timer_absent_at: str | None = None
+
+    def matches_origin(self, snapshot):
+        return self.timer_store_digest is None or (
+            snapshot.store_digest == self.timer_store_digest and snapshot.created_at == self.timer_created_at)
 
     def __post_init__(self):
         try:
@@ -125,12 +132,24 @@ class DirectRecord:
                 raise ValueError
             if type(self.version) is not int or self.version not in (1, 2):
                 raise ValueError
+            if self.timer_store_digest is not None or self.timer_created_at is not None:
+                if (self.version != 2 or type(self.timer_store_digest) is not str
+                        or not re.fullmatch(r"[0-9a-f]{64}", self.timer_store_digest)
+                        or type(self.timer_created_at) is not int or self.timer_created_at < 0
+                        or type(self.timer_updated_at) is not int or self.timer_created_at > self.timer_updated_at):
+                    raise ValueError
+            if self.timer_phase == "config_absent":
+                if (type(self.timer_absent_at) is not str or len(self.timer_absent_at) > 40
+                        or instant(datetime.fromisoformat(self.timer_absent_at)) != self.timer_absent_at):
+                    raise ValueError
+            elif self.timer_absent_at is not None:
+                raise ValueError
             if self.version == 1:
                 if any(v is not None for v in (self.timer_phase, self.timer_rule, self.timer_updated_at, self.timer_due_at)):
                     raise ValueError
             else:
                 if (type(self.timer_phase) is not str or self.timer_phase not in
-                        {"arming", "active", "deleting", "deleted", "pausing", "paused", "unknown"}
+                        {"arming", "active", "deleting", "deleted", "pausing", "paused", "config_absent", "unknown"}
                         or type(self.timer_rule) is not str or began.microsecond != 0
                         or type(self.timer_updated_at) is not int or self.timer_updated_at < 0):
                     raise ValueError
@@ -143,6 +162,10 @@ class DirectRecord:
                 if not match or any(int(x) > bound for x, bound in zip(match.groups(), (23, 59, 59))):
                     raise ValueError
                 if self.status in {"dispatching", "accepted", "rejected", "unknown"} and self.timer_phase != "deleted":
+                    raise ValueError
+                if self.timer_phase == "config_absent" and (
+                        self.timer_store_digest is None or self.worker_stopped_at is None
+                        or self.status not in {"cancelled", "suppressed", "expired", "abandoned"}):
                     raise ValueError
             if self.acknowledged_turn is not None:
                 if (not _uuid(self.acknowledged_turn) or self.acknowledged_turn == self.original_parent_turn
@@ -171,6 +194,11 @@ def _encode(record: DirectRecord) -> str:
     if type(record) is not DirectRecord:
         raise RepositoryError("invalid_snapshot")
     value = asdict(record)
+    if record.timer_store_digest is None:
+        value.pop("timer_store_digest")
+        value.pop("timer_created_at")
+    if record.timer_absent_at is None:
+        value.pop("timer_absent_at")
     if record.worker_id is None:
         for field in ("worker_id", "worker_stopped_at", "worker_stop_basis", "worker_stop_identity"):
             value.pop(field)
@@ -287,7 +315,8 @@ class DirectRepository(ReviewWaitRepository):
 
     def update(self, probe_id: str, *, status: str | None = None,
                acknowledged_turn: str | None = None, reason: str | None = None,
-               timer_phase: str | None = None, timer_updated_at: int | None = None) -> DirectRecord:
+               timer_phase: str | None = None, timer_updated_at: int | None = None,
+               timer_absent_at: str | None = None) -> DirectRecord:
         """Read-modify-save under one lease; settlement never overwrites an ack."""
         with self._serial():
             with self._connection(write=True) as connection:
@@ -307,7 +336,8 @@ class DirectRepository(ReviewWaitRepository):
                 if reason is not None and status is None:
                     raise RepositoryError("state_transition_invalid")
                 if timer_phase is not None:
-                    transitions = {"arming": {"active", "unknown"}, "active": {"deleting", "pausing"},
+                    transitions = {"arming": {"active", "unknown"}, "active": {"deleting", "pausing", "config_absent"},
+                        "paused": {"config_absent"},
                         "deleting": {"deleted", "unknown"}, "pausing": {"paused", "unknown"}}
                     if before.version != 2 or timer_phase not in transitions.get(before.timer_phase, set()):
                         raise RepositoryError("state_transition_invalid")
@@ -324,6 +354,7 @@ class DirectRepository(ReviewWaitRepository):
                     acknowledged_turn=acknowledged_turn or before.acknowledged_turn,
                     reason=reason if status is not None else before.reason,
                     timer_phase=timer_phase or before.timer_phase,
+                    timer_absent_at=timer_absent_at if timer_phase == "config_absent" else before.timer_absent_at,
                     timer_updated_at=before.timer_updated_at if timer_updated_at is None else timer_updated_at)
                 connection.execute("UPDATE direct_probe SET payload = ? WHERE singleton = 1", (_encode(after),))
                 return after

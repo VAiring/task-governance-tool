@@ -931,7 +931,7 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
                                      timezone_source="host_node_intl")
                 return self.automation_id
 
-            def verify_created(self, rule):
+            def verify_created(self, rule, *, recovery=False):
                 return self.value
 
             def delete_heartbeat(self, before, *, cleanup=False):

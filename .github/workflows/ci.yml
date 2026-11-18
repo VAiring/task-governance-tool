@@ -15,6 +15,10 @@ on:
         description: Run the six Windows comparison shards (not a release candidate)
         type: boolean
         default: false
+      serial_diagnostic:
+        description: Run both ordered Windows suites for diagnosis (not a release candidate)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -115,7 +119,7 @@ jobs:
 
   test:
     name: Windows tests (${{ matrix.lane }}, Python ${{ matrix.python-version }})
-    if: ${{ inputs.platform_only != true && inputs.compare_shards != true }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (!inputs.platform_only && inputs.serial_diagnostic) }}
     needs: policy
     runs-on: windows-latest
     strategy:
@@ -163,32 +167,57 @@ jobs:
 
   release-candidate:
     name: Full release-candidate gate
-    if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.platform_only != true && inputs.compare_shards != true }}
+    if: ${{ always() && github.event_name == 'workflow_dispatch' && !inputs.platform_only && !inputs.compare_shards && !inputs.serial_diagnostic }}
     needs:
       - policy
-      - test
+      - windows-shards
+      - shard-coverage
       - platform-smoke
     runs-on: windows-latest
+    permissions:
+      contents: read
+      actions: read
 
     steps:
       - name: Require policy and complete test matrix
         shell: pwsh
         env:
           POLICY_RESULT: ${{ needs.policy.result }}
-          TEST_RESULT: ${{ needs.test.result }}
+          SHARDS_RESULT: ${{ needs.windows-shards.result }}
+          COVERAGE_RESULT: ${{ needs.shard-coverage.result }}
           PLATFORM_RESULT: ${{ needs.platform-smoke.result }}
         run: |
           if (
             $env:POLICY_RESULT -ne 'success' -or
-            $env:TEST_RESULT -ne 'success' -or
+            $env:SHARDS_RESULT -ne 'success' -or
+            $env:COVERAGE_RESULT -ne 'success' -or
             $env:PLATFORM_RESULT -ne 'success'
           ) {
             throw 'Full release-candidate gate failed'
           }
 
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Verify required jobs in this attempt
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $pages = gh api --paginate --slurp "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID/attempts/$env:GITHUB_RUN_ATTEMPT/jobs"
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read jobs for this attempt' }
+          $pages | python -B -m tools.ci_candidate
+
   windows-shards:
     name: Windows shard ${{ matrix.shard }} (Python ${{ matrix.python-version }})
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.compare_shards && !inputs.platform_only }}
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.platform_only && !inputs.serial_diagnostic }}
     needs: policy
     runs-on: windows-latest
     strategy:

@@ -778,11 +778,13 @@ The current CI policy parallelizes all three base-lane jobs on pushes to
 and push `release` selections defer only the two closed wall-clock qualifier
 identities; their deterministic functional and capacity coverage remains.
 A release candidate requires an exact-ref manual `workflow_dispatch` with
-both `platform_only` and `compare_shards` omitted or false. Its
-matrix is monolithic `all` on both Python versions with no qualifier deferral,
-and the explicit `Full release-candidate gate` requires policy, that Windows
-matrix, and both existing platform checks to succeed. Failed or skipped
-dependencies cannot satisfy it. The checker and
+`platform_only`, `compare_shards` and `serial_diagnostic` omitted or false.
+Each Python version runs three Windows shards, including both timing qualifiers.
+Its coverage job checks actual outcomes and ordered IDs against that version's
+discovery. The `Full release-candidate gate` requires all six shards, both
+coverage checks, policy, Ubuntu and macOS to finish successfully at the same
+SHA in the same run and attempt. If an attempt is incomplete, rerun all jobs
+to obtain release evidence. The checker and
 lane runner are repository tooling, not installable `taskgov` commands or
 target-project writes. A prior v0.10.0 result, Task receipt, approval object,
 or historical gate never satisfies a future candidate.
@@ -800,11 +802,12 @@ An explicit manual `platform_only=true` runs only policy and platform checks; it
 Windows full matrix and candidate gate and is not release qualification or a
 change to the published platform or Runner support boundary.
 
-To measure Windows sharding, select `compare_shards=true` on a separate
-manual run of the same commit. Both Python versions run all tests, including
-the timing qualifiers, across three Windows jobs each. Each version checks
-the actual test IDs against its own discovery. This run skips the candidate
-gate. If both inputs are selected, the platform-only selection takes precedence.
+To reproduce discovery-order interactions between shards, select
+`serial_diagnostic=true`. Each Windows version executes the original `all`
+suite in one process. To compare elapsed and runner time, also run the same
+commit with `compare_shards=true` alone. Both diagnostic modes skip the
+candidate gate. Platform-only takes precedence over serial diagnosis and
+serial diagnosis over shard comparison.
 
 Candidate validation checks this CI policy and wiring locally only. It does not invoke
 `workflow_dispatch`, contact GitHub, or satisfy a later externally authorized

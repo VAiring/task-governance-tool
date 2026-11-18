@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest import mock
 
 from tools import windows_ci_shards as shards
+from tools.ci_candidate import verify_candidate_jobs
 from tools.test_lanes import (
     ALL_LANE,
     BASE_LANES,
@@ -80,6 +81,37 @@ def assert_lane_error(
 
 
 class TestLanePolicyTests(unittest.TestCase):
+    def test_candidate_requires_each_finished_job_from_one_attempt(self):
+        identity = {"sha": "candidate", "run_id": 42, "attempt": 2}
+        names = [
+            "Repository test policy",
+            "Platform checks (ubuntu-24.04, Python 3.12)",
+            "Platform checks (macos-15, Python 3.12)",
+            "Check shard coverage (Python 3.12)",
+            "Check shard coverage (Python 3.14)",
+            *(f"Windows shard {n} (Python {v})" for v in ("3.12", "3.14") for n in (1, 2, 3)),
+        ]
+        jobs = [
+            {"name": name, "head_sha": "candidate", "run_id": 42, "run_attempt": 2,
+             "status": "completed", "conclusion": "success"} for name in names
+        ]
+        gate = {"name": "Full release-candidate gate", "status": "in_progress"}
+        verify_candidate_jobs([{"jobs": jobs[:4]}, {"jobs": [*jobs[4:], gate]}], **identity)
+
+        for i, job in enumerate(jobs):
+            others = jobs[:i] + jobs[i + 1:]
+            for label, replacements in (
+                ("missing", []), ("duplicate", [job, job]),
+                ("wrong SHA", [{**job, "head_sha": "other"}]),
+                ("wrong run", [{**job, "run_id": 41}]),
+                ("previous attempt", [{**job, "run_attempt": 1}]),
+                ("unfinished", [{**job, "status": "in_progress", "conclusion": None}]),
+                *((outcome, [{**job, "conclusion": outcome}])
+                  for outcome in ("failure", "skipped", "cancelled", "timed_out")),
+            ):
+                with self.subTest(job=job["name"], condition=label), self.assertRaises(ValueError):
+                    verify_candidate_jobs([{"jobs": others + replacements}], **identity)
+
     def test_windows_shards_partition_each_runtimes_actual_discovery(self):
         inventory = discover_tests(ROOT)
         plan = inventory.plan
@@ -105,7 +137,7 @@ class TestLanePolicyTests(unittest.TestCase):
             def test_first(self):
                 self.assertEqual(os.environ["CODEX_THREAD_ID"], "00000000-0000-4000-8000-000000000001")
 
-            @unittest.skip("inapplicable OS")
+            @unittest.skip("POSIX executable mode")
             def test_second(self):
                 self.fail("should be skipped")
 
@@ -116,7 +148,7 @@ class TestLanePolicyTests(unittest.TestCase):
         cases = tuple(suite)
         ids = [case.id() for case in cases]
         plan = mock.Mock(test_ids=ids)
-        inventory = mock.Mock(cases=cases)
+        inventory = mock.Mock(cases=cases, plan=plan)
         selections = {n: [test] for n, test in enumerate(ids, 1)}
         identity = {"python": "3.12", "GITHUB_SHA": "candidate", "GITHUB_RUN_ID": "1", "GITHUB_RUN_ATTEMPT": "1"}
         with tempfile.TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
@@ -124,7 +156,7 @@ class TestLanePolicyTests(unittest.TestCase):
             for shard, selected in selections.items():
                 artifact = directory / f"windows-1-3.12-{shard}"
                 shards.run_shard(inventory, selected, identity, shard, artifact)
-            shards.verify_reports(plan, selections, identity, directory)
+            shards.verify_reports(inventory, selections, identity, directory)
             path = directory / "windows-1-3.12-2" / "shard-2.json"
             original = path.read_text(encoding="utf-8")
             report = json.loads(original)
@@ -135,28 +167,73 @@ class TestLanePolicyTests(unittest.TestCase):
                 ("wrong ID", {**report, "tests": [{**report["tests"][0], "id": ids[0]}]}),
                 ("failure", {**report, "success": False}),
                 ("wrong shard", {**report, "shard": 1}),
+                ("unexplained skip", {**report, "tests": [{"id": ids[1], "ms": 0, "outcome": "skip"}]}),
+                ("different reason", {**report, "tests": [
+                    {**report["tests"][0], "skip_reason": "test temporarily disabled"}]}),
+                ("expected failure", {**report, "tests": [{**report["tests"][0], "outcome": "expected_failure"}]}),
                 *((key, {**report, "identity": {**identity, key: "different"}}) for key in identity),
             ):
                 with self.subTest(label):
                     path.write_text(json.dumps(changed), encoding="utf-8")
                     with self.assertRaises(ValueError):
-                        shards.verify_reports(plan, selections, identity, directory)
+                        shards.verify_reports(inventory, selections, identity, directory)
             path.unlink()
             with self.assertRaises(ValueError):
-                shards.verify_reports(plan, selections, identity, directory)
+                shards.verify_reports(inventory, selections, identity, directory)
             path.write_text(original, encoding="utf-8")
             (directory / "windows-1-3.12-4").mkdir()
             with self.assertRaises(ValueError):
-                shards.verify_reports(plan, selections, identity, directory)
+                shards.verify_reports(inventory, selections, identity, directory)
+
+    def test_shard_rejects_unapproved_skips_including_subtests(self):
+        class Fixture(unittest.TestCase):
+            @unittest.skip("temporarily disabled")
+            def test_undecided(self):
+                self.fail()
+
+            def test_runtime(self):
+                self.skipTest("POSIX executable mode")
+
+            def test_subtest(self):
+                with self.subTest(case="one"):
+                    self.skipTest("temporarily disabled")
+
+        cases = tuple(unittest.defaultTestLoader.loadTestsFromTestCase(Fixture))
+        ids = [case.id() for case in cases]
+        with tempfile.TemporaryDirectory() as tmp, redirect_stderr(io.StringIO()):
+            directory = Path(tmp)
+            with self.assertRaisesRegex(ValueError, "invalid test result"):
+                shards.run_shard(mock.Mock(cases=cases), ids, {}, 1, directory)
+            report = json.loads((directory / "shard-1.json").read_text(encoding="utf-8"))
+            self.assertIs(report["success"], False)
+            self.assertEqual([(row["id"], row["outcome"]) for row in report["tests"]],
+                             [(test_id, "unexpected_skip") for test_id in ids])
 
     def test_shard_refuses_an_unexecuted_or_skipped_timing_qualifier(self):
         qualifier = MANUAL_TIMING_QUALIFICATION_TEST_IDS[0]
         report = {"identity": {}, "shard": 1, "success": True, "tests": []}
         with self.assertRaises(ValueError):
-            shards.check_report(report, {}, 1, [qualifier])
-        report["tests"] = [{"id": qualifier, "outcome": "skip", "ms": 0}]
+            shards.check_report(report, {}, 1, [qualifier], {})
+        report["tests"] = [{"id": qualifier, "outcome": "skip", "ms": 0, "skip_reason": "POSIX executable mode"}]
         with self.assertRaises(ValueError):
-            shards.check_report(report, {}, 1, [qualifier])
+            shards.check_report(report, {}, 1, [qualifier], {qualifier: "POSIX executable mode"})
+
+    def test_runtime_timezone_skip_is_limited_to_the_specific_test_and_reason(self):
+        case = unittest.FunctionTestCase(lambda: None)
+        zone_case = ("test_review_wait_controller.ReviewWaitControllerTests."
+                     "test_named_zone_matches_actual_wall_clock")
+        with mock.patch.object(case, "id", return_value=zone_case):
+            allowed = shards.windows_skip_reasons([case])
+        reason = "system IANA timezone database unavailable"
+        row = {"id": zone_case, "ms": 0, "outcome": "skip", "skip_reason": reason}
+        report = {"identity": {}, "shard": 1, "success": True, "tests": [row]}
+        shards.check_report(report, {}, 1, [zone_case], allowed)
+        row["skip_reason"] = "unrelated reason"
+        with self.assertRaisesRegex(ValueError, "unqualified Windows skip"):
+            shards.check_report(report, {}, 1, [zone_case], allowed)
+        row.update(id="unrelated.test", skip_reason=reason)
+        with self.assertRaisesRegex(ValueError, "unqualified Windows skip"):
+            shards.check_report(report, {}, 1, ["unrelated.test"], allowed)
 
     def test_check_discovery_does_not_require_git_metadata(self):
         with tempfile.TemporaryDirectory() as temporary:

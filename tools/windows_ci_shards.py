@@ -47,6 +47,36 @@ SECONDS_PER_CASE = {
     "test_usage_response_page_experiment": 17,
 }
 
+# These existing unittest decorators select native POSIX behavior. Resolve
+# their current IDs from each interpreter's discovery, including class skips.
+POSIX_SKIP_REASONS = frozenset({
+    "requires native Linux or macOS no-replace rename",
+    "requires the actual public POSIX Runner",
+    "requires an actual Linux/macOS host",
+    "POSIX executable mode",
+    "POSIX descriptor-lifetime mechanism",
+    "requires actual POSIX advisory locks",
+})
+WINDOWS_ZONEINFO_TESTS = {
+    "test_review_wait_controller.ReviewWaitControllerTests.test_named_zone_matches_actual_wall_clock",
+    "test_review_wait_controller.ReviewWaitControllerTests.test_named_zone_rejects_both_ambiguous_fall_back_occurrences",
+}
+
+
+def windows_skip_reasons(cases):
+    reasons = {}
+    for case in cases:
+        if case.id() in WINDOWS_ZONEINFO_TESTS:
+            # Windows has no system IANA database. These cases check for the
+            # optional data at runtime and still run when it is available.
+            reasons[case.id()] = "system IANA timezone database unavailable"
+        for owner in (type(case), getattr(case, case._testMethodName)):
+            reason = getattr(owner, "__unittest_skip_why__", None)
+            if getattr(owner, "__unittest_skip__", False) and reason in POSIX_SKIP_REASONS:
+                reasons[case.id()] = reason
+                break
+    return reasons
+
 
 def shard_ids(plan, *, groups=MODULE_GROUPS):
     """Balance indivisible module groups, then filter original discovery order."""
@@ -88,16 +118,30 @@ class TimedResult(unittest.TextTestResult):
         self.timings.append((test.id(), round(1000 * (time.monotonic() - self.started_at))))
         super().stopTest(test)
 
-    def rows(self):
-        outcomes = {test.id(): "skip" for test, _ in self.skipped}
+    def rows(self, allowed_skips):
+        outcomes = {}
+        skip_reasons = {}
+        for test, reason in self.skipped:
+            parent = getattr(test, "test_case", test)
+            test_id = parent.id()
+            if test is parent and allowed_skips.get(test_id) == reason:
+                outcomes[test_id] = "skip"
+                skip_reasons[test_id] = reason
+            else:
+                outcomes[test_id] = "unexpected_skip"
         outcomes.update((test.id(), "expected_failure") for test, _ in self.expectedFailures)
         outcomes.update((test.id(), "unexpected_success") for test in self.unexpectedSuccesses)
         for status, problems in (("failure", self.failures), ("error", self.errors)):
             for test, _ in problems:
                 parent = getattr(test, "test_case", test)  # Failed subtest belongs to its method.
                 outcomes[parent.id()] = status
-        return [{"id": test_id, "ms": ms, "outcome": outcomes.get(test_id, "pass")}
-                for test_id, ms in self.timings]
+        rows = []
+        for test_id, ms in self.timings:
+            row = {"id": test_id, "ms": ms, "outcome": outcomes.get(test_id, "pass")}
+            if row["outcome"] == "skip":
+                row["skip_reason"] = skip_reasons[test_id]
+            rows.append(row)
+        return rows
 
 
 def execution_identity(version):
@@ -113,7 +157,7 @@ def execution_identity(version):
     return identity
 
 
-def check_report(report, identity, shard, expected):
+def check_report(report, identity, shard, expected, allowed_skips):
     if (report["identity"] != identity or type(report["shard"]) is not int or report["shard"] != shard
             or report["success"] is not True):
         raise ValueError("failed or mismatched shard")
@@ -122,8 +166,11 @@ def check_report(report, identity, shard, expected):
         raise ValueError("executed test IDs differ from ordered discovery")
     for row in rows:
         if (type(row["ms"]) is not int or row["ms"] < 0
-                or row["outcome"] not in ("pass", "skip", "expected_failure")):
+                or row["outcome"] not in ("pass", "skip")):
             raise ValueError("invalid test result")
+        if row["outcome"] == "skip" and (
+                row["id"] not in allowed_skips or row.get("skip_reason") != allowed_skips[row["id"]]):
+            raise ValueError("unqualified Windows skip")
         if row["outcome"] != "pass" and row["id"] in test_lanes.MANUAL_TIMING_QUALIFICATION_TEST_IDS:
             raise ValueError("manual timing qualifier did not pass")
 
@@ -133,29 +180,36 @@ def run_shard(inventory, expected, identity, shard, directory):
     suite = unittest.TestSuite(case for case in inventory.cases if case.id() in selected)
     with mock.patch.dict(os.environ, {"CODEX_THREAD_ID": "00000000-0000-4000-8000-000000000001"}):
         result = unittest.TextTestRunner(resultclass=TimedResult, verbosity=1).run(suite)
+    allowed_skips = windows_skip_reasons(inventory.cases)
     report = {"identity": identity, "shard": shard,
-              "success": result.wasSuccessful(), "tests": result.rows()}
-    directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f"shard-{shard}.json"
-    with path.open("x", encoding="utf-8") as stream:
-        json.dump(report, stream, separators=(",", ":"))
-    check_report(report, identity, shard, expected)
+              "success": result.wasSuccessful(), "tests": result.rows(allowed_skips)}
+    try:
+        check_report(report, identity, shard, expected, allowed_skips)
+    except ValueError:
+        report["success"] = False
+        raise
+    finally:
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / f"shard-{shard}.json"
+        with path.open("x", encoding="utf-8") as stream:
+            json.dump(report, stream, separators=(",", ":"))
 
 
-def verify_reports(plan, selections, identity, directory):
+def verify_reports(inventory, selections, identity, directory):
     prefix = f"windows-{identity['GITHUB_RUN_ATTEMPT']}-{identity['python']}-"
     if {path.name for path in directory.iterdir()} != {prefix + str(shard) for shard in SHARDS}:
         raise ValueError("missing or extra Windows shard artifact")
     observed = []
+    allowed_skips = windows_skip_reasons(inventory.cases)
     for shard, expected in selections.items():
         artifact = directory / (prefix + str(shard))
         path = artifact / f"shard-{shard}.json"
         if list(artifact.iterdir()) != [path]:
             raise ValueError("missing or extra shard result")
         report = json.loads(path.read_text(encoding="utf-8"))
-        check_report(report, identity, shard, expected)
+        check_report(report, identity, shard, expected, allowed_skips)
         observed.extend(row["id"] for row in report["tests"])
-    if Counter(observed) != Counter(plan.test_ids) or len(set(observed)) != len(observed):
+    if Counter(observed) != Counter(inventory.plan.test_ids) or len(set(observed)) != len(observed):
         raise ValueError("incomplete or duplicated Windows coverage")
     print(f"Python {identity['python']}: verified {len(observed)} test IDs across three shards")
 
@@ -173,7 +227,7 @@ def main(argv=None):
         inventory = test_lanes.discover_tests(test_lanes.DEFAULT_REPO_ROOT)
         selections = shard_ids(inventory.plan)
         if args.verify:
-            verify_reports(inventory.plan, selections, identity, args.results)
+            verify_reports(inventory, selections, identity, args.results)
         else:
             run_shard(inventory, selections[args.shard], identity, args.shard, args.results)
         return 0

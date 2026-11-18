@@ -1541,13 +1541,16 @@ all three base lanes on Python 3.12 and `fast` on 3.14; the release selection
 retains deterministic performance-fixture behavior/capacity but defers the two
 wall-clock qualifiers. Pushes to `main` run all three base lanes independently
 on both versions with the same exact deferral. Default manual `workflow_dispatch` runs
-monolithic `all` on both versions without that deferral, and an
-`always()` aggregate job fails unless policy validation, the full Windows matrix,
-and both existing platform checks succeed. The workflow trigger remains limited to pull requests, pushes to
+three Windows shards on each version without that deferral. The `always()`
+aggregate first checks the policy, shard, coverage and platform job results.
+Using job-scoped read access to Actions, it then checks each of the eleven
+required jobs by name, commit, run, attempt and successful completion. Missing,
+duplicate, skipped, or unfinished jobs fail qualification. A partial rerun
+cannot supply jobs from an earlier attempt. The workflow trigger remains limited to pull requests, pushes to
 `main`, and manual dispatch; a candidate gate cannot be replaced by a skipped
 dependency job.
 
-In the opt-in manual comparison, each Python version discovers its own full
+In both the default manual run and the opt-in shard comparison, each Python version discovers its own full
 suite. The Windows shard runner assigns whole modules, including designated
 Setup recovery and shared-runtime groups, to three runners. It assigns the
 heaviest estimated group to the least loaded runner first, using previous
@@ -1556,8 +1559,11 @@ Each runner executes one ordered filter of discovery in a single process with
 full Git history. Its result artifact records the actual test IDs, outcomes
 and per-test durations with the SHA, workflow run, attempt, version and shard.
 A separate check using the same interpreter rediscovers the suite and compares
-all three ordered results, including both manual timing qualifiers. The serial
-suite retains order interactions between modules assigned to different runners.
+all three ordered results, including both manual timing qualifiers. Each
+recorded skip must match an applicable, reviewed Windows exception for that
+test and reason. The timing qualifiers require a pass. Manual
+`serial_diagnostic=true` runs `all` in one process per interpreter to reproduce
+order interactions between modules assigned to different runners.
 
 The additional platform job uses Ubuntu 24.04 x86-64 and macOS 15
 Apple Silicon with Python 3.12 and the same repository runner's
@@ -1567,8 +1573,9 @@ Runner-process selection. Both hosts also select the public Runner gate module.
 The async-backup runtime and real-process lifecycle modules run on both hosts.
 Manual `platform_only=true` selects policy and platform
 checks alone; the Windows matrix and candidate gate are explicitly skipped and
-no release qualification is claimed. The default full route retains both
-Windows versions and its aggregate gate. Platform checks do not themselves
+no release qualification is claimed. Platform-only takes precedence over
+serial diagnosis, which takes precedence over comparison. Only the default
+manual run reaches the release gate. Platform checks do not themselves
 qualify a release or establish Runner support; published platform support
 remains owned by the release/install contract.
 

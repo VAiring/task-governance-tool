@@ -744,8 +744,9 @@ CI consumes the same repository-only policy:
 |---|---|---|
 | pull request | `fast`, `integration`, `release` | `fast` |
 | push to `main` | `fast`, `integration`, `release` | `fast`, `integration`, `release` |
-| default manual `workflow_dispatch` | `all` | `all` |
+| default manual `workflow_dispatch` | 3 full-suite shards | 3 full-suite shards |
 | manual `compare_shards=true` | 3 full-suite shards | 3 full-suite shards |
+| manual `serial_diagnostic=true` | ordered `all` | ordered `all` |
 
 Every event first validates the complete standard discovery inventory and
 base-lane ownership. Pull-request and push `release` selections then defer only
@@ -753,12 +754,14 @@ the two closed wall-clock qualifier identities while retaining their separate
 deterministic functional and capacity tests. Default manual `workflow_dispatch`
 defers nothing.
 
-The manual release-candidate aggregate requires policy validation, both
-full-version Windows jobs, and both existing platform checks to succeed.
-Failed or skipped dependencies cannot qualify the gate. To compare Windows
-execution times, dispatch the same commit with `compare_shards=true`. Each
-version runs the full inventory across three Windows runners, then independently
-checks the recorded test IDs. The release-candidate gate is skipped in this mode.
+For release qualification, each Python version runs its complete inventory
+across three Windows runners. A separate job for that version compares the
+recorded test IDs and outcomes with fresh discovery. The candidate gate checks
+all six shards, both coverage checks, policy, Ubuntu and macOS against the
+same commit, run and attempt. All eleven jobs must finish successfully.
+Use `serial_diagnostic=true` to reproduce interactions across modules in
+one process per version. Use `compare_shards=true` for a timing comparison of
+the same commit. Both diagnostic modes skip the release-candidate gate.
 An `operation_sequence` value may correlate separately authorized candidate
 work, but neither that value nor a successful gate authorizes workflow
 dispatch, push, tag, or publication.
@@ -774,8 +777,8 @@ inapplicable to Windows to skip.
 Manual `platform_only=true` runs policy and these platform checks alone,
 skipping the Windows full matrix and candidate gate. This mode is not release
 qualification or a change to the published platform or Runner support boundary;
-it takes precedence if both manual inputs are selected. Leaving both inputs
-false runs the full manual release-candidate route.
+it takes precedence over all other manual inputs. Serial diagnosis takes
+precedence over comparison. Leave all three inputs false for release qualification.
 
 The repository-only release checker is offline and read-only. It derives the
 CLI leaves and runtime release versions from their owning Python modules, uses

@@ -152,13 +152,12 @@ gates. It is not the product contract, execution ledger, or evidence store:
   before execution.
 - Pull requests schedule all three base-lane jobs on Python 3.12 and `fast` on
   3.14; pushes to `main` schedule every base lane on both versions; manual
-  `workflow_dispatch` runs `all` on both versions by default.
+  `workflow_dispatch` runs three full-suite Windows shards per version by default.
 - Complete discovery and base-lane ownership are validated before event
   selection. Pull-request and push release selections retain the two
   deterministic backup/Viewer functional-capacity tests and defer only the two
   closed wall-clock qualification identities. Manual `workflow_dispatch`
-  defers nothing in its default full mode, so both full-version `all` jobs
-  execute the qualifiers.
+  defers nothing in its default full mode. Both qualifiers must pass on each version.
 - An additional platform job runs the closed common-processing,
   CLI-startup, applicable artifact-operation, Runner-preparation, and private
   Runner-process selection owned by `tools/test_lanes.py` on Ubuntu 24.04 x86-64
@@ -182,13 +181,14 @@ gates. It is not the product contract, execution ledger, or evidence store:
   without the Windows full matrix or release-candidate gate. It is an explicit
   platform-check route, never a substitute for full candidate qualification.
   The platform-only selection takes precedence over other manual selections.
-- Manual `compare_shards=true` measures three Windows shards per version,
-  retaining both timing qualifiers and checking actual execution against each
-  version's discovery. Only the default manual mode with both inputs false
-  runs the serial full release-candidate gate.
-- A future release candidate requires the explicit aggregate manual gate after
-  policy validation, both full-version Windows jobs, and both platform checks.
-  Every dependency must succeed; a failure or skipped dependency cannot qualify.
+- Manual `serial_diagnostic=true` keeps the ordered single-process `all` on
+  each version for diagnosis, including cross-shard order dependencies. It
+  takes precedence over `compare_shards=true`, which measures the six shards.
+  Both modes omit release qualification.
+- A future release candidate requires the default manual gate. Every Windows
+  shard, each version's independent coverage check, policy and both platform
+  checks must complete successfully in the same attempt, run and commit.
+  Each version must account for its complete discovery exactly once.
   This repository CI policy
   grants no push, dispatch, tag, Release, or other external mutation
   authority.

@@ -67,7 +67,7 @@ def copy_release_fixture(destination: Path, *, source_root: Path = ROOT) -> Path
     )
 
     (fixture / "tools").mkdir()
-    for name in ("release_contract.py", "document_contract.py", "test_lanes.py", "windows_ci_shards.py"):
+    for name in ("release_contract.py", "document_contract.py", "test_lanes.py", "windows_ci_shards.py", "ci_candidate.py"):
         shutil.copy2(source_root / "tools" / name, fixture / "tools" / name)
 
     (fixture / "docs" / "releases").mkdir(parents=True)
@@ -569,7 +569,7 @@ class ReleaseContractCheckerTests(unittest.TestCase):
         def relocate_candidate_condition(text: str) -> str:
             candidate = (
                 "    if: ${{ always() && github.event_name == "
-                "'workflow_dispatch' && inputs.platform_only != true && inputs.compare_shards != true }}\n"
+                "'workflow_dispatch' && !inputs.platform_only && !inputs.compare_shards && !inputs.serial_diagnostic }}\n"
             )
             changed = text.replace(
                 candidate,
@@ -614,7 +614,7 @@ class ReleaseContractCheckerTests(unittest.TestCase):
             (
                 "test_job_restricted_to_dispatch",
                 lambda text: text.replace(
-                    "    if: ${{ inputs.platform_only != true && inputs.compare_shards != true }}\n",
+                    "    if: ${{ github.event_name != 'workflow_dispatch' || (!inputs.platform_only && inputs.serial_diagnostic) }}\n",
                     "    if: github.event_name == 'workflow_dispatch'\n",
                     1,
                 ),
@@ -742,18 +742,17 @@ class ReleaseContractCheckerTests(unittest.TestCase):
             ("--verify", "--shard 1"),
             ("if-no-files-found: error", "if-no-files-found: warn"),
             (" && !inputs.platform_only", ""),
-            ("inputs.compare_shards", "true"),
+            (" && !inputs.serial_diagnostic", ""),
         ):
             with self.subTest(before=before):
                 self.assertIn(before, comparison)
                 issues = []
                 _workflow_checks(prefix + marker + comparison.replace(before, after, 1), issues)
                 self.assertIn("ci_shard_wiring_invalid", {issue.code for issue in issues})
-        issues = []
-        _workflow_checks(text.replace(" && inputs.compare_shards != true", ""), issues)
-        codes = {issue.code for issue in issues}
-        self.assertIn("ci_test_policy_wiring_invalid", codes)
-        self.assertIn("ci_candidate_gate_invalid", codes)
+        for bypass in (" && !inputs.compare_shards", " && !inputs.serial_diagnostic"):
+            issues = []
+            _workflow_checks(text.replace(bypass, ""), issues)
+            self.assertIn("ci_candidate_gate_invalid", {issue.code for issue in issues})
 
     def test_ci_initial_platform_and_full_candidate_boundaries_fail_closed(self):
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
@@ -814,13 +813,13 @@ class ReleaseContractCheckerTests(unittest.TestCase):
             ),
             (
                 "windows_only_for_initial_mode",
-                "    if: ${{ inputs.platform_only != true && inputs.compare_shards != true }}",
+                "    if: ${{ github.event_name != 'workflow_dispatch' || (!inputs.platform_only && inputs.serial_diagnostic) }}",
                 "    if: ${{ inputs.platform_only == true }}",
                 "ci_test_policy_wiring_invalid",
             ),
             (
                 "initial_mode_claims_candidate",
-                " && inputs.platform_only != true",
+                " && !inputs.platform_only",
                 "",
                 "ci_candidate_gate_invalid",
             ),
@@ -830,6 +829,11 @@ class ReleaseContractCheckerTests(unittest.TestCase):
                 "",
                 "ci_candidate_gate_invalid",
             ),
+            ("candidate_coverage_dependency_missing", "      - shard-coverage\n", "", "ci_candidate_gate_invalid"),
+            ("candidate_windows_dependency_missing", "      - windows-shards\n", "", "ci_candidate_gate_invalid"),
+            ("candidate_attempt_omitted", "/attempts/$env:GITHUB_RUN_ATTEMPT/jobs", "/jobs", "ci_candidate_gate_invalid"),
+            ("candidate_api_write", "      actions: read\n", "      actions: write\n", "ci_candidate_gate_invalid"),
+            ("candidate_job_verification_omitted", " | python -B -m tools.ci_candidate", "", "ci_candidate_gate_invalid"),
             (
                 "candidate_platform_result_missing",
                 "          PLATFORM_RESULT: ${{ needs.platform-smoke.result }}\n",
@@ -838,9 +842,9 @@ class ReleaseContractCheckerTests(unittest.TestCase):
             ),
             (
                 "candidate_platform_check_missing",
-                "            $env:TEST_RESULT -ne 'success' -or\n"
+                "            $env:COVERAGE_RESULT -ne 'success' -or\n"
                 "            $env:PLATFORM_RESULT -ne 'success'\n",
-                "            $env:TEST_RESULT -ne 'success'\n",
+                "            $env:COVERAGE_RESULT -ne 'success'\n",
                 "ci_candidate_gate_invalid",
             ),
             (

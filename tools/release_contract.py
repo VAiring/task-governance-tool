@@ -290,9 +290,9 @@ def _parse_ci_triggers(
     if bodies.get("pull_request"):
         return None
     dispatch_body = bodies.get("workflow_dispatch", [])
-    if len(dispatch_body) != 9 or dispatch_body[0] != "    inputs:":
+    if len(dispatch_body) != 13 or dispatch_body[0] != "    inputs:":
         return None
-    for index, name in ((1, "platform_only"), (5, "compare_shards")):
+    for index, name in ((1, "platform_only"), (5, "compare_shards"), (9, "serial_diagnostic")):
         if (dispatch_body[index] != f"      {name}:"
                 or not dispatch_body[index + 1].startswith("        description: ")
                 or dispatch_body[index + 2:index + 4] != ["        type: boolean", "        default: false"]):
@@ -1068,7 +1068,7 @@ def _workflow_checks(
             "    name: Windows tests (${{ matrix.lane }}, "
             "Python ${{ matrix.python-version }})"
         ),
-        "    if: ${{ inputs.platform_only != true && inputs.compare_shards != true }}",
+        "    if: ${{ github.event_name != 'workflow_dispatch' || (!inputs.platform_only && inputs.serial_diagnostic) }}",
         "    needs: policy",
         "    runs-on: windows-latest",
         "    strategy:",
@@ -1149,29 +1149,50 @@ def _workflow_checks(
         (
             "    if: ${{ always() && github.event_name == "
             f"'{RELEASE_CANDIDATE_EVENT}' "
-            "&& inputs.platform_only != true && inputs.compare_shards != true "
+            "&& !inputs.platform_only && !inputs.compare_shards && !inputs.serial_diagnostic "
             "}}"
         ),
         "    needs:",
         "      - policy",
-        "      - test",
+        "      - windows-shards",
+        "      - shard-coverage",
         "      - platform-smoke",
         "    runs-on: windows-latest",
+        "    permissions:",
+        "      contents: read",
+        "      actions: read",
         "    steps:",
         "      - name: Require policy and complete test matrix",
         "        shell: pwsh",
         "        env:",
         "          POLICY_RESULT: ${{ needs.policy.result }}",
-        "          TEST_RESULT: ${{ needs.test.result }}",
+        "          SHARDS_RESULT: ${{ needs.windows-shards.result }}",
+        "          COVERAGE_RESULT: ${{ needs.shard-coverage.result }}",
         "          PLATFORM_RESULT: ${{ needs.platform-smoke.result }}",
         "        run: |",
         "          if (",
         "            $env:POLICY_RESULT -ne 'success' -or",
-        "            $env:TEST_RESULT -ne 'success' -or",
+        "            $env:SHARDS_RESULT -ne 'success' -or",
+        "            $env:COVERAGE_RESULT -ne 'success' -or",
         "            $env:PLATFORM_RESULT -ne 'success'",
         "          ) {",
         "            throw 'Full release-candidate gate failed'",
         "          }",
+        "      - name: Checkout",
+        "        uses: actions/checkout@v6",
+        "        with:",
+        "          persist-credentials: false",
+        "      - name: Set up Python",
+        *expected_policy_python,
+        "      - name: Verify required jobs in this attempt",
+        "        shell: pwsh",
+        "        env:",
+        "          GH_TOKEN: ${{ github.token }}",
+        "        run: |",
+        '          $pages = gh api --paginate --slurp "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID/'
+        'attempts/$env:GITHUB_RUN_ATTEMPT/jobs"',
+        "          if ($LASTEXITCODE -ne 0) { throw 'Cannot read jobs for this attempt' }",
+        "          $pages | python -B -m tools.ci_candidate",
     )
     observed_candidate = tuple(
         line for line in candidate_block.splitlines() if line.strip()
@@ -1214,7 +1235,7 @@ def _valid_shard_job(job, block, checkout, setup_python):
     if job == "windows-shards":
         preamble = (
             "    name: Windows shard ${{ matrix.shard }} (Python ${{ matrix.python-version }})",
-            "    if: ${{ github.event_name == 'workflow_dispatch' && inputs.compare_shards && !inputs.platform_only }}",
+            "    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.platform_only && !inputs.serial_diagnostic }}",
             "    needs: policy", *matrix, "        shard: [1, 2, 3]",
         )
         steps["Run ordered shard"] = ("        run: " + entry + " --shard ${{ matrix.shard }} " + version_args,)
@@ -1266,6 +1287,7 @@ def check_release_contract(
     for relative in (
         "tools/release_contract.py", "tools/document_contract.py", "tools/test_lanes.py",
         "tools/windows_ci_shards.py",
+        "tools/ci_candidate.py",
     ):
         _read_utf8(
             root / Path(*relative.split("/")),

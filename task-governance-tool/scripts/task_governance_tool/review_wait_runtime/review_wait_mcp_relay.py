@@ -138,12 +138,14 @@ def _valid_implementation(value: object) -> bool:
 class _ChildSession:
     """Own a single direct child and bounded, nonblocking pipe-draining workers."""
 
+    stdout_limits = (MAX_DRAIN_BYTES, MAX_READ_DRAIN_BYTES)
+
     def __init__(self, command: Sequence[str], cwd: Path | str | None,
                  deadline: float, cleanup_seconds: float, *,
                  response_bytes: int = MAX_MESSAGE_BYTES,
                  stdout_bytes: int = MAX_DRAIN_BYTES):
         if (type(response_bytes) is not int or response_bytes not in {MAX_MESSAGE_BYTES, MAX_READ_RESPONSE_BYTES}
-                or type(stdout_bytes) is not int or stdout_bytes not in {MAX_DRAIN_BYTES, MAX_READ_DRAIN_BYTES}
+                or type(stdout_bytes) is not int or stdout_bytes not in self.stdout_limits
                 or stdout_bytes < response_bytes):
             raise RelayError()
         self.response_bytes, self.stdout_bytes = response_bytes, stdout_bytes
@@ -244,7 +246,7 @@ class _ChildSession:
                 raise RelayError()
             offset += count
 
-    def result(self, request_id: int, *, max_bytes: int | None = None) -> dict:
+    def _message(self, max_bytes: int | None) -> dict:
         while True:
             remaining = self.deadline - time.monotonic()
             if self.failed.is_set():
@@ -258,35 +260,38 @@ class _ChildSession:
             if data is None:
                 raise RelayError(response_reason="response_eof")
             try:
-                message = strict_json_loads(data, max_bytes=max_bytes if max_bytes is not None
+                return strict_json_loads(data, max_bytes=max_bytes if max_bytes is not None
                                            else getattr(self, "response_bytes", MAX_MESSAGE_BYTES))
             except RelayError as error:
                 raise RelayError(response_reason=error.response_reason or "response_json_invalid") from None
-            # Any server-initiated request (including elicitation), notification,
-            # wrong id, JSON-RPC error or extra envelope field fails closed.
-            # Classification never forwards a method, error code/message/data,
-            # rejected value or any other provider content.
-            reason = "response_envelope_invalid"
-            if type(message) is dict and message.get("jsonrpc") == "2.0":
-                if (type(message.get("method")) is str
-                        and not set(message) - {"jsonrpc", "id", "method", "params"}):
-                    reason = ("server_request_unsupported" if "id" in message
-                              else "notification_unsupported")
-                elif (set(message) == {"jsonrpc", "id", "error"}
-                      and type(message["id"]) is int and message["id"] == request_id):
-                    error = message["error"]
-                    if (type(error) is dict and {"code", "message"} <= set(error)
-                            and not set(error) - {"code", "message", "data"}
-                            and type(error["code"]) is int and type(error["message"]) is str):
-                        reason = _RPC_FAILURE_REASONS.get(error["code"], "rpc_error")
-            if (not isinstance(message, dict)
-                    or set(message) != {"jsonrpc", "id", "result"}
-                    or message["jsonrpc"] != "2.0"
-                    or type(message["id"]) is not int
-                    or message["id"] != request_id
-                    or not isinstance(message["result"], dict)):
-                raise RelayError(response_reason=reason)
-            return message["result"]
+
+    def result(self, request_id: int, *, max_bytes: int | None = None) -> dict:
+        message = self._message(max_bytes)
+        # Any server-initiated request (including elicitation), notification,
+        # wrong id, JSON-RPC error or extra envelope field fails closed.
+        # Classification never forwards a method, error code/message/data,
+        # rejected value or any other provider content.
+        reason = "response_envelope_invalid"
+        if type(message) is dict and message.get("jsonrpc") == "2.0":
+            if (type(message.get("method")) is str
+                    and not set(message) - {"jsonrpc", "id", "method", "params"}):
+                reason = ("server_request_unsupported" if "id" in message
+                          else "notification_unsupported")
+            elif (set(message) == {"jsonrpc", "id", "error"}
+                  and type(message["id"]) is int and message["id"] == request_id):
+                error = message["error"]
+                if (type(error) is dict and {"code", "message"} <= set(error)
+                        and not set(error) - {"code", "message", "data"}
+                        and type(error["code"]) is int and type(error["message"]) is str):
+                    reason = _RPC_FAILURE_REASONS.get(error["code"], "rpc_error")
+        if (not isinstance(message, dict)
+                or set(message) != {"jsonrpc", "id", "result"}
+                or message["jsonrpc"] != "2.0"
+                or type(message["id"]) is not int
+                or message["id"] != request_id
+                or not isinstance(message["result"], dict)):
+            raise RelayError(response_reason=reason)
+        return message["result"]
 
     def close(self) -> bool:
         """Close input, reap the owned process, then join and close all pipes."""

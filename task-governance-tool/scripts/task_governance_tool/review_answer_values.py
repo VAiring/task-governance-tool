@@ -352,10 +352,19 @@ def validate_record(value):
     schema = TRACKING_RECORD if tracked else RECORD
     if tracked and "retired_registrations" in value:
         schema = {**schema, "retired_registrations": [RETIRED_REGISTRATION]}
+    if type(value) is dict and "initial_observation" in value:
+        schema = {**schema, "initial_observation": dict(parent_turn_id=str, item_count=int, last_item_digest=str)}
     result = prepare(value, schema)
     require(result["version"] in (1, 2))
     _basis(result["basis"])
     require(result["version"] == result["basis"]["version"], "identity")
+    if "initial_observation" in result:
+        observation = result["initial_observation"]
+        binding = result["binding"]
+        require(binding is not None and (not tracked or binding["tracking"]["kind"] == "initial"), "identity")
+        session(observation["parent_turn_id"])
+        integer(observation["item_count"], 1, 3072)
+        digest(observation["last_item_digest"])
     if tracked:
         return _tracking_record(result)
     binding, attempts, correction = result["binding"], result["attempts"], result["correction"]

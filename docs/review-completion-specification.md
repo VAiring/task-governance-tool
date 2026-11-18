@@ -645,6 +645,17 @@ same child may accompany its unique `started` activity. It is not another
 dispatch or proof of the child's terminal outcome. Duplicate starts/completions,
 reused activity IDs, interactions and other activity kinds remain conflicts;
 the child's exact sole own turn is still checked independently.
+For a parent with public item pagination, initial assignment observes all
+items of the dispatch turn, checks every assigned child's sole own turn, then
+reads forward from the last item through the final tail page. The last page
+of that second read fixes the observation boundary. Ordinary messages may
+extend the turn. A conflicting dispatch or contact through that boundary
+rejects the assignment. Later contact follows the saved answer and continuation
+rules. Missing pages, ambiguous identity or an exhausted read budget leave the
+assignment unconfirmed. The resulting operational slot records bind the
+observed parent turn and final item to the issued request and assignment.
+Already bound slots retain their original evidence. Starting a wait still
+requires a fresh observation of the active parent and its exact running turn.
 The durable binding precedes answer admission. A
 restart without the necessary pre-binding context cannot infer it from one page.
 

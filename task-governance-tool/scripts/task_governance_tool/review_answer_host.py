@@ -8,6 +8,7 @@ version-two tracking follows its dedicated session until one answer is frozen.
 
 import json
 import re
+from hashlib import sha256
 from uuid import UUID
 
 from .review_answer import AnswerError
@@ -48,6 +49,30 @@ def _content_complete(value):
             _fail()
     if "complete" in value and value["complete"] is not True:
         _fail()
+
+
+def initial_observation(parent_turn, count, last_id):
+    return dict(parent_turn_id=parent_turn, item_count=count,
+                last_item_digest="sha256:" + sha256(last_id.encode("ascii")).hexdigest())
+
+
+def _item_ids(turn):
+    items = turn["items"]
+    if not 1 <= len(items) <= 3072:
+        _fail("bound")
+    ids = []
+    for item in items:
+        _content_complete(item)
+        if type(item.get("type")) is not str or item["type"] == "collabAgentToolCall":
+            _fail("incomplete")
+        if item["type"] == "subAgentActivity":
+            _uuid(item.get("agentThreadId"))
+            if item.get("kind") not in ("started", "completed", "interacted", "failed", "interrupted"):
+                _fail("incomplete")
+        ids.append(_host_id(item.get("id")))
+    if len(ids) != len(set(ids)):
+        _fail("conflict", "binding_mismatch")
+    return ids
 
 
 def _page(value, expected_thread, limit):
@@ -131,10 +156,14 @@ def _dispatch_activity(items, child, expected_dispatch=None):
 
 
 class PublicAnswerHost:
-    def __init__(self, host, parent_session_id, parent_turn_id=None):
+    def __init__(self, host, parent_session_id, parent_turn_id=None, *, item_reader=None, reviewer_paths=None,
+                 verify_whole_turn_tail=False):
         self.host = host
         self.parent_session_id = _uuid(parent_session_id)
         self.parent_turn_id = None if parent_turn_id is None else _uuid(parent_turn_id)
+        self.item_reader = item_reader
+        self.reviewer_paths = reviewer_paths or {}
+        self.verify_whole_turn_tail = verify_whole_turn_tail
 
     def _read(self, thread_id, limit):
         arguments = dict(threadId=_uuid(thread_id), hostId="local", turnLimit=limit,
@@ -157,6 +186,11 @@ class PublicAnswerHost:
         if (self.parent_turn_id is None or creation_context is not True
                 or known_conflict is not False or child == self.parent_session_id):
             _fail("identity", "binding_mismatch")
+        if self.item_reader is not None or self.verify_whole_turn_tail:
+            fact, = self.bind_reviewers((child,), creation_context=True, known_conflict=False)
+            if fact.pop("dispatch_id") != dispatch_id:
+                _fail("conflict", "binding_mismatch")
+            return fact
         _page_info, turns = _page(self._read(self.parent_session_id, 1), self.parent_session_id, 1)
         if turns[0]["id"] != self.parent_turn_id:
             _fail("identity", "binding_mismatch")
@@ -181,6 +215,11 @@ class PublicAnswerHost:
         children = tuple(_uuid(child) for child in reviewer_ids)
         if len(set(children)) != len(children) or self.parent_session_id in children:
             _fail("identity", "binding_mismatch")
+        if self.item_reader is not None:
+            from .review_answer_item_pages import DispatchTurn
+            references = tuple(self.reviewer_paths.get(child, child) for child in children)
+            with self.item_reader() as rpc:
+                return DispatchTurn(rpc, self.parent_session_id, self.parent_turn_id).bind(children, references)
         _page_info, turns = _page(self._read(self.parent_session_id, 1), self.parent_session_id, 1)
         parent = turns[0]
         _content_complete(parent)
@@ -211,6 +250,27 @@ class PublicAnswerHost:
                 _fail("incomplete")
             results.append(dict(dispatch_id=dispatch, parent_session_id=self.parent_session_id,
                 reviewer_session_id=child, initial_turn_id=child_turns[0]["id"], source=source("dispatch_binding")))
+        if self.verify_whole_turn_tail:
+            before = _item_ids(parent)
+            _, final_turns = _page(self._read(self.parent_session_id, 1), self.parent_session_id, 1)
+            final = final_turns[0]
+            _content_complete(final)
+            if final["id"] != self.parent_turn_id or final["error"] is not None:
+                _fail("identity", "binding_mismatch")
+            after = _item_ids(final)
+            if after[:len(before)] != before:
+                _fail("conflict", "binding_mismatch")
+            for child, dispatch, result in zip(children, dispatches, results):
+                _dispatch_activity(final["items"], child, dispatch)
+                path = self.reviewer_paths.get(child)
+                if path and path.startswith("/"):
+                    for snapshot in (parent, final):
+                        identities = {item.get("agentThreadId") for item in snapshot["items"]
+                                      if item.get("type") == "subAgentActivity" and item.get("agentPath") == path
+                                      and item.get("kind") in ("started", "interacted")}
+                        if identities != {child}:
+                            _fail("conflict", "binding_mismatch")
+                result["initial_observation"] = initial_observation(self.parent_turn_id, len(after), after[-1])
         return tuple(results)
 
     def _bound_turn(self, reviewer_session_id, turn_id):

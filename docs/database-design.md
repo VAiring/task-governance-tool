@@ -297,8 +297,9 @@ validation across reads, and do not change the caller's transaction ownership.
 These are the current closed schemas introduced by schema 30 and retained by
 schema 37, the public writer
 and Evidence; the [review owner](review-completion-specification.md#collected-review-answers)
-owns answer and operation behavior. Every listed key is mandatory, including
-nullable keys; objects admit no extras. JSON integers are exact signed-64-bit
+owns answer and operation behavior. Keys are mandatory unless explicitly
+optional, including mandatory keys that allow null. Objects admit only the
+specified fields. JSON integers are exact signed-64-bit
 integers, never Boolean or float. UUIDs use the current canonical session/turn
 validator; tool IDs retain prefix plus sixteen lowercase hexadecimal digits.
 Host dispatch/message IDs contain 1..256 ASCII characters matching
@@ -435,10 +436,24 @@ Complete metadata is capped at 32,768 canonical UTF-8 bytes. Its physical seal
 is SHA-256 over `taskgov-collected-review-metadata-v1\0` plus all metadata,
 including the prepared path. It cannot validate a legacy sidecar arm.
 
-The version-two operational record is exactly
-`{version,basis,binding,attempts,correction,registration,tracking_state}`.
-Version and basis version are two; binding is null or the version-two binding,
-and correction is null. `tracking_state` is `watching|frozen|invalidated`.
+The operational slot record requires
+`{version,basis,binding,attempts,correction,registration}` in both versions.
+Version two also requires `tracking_state`.
+For a newly observed initial assignment, either version may additionally carry
+`initial_observation`, exactly `{parent_turn_id,item_count,last_item_digest}`.
+The binding must be present. In version two its tracking kind must be
+`initial`. The parent turn ID is the canonical UUID of the observed dispatch
+turn. The count is an integer from 1 through 3,072 inclusive, covering all
+distinct items through the final tail page. The digest uses `sha256:` plus the
+lowercase hexadecimal SHA-256 of the final item's ASCII ID bytes. The initial
+assignment writer stores the same boundary with each newly bound slot in its
+transaction. Once a slot is bound, both presence and value are immutable.
+Old records with the field omitted retain their canonical bytes on read and
+keep the omission on subsequent updates. This field belongs to the operational
+record only.
+
+In version two, both version fields equal two, binding is null or a version-two
+binding, and correction is null. `tracking_state` is `watching|frozen|invalidated`.
 `attempts` contains one entry with ordinal zero and the existing bounded
 attempt fields: `turn_id`, `source_identity`, `observation`, `observed_digest`,
 `terminal`, `terminal_source`, `publication`, and `failure`.

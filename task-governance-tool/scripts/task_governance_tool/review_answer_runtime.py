@@ -69,10 +69,18 @@ def bind_initial(service, host, reviewer_ids, *, creation_context=False,
     if type(observed) is not tuple or len(observed) != len(records):
         _fail()
     candidates = []
+    observations = []
     for slot, (record, child, key, assignment, fact) in enumerate(zip(records, children, keys, assignments, observed), 1):
-        if (type(fact) is not dict or set(fact) != {"dispatch_id", "parent_session_id", "reviewer_session_id", "initial_turn_id", "source"}
+        fields = {"dispatch_id", "parent_session_id", "reviewer_session_id", "initial_turn_id", "source"}
+        if (type(fact) is not dict or set(fact) not in (fields, fields | {"initial_observation"})
                 or fact["reviewer_session_id"] != child):
             _fail()
+        if "initial_observation" in fact:
+            observation = fact["initial_observation"]
+            if (type(observation) is not dict or observation.get("parent_turn_id") != host.parent_turn_id
+                    or observations and observation != observations[0]):
+                _fail("conflict")
+            observations.append(observation)
         common = dict(basis_digest=basis_digest(record["basis"]), slot=slot,
             reviewer_key=key, parent_session_id=fact["parent_session_id"], reviewer_session_id=child,
             assignment=assignment)
@@ -91,6 +99,10 @@ def bind_initial(service, host, reviewer_ids, *, creation_context=False,
         if record["binding"] is not None and record["binding"] != binding:
             _fail("conflict")
         candidates.append(binding)
+    if observations:
+        if len(observations) != len(records):
+            _fail("conflict")
+        return service.bind_observed(records, candidates, observations)
     for slot in missing:
         service.bind(slot, candidates[slot - 1])
     return service.repository.read()

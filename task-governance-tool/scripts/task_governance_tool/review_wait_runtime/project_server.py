@@ -244,7 +244,8 @@ class ProjectReviewWaitSession:
             groups = sources_for_reviewers(self.config.repo, self.skill, binding, reviewers)
         if groups is None:
             return None
-        adapter = PublicAnswerHost(host, binding.parent_thread_id, executor_turn_id(host._metadata))
+        options = host.item_binding_options() if hasattr(type(host), "item_binding_options") else {}
+        adapter = PublicAnswerHost(host, binding.parent_thread_id, executor_turn_id(host._metadata), **options)
         bound = {}
         for group in groups:
             with diagnostic.collecting(group.service.repository) if diagnostic is not None else nullcontext():

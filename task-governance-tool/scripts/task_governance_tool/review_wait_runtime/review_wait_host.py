@@ -52,6 +52,8 @@ _CONFIG_FIELDS = {
 class HostAdapterError(Exception):
     """Only a fixed code crosses this boundary; never include rejected values."""
 
+    oversized_turn = False
+
     def __init__(self, code: str, *, boundary_reason: str | None = None,
                  operation: str | None = None, termination: str | None = None,
                  executor_context: str | None = None):
@@ -75,6 +77,11 @@ def host_failure(error) -> dict | None:
         return {"operation": error.operation, "reason": error.boundary_reason,
                 "termination": error.termination}
     return None
+
+
+def _oversized_read(error):
+    return (error.operation == "read_thread" and error.termination == "confirmed" and
+            (error.oversized_turn or error.boundary_reason in {"host_response_frame_limit", "host_response_drain_limit"}))
 
 
 def unknown_host_effect(code: str, error: Exception) -> HostAdapterError:
@@ -630,6 +637,9 @@ class PublicMcpHost:
         self._command, self._cwd = tuple(command), cwd
         self._timeout = timeout_seconds
         self._auto_server = None
+        self.item_reader = None
+        self._verify_whole_turn_tail = False
+        self._reviewer_paths = {}
 
     @property
     def parent_thread_id(self) -> str:
@@ -642,6 +652,10 @@ class PublicMcpHost:
     @property
     def reviewer_ids(self) -> tuple[str, ...]:
         return self._reviewers
+
+    def item_binding_options(self):
+        return dict(item_reader=self.item_reader, reviewer_paths=self._reviewer_paths.copy(),
+                    verify_whole_turn_tail=self._verify_whole_turn_tail)
 
     @classmethod
     def from_environment(cls, *, server_path: Path | AutoServer, **kwargs) -> PublicMcpHost:
@@ -658,6 +672,11 @@ class PublicMcpHost:
             host = cls(command=[str(node), str(server)], cwd=server.parent,
                        timezone_reader=_node_timezone_reader(node), **kwargs)
             host._auto_server = server_path if automatic else None
+            from .item_reader import installed_runtime, open_reader
+            executable = installed_runtime(host._codex_home)
+            host._verify_whole_turn_tail = True
+            if executable is not None:
+                host.item_reader = lambda: open_reader(executable, host._codex_home)
             return host
         except HostAdapterError:
             raise
@@ -786,8 +805,12 @@ class PublicMcpHost:
                                        operation=name, termination="confirmed")
             if result["isError"]:
                 # This is a tool-level failure, not proof of a permission denial.
-                raise HostAdapterError("host_call_failed", boundary_reason="host_tool_error",
-                                       operation=name, termination="confirmed")
+                failure = HostAdapterError("host_call_failed", boundary_reason="host_tool_error",
+                                           operation=name, termination="confirmed")
+                failure.oversized_turn = (name == "read_thread" and len(content) == 1 and
+                    content[0]["text"] == "Thread history exceeds the read size limit. Try fewer turns. "
+                                          "A single oversized turn cannot be read by this tool.")
+                raise failure
             return tuple(x["text"] for x in content)
         except HostAdapterError as error:
             if error.code == "host_call_failed":
@@ -846,9 +869,29 @@ class PublicMcpHost:
             return self._reviewers
         self._validated_dispatch_pages = []
         try:
-            return self._resolve_handles(unresolved)
+            references = self._reviewers
+            identities = self._resolve_handles(unresolved)
         except HostAdapterError as error:
-            raise annotate_read_failure(error, "reviewer_identity", len(self._validated_dispatch_pages))
+            pages = len(self._validated_dispatch_pages)
+            if self.item_reader is None or pages or not _oversized_read(error):
+                raise annotate_read_failure(error, "reviewer_identity", pages)
+            # Only replace an unavailable first read. No validated conflict or
+            # historical mapping can be discarded in favor of a different child.
+            from ..review_answer_item_pages import DispatchTurn, latest_turn_id
+            from ..review_answer import AnswerError
+            try:
+                turn_id = executor_turn_id(self._metadata)
+                with self.item_reader() as rpc:
+                    if latest_turn_id(rpc, self._parent_id) != turn_id:
+                        raise annotate_read_failure(error, "reviewer_identity", pages)
+                    turn = DispatchTurn(rpc, self._parent_id, turn_id)
+                    turn.read()
+                    identities = turn.resolve(references)
+            except AnswerError:
+                raise annotate_read_failure(error, "reviewer_identity", pages) from None
+            self._reviewers = identities
+        self._reviewer_paths = dict(zip(identities, references))
+        return identities
 
     def _read_dispatch_page(self, paths, cursor, remaining):
         """Return validated selected dispatches, not the public history payload."""

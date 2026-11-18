@@ -69,6 +69,8 @@ def _forward(old, new):
             raise RepositoryError("state_transition_invalid")
     require(old["version"] == new["version"] and old["basis"] == new["basis"])
     require(old["binding"] is None or old["binding"] == new["binding"])
+    if old["binding"] is not None:
+        require(old.get("initial_observation") == new.get("initial_observation"))
     tracking = old["version"] == 2
     if tracking:
         allowed_states = {"watching": {"watching", "frozen", "invalidated"},

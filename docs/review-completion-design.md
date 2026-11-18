@@ -959,10 +959,28 @@ cleanup. No initial record, lock creation, guard, confirmation, reset or writer
 is invoked, and no observation is persisted or reused as an effect token.
 Legacy-only and non-dispatching checks keep their existing output shape.
 
-`review_answer_host.py` uses only bounded public `read_thread` observations.
+`review_answer_host.py` uses bounded public observations. For a fresh binding
+on the tested Windows Desktop App Server (`0.169.0-alpha.11.1`, paginated
+history), a short-lived stdio reader checks its initialized version and home.
+It reads thread metadata, own turn headers and ascending item pages. It keeps
+item identities and structured activities in memory. After checking all
+children it requests successors of the last item and follows every cursor to
+the explicit end. Its limits cover frames, total bytes, pages, items and time.
+Closing the reader precedes publication. The collector rechecks the issued
+bases and slots under its existing lease and stores new assignments together
+in one transaction. Each new operational slot retains the exact parent turn,
+observed count and SHA-256 of the final item ID alongside its existing basis
+and child binding. Older records remain readable without this observation.
+The auxiliary reader can observe an active turn as interrupted when it does
+not own that session. Only the owning Desktop's existing current-parent read
+admits a running wait. An oversized or unavailable owner response can leave
+valid initial assignments saved while the service creates no reservation.
+On other builds, an initial assignment that fits in a complete Desktop read
+can use a second whole-turn read after the child checks. Its ordered prefix
+and dispatches must still agree. Both paths use the same observation fields.
 The following exact-turn recovery behavior is retained for version-one bases.
 Initial admission reads the exact parent's dispatch turn and a dedicated new
-child's sole own turn, rejecting additional pages, interaction/reuse and known
+child's sole own turn, rejecting additional child turns, interaction/reuse and known
 or unresolved competing sends. Both initial binding entries share
 `_dispatch_activity`: exactly one start remains required, while one distinct
 complete completion notice for the same child is permitted. Other activities

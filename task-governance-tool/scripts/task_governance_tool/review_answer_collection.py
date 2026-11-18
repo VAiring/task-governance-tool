@@ -121,6 +121,29 @@ class CollectionService:
                 return row
             return self.repository.update(lease, slot, change)
 
+    def bind_observed(self, records, bindings, observations):
+        """Publish the whole observed assignment after checking its original slots again."""
+        with self.repository.serial() as lease:
+            if self.repository.read() != records:
+                _fail("binding_mismatch", "conflict")
+            changes = {}
+            for slot, (record, binding, observation) in enumerate(zip(records, bindings, observations, strict=True), 1):
+                self.check_basis(record["basis"], slot, lease=lease)
+                if record.get("tracking_state") == "invalidated" or binding["slot"] != slot:
+                    _fail("binding_mismatch", "identity")
+                if record["binding"] is not None:
+                    if record["binding"] != binding:
+                        _fail("binding_mismatch", "conflict")
+                    continue
+                def change(row, binding=binding, observation=observation):
+                    row["binding"] = binding
+                    row["initial_observation"] = observation
+                    if row["version"] == 1:
+                        row["attempts"][0]["turn_id"] = binding["initial_turn_id"]
+                    return row
+                changes[slot] = change
+            return self.repository.update_many(lease, changes)
+
     def _observation(self, record, observation):
         expected = {"source_identity", "answer_bytes", "complete", "terminal", "answer_source", "terminal_source"}
         if type(observation) is not dict or set(observation) != expected or observation["complete"] is not True:

@@ -3,7 +3,7 @@ from copy import deepcopy
 from threading import RLock
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 from tests.test_review_answer_tracking_collection import tracking_fixture
 from task_governance_tool import review_answer_runtime as runtime
@@ -68,7 +68,7 @@ class GuardReuseTests(unittest.TestCase):
                         'reviewer_session_id': child, 'reviewer_key': child}
                     records.append(row)
                 service = SimpleNamespace(repository=SimpleNamespace(read=Mock(side_effect=lambda: deepcopy(records))),
-                    check_basis=Mock())
+                    admit_basis=Mock(), check_basis=Mock())
                 basis = metadata['basis']['execution_basis']
                 root = SimpleNamespace(version=2, basis=basis, preparation_id=metadata['basis']['preparation_id'])
                 binding = SimpleNamespace(parent_thread_id=basis['parent_session_id'], task_id=basis['task_id'],
@@ -81,10 +81,14 @@ class GuardReuseTests(unittest.TestCase):
                     result = runtime.tracking_for_reviewers(None, None, binding, children)
                     self.assertEqual(set(result), set(children))
                     self.assertEqual(service.repository.read.call_count, 2)
-                    self.assertEqual(service.check_basis.call_count, count)
+                    self.assertEqual(service.check_basis.call_args_list, [
+                        call(row['basis'], slot, persist_invalidation=True)
+                        for slot, row in enumerate(records, 1)
+                    ])
                     # A change during admission is not silently projected from
                     # the earlier operational observation.
-                    def changed(_basis, _slot):
+                    def changed(_basis, _slot, *, persist_invalidation):
+                        self.assertTrue(persist_invalidation)
                         records[0]['binding']['reviewer_session_id'] = 'foreign'
                     service.check_basis.side_effect = changed
                     with self.assertRaises(AnswerError):

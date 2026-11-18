@@ -11,6 +11,10 @@ on:
         description: Run platform checks only (not a release candidate)
         type: boolean
         default: false
+      compare_shards:
+        description: Run the six Windows comparison shards (not a release candidate)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -111,7 +115,7 @@ jobs:
 
   test:
     name: Windows tests (${{ matrix.lane }}, Python ${{ matrix.python-version }})
-    if: ${{ inputs.platform_only != true }}
+    if: ${{ inputs.platform_only != true && inputs.compare_shards != true }}
     needs: policy
     runs-on: windows-latest
     strategy:
@@ -159,7 +163,7 @@ jobs:
 
   release-candidate:
     name: Full release-candidate gate
-    if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.platform_only != true }}
+    if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.platform_only != true && inputs.compare_shards != true }}
     needs:
       - policy
       - test
@@ -181,3 +185,67 @@ jobs:
           ) {
             throw 'Full release-candidate gate failed'
           }
+
+  windows-shards:
+    name: Windows shard ${{ matrix.shard }} (Python ${{ matrix.python-version }})
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.compare_shards && !inputs.platform_only }}
+    needs: policy
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.14"]
+        shard: [1, 2, 3]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Run ordered shard
+        run: python -B -m tools.windows_ci_shards --shard ${{ matrix.shard }} --python "${{ matrix.python-version }}" --results ci-results
+
+      - name: Upload shard result
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-${{ github.run_attempt }}-${{ matrix.python-version }}-${{ matrix.shard }}
+          path: ci-results/shard-${{ matrix.shard }}.json
+          if-no-files-found: error
+
+  shard-coverage:
+    name: Check shard coverage (Python ${{ matrix.python-version }})
+    needs: windows-shards
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.14"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Download shard results
+        uses: actions/download-artifact@v8
+        with:
+          pattern: windows-${{ github.run_attempt }}-${{ matrix.python-version }}-*
+          path: ci-results
+
+      - name: Verify actual IDs against standard discovery
+        run: python -B -m tools.windows_ci_shards --verify --python "${{ matrix.python-version }}" --results ci-results

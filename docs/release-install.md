@@ -778,7 +778,7 @@ The current CI policy parallelizes all three base-lane jobs on pushes to
 and push `release` selections defer only the two closed wall-clock qualifier
 identities; their deterministic functional and capacity coverage remains.
 A release candidate requires an exact-ref manual `workflow_dispatch` with
-`platform_only` omitted or false: its
+both `platform_only` and `compare_shards` omitted or false. Its
 matrix is monolithic `all` on both Python versions with no qualifier deferral,
 and the explicit `Full release-candidate gate` requires policy, that Windows
 matrix, and both existing platform checks to succeed. Failed or skipped
@@ -799,6 +799,12 @@ Legitimate OS-inapplicable skips remain allowed in the exhaustive Windows suite.
 An explicit manual `platform_only=true` runs only policy and platform checks; it skips the
 Windows full matrix and candidate gate and is not release qualification or a
 change to the published platform or Runner support boundary.
+
+To measure Windows sharding, select `compare_shards=true` on a separate
+manual run of the same commit. Both Python versions run all tests, including
+the timing qualifiers, across three Windows jobs each. Each version checks
+the actual test IDs against its own discovery. This run skips the candidate
+gate. If both inputs are selected, the platform-only selection takes precedence.
 
 Candidate validation checks this CI policy and wiring locally only. It does not invoke
 `workflow_dispatch`, contact GitHub, or satisfy a later externally authorized

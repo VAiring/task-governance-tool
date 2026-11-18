@@ -745,6 +745,7 @@ CI consumes the same repository-only policy:
 | pull request | `fast`, `integration`, `release` | `fast` |
 | push to `main` | `fast`, `integration`, `release` | `fast`, `integration`, `release` |
 | default manual `workflow_dispatch` | `all` | `all` |
+| manual `compare_shards=true` | 3 full-suite shards | 3 full-suite shards |
 
 Every event first validates the complete standard discovery inventory and
 base-lane ownership. Pull-request and push `release` selections then defer only
@@ -754,7 +755,10 @@ defers nothing.
 
 The manual release-candidate aggregate requires policy validation, both
 full-version Windows jobs, and both existing platform checks to succeed.
-Failed or skipped dependencies cannot qualify the gate.
+Failed or skipped dependencies cannot qualify the gate. To compare Windows
+execution times, dispatch the same commit with `compare_shards=true`. Each
+version runs the full inventory across three Windows runners, then independently
+checks the recorded test IDs. The release-candidate gate is skipped in this mode.
 An `operation_sequence` value may correlate separately authorized candidate
 work, but neither that value nor a successful gate authorizes workflow
 dispatch, push, tag, or publication.
@@ -770,7 +774,8 @@ inapplicable to Windows to skip.
 Manual `platform_only=true` runs policy and these platform checks alone,
 skipping the Windows full matrix and candidate gate. This mode is not release
 qualification or a change to the published platform or Runner support boundary;
-omitting the input or selecting `false` retains the full manual route.
+it takes precedence if both manual inputs are selected. Leaving both inputs
+false runs the full manual release-candidate route.
 
 The repository-only release checker is offline and read-only. It derives the
 CLI leaves and runtime release versions from their owning Python modules, uses

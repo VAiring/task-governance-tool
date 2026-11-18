@@ -67,7 +67,7 @@ def copy_release_fixture(destination: Path, *, source_root: Path = ROOT) -> Path
     )
 
     (fixture / "tools").mkdir()
-    for name in ("release_contract.py", "document_contract.py", "test_lanes.py"):
+    for name in ("release_contract.py", "document_contract.py", "test_lanes.py", "windows_ci_shards.py"):
         shutil.copy2(source_root / "tools" / name, fixture / "tools" / name)
 
     (fixture / "docs" / "releases").mkdir(parents=True)
@@ -569,7 +569,7 @@ class ReleaseContractCheckerTests(unittest.TestCase):
         def relocate_candidate_condition(text: str) -> str:
             candidate = (
                 "    if: ${{ always() && github.event_name == "
-                "'workflow_dispatch' && inputs.platform_only != true }}\n"
+                "'workflow_dispatch' && inputs.platform_only != true && inputs.compare_shards != true }}\n"
             )
             changed = text.replace(
                 candidate,
@@ -614,7 +614,7 @@ class ReleaseContractCheckerTests(unittest.TestCase):
             (
                 "test_job_restricted_to_dispatch",
                 lambda text: text.replace(
-                    "    if: ${{ inputs.platform_only != true }}\n",
+                    "    if: ${{ inputs.platform_only != true && inputs.compare_shards != true }}\n",
                     "    if: github.event_name == 'workflow_dispatch'\n",
                     1,
                 ),
@@ -730,6 +730,31 @@ class ReleaseContractCheckerTests(unittest.TestCase):
         self.assertEqual(issues, [])
         self.assertEqual(versions, ("3.12", "3.14"))
 
+    def test_manual_shard_comparison_keeps_matrix_history_reports_and_candidate_isolation(self):
+        text = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        prefix, marker, comparison = text.partition("  windows-shards:\n")
+        for before, after in (
+            ('["3.12", "3.14"]', '["3.12"]'),
+            ("[1, 2, 3]", "[1, 2, 2]"),
+            ("fetch-depth: 0", "fetch-depth: 1"),
+            ("needs: windows-shards", "needs: policy"),
+            ("--shard", "--verify"),
+            ("--verify", "--shard 1"),
+            ("if-no-files-found: error", "if-no-files-found: warn"),
+            (" && !inputs.platform_only", ""),
+            ("inputs.compare_shards", "true"),
+        ):
+            with self.subTest(before=before):
+                self.assertIn(before, comparison)
+                issues = []
+                _workflow_checks(prefix + marker + comparison.replace(before, after, 1), issues)
+                self.assertIn("ci_shard_wiring_invalid", {issue.code for issue in issues})
+        issues = []
+        _workflow_checks(text.replace(" && inputs.compare_shards != true", ""), issues)
+        codes = {issue.code for issue in issues}
+        self.assertIn("ci_test_policy_wiring_invalid", codes)
+        self.assertIn("ci_candidate_gate_invalid", codes)
+
     def test_ci_initial_platform_and_full_candidate_boundaries_fail_closed(self):
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
             encoding="utf-8"
@@ -789,7 +814,7 @@ class ReleaseContractCheckerTests(unittest.TestCase):
             ),
             (
                 "windows_only_for_initial_mode",
-                "    if: ${{ inputs.platform_only != true }}",
+                "    if: ${{ inputs.platform_only != true && inputs.compare_shards != true }}",
                 "    if: ${{ inputs.platform_only == true }}",
                 "ci_test_policy_wiring_invalid",
             ),

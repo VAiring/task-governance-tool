@@ -7,9 +7,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
+from tools import windows_ci_shards as shards
 from tools.test_lanes import (
     ALL_LANE,
     BASE_LANES,
@@ -78,6 +80,84 @@ def assert_lane_error(
 
 
 class TestLanePolicyTests(unittest.TestCase):
+    def test_windows_shards_partition_each_runtimes_actual_discovery(self):
+        inventory = discover_tests(ROOT)
+        plan = inventory.plan
+        selections = shards.shard_ids(plan)
+        self.assertEqual(tuple(selections), (1, 2, 3))
+        self.assertCountEqual([test for group in selections.values() for test in group], standard_discovery_ids())
+        modules = {}
+        for shard, selected in selections.items():
+            ids = set(selected)
+            self.assertEqual(selected, [test for test in plan.test_ids if test in ids])
+            for test in selected:
+                module = test.split(".", 1)[0]
+                self.assertEqual(modules.setdefault(module, shard), shard)
+        for group in shards.MODULE_GROUPS:
+            self.assertEqual(len({modules[module] for module in group}), 1)
+        self.assertTrue(set(MANUAL_TIMING_QUALIFICATION_TEST_IDS).issubset(
+            selections[modules["test_backup_performance"]]))
+        self.assertEqual(len({modules[module] for module in (
+            "test_review_finalization", "test_review_handoff_preparation", "test_review_workspace")}), 3)
+
+    def test_shard_reports_use_actual_execution_and_reject_incomplete_or_mixed_results(self):
+        class Fixture(unittest.TestCase):
+            def test_first(self):
+                self.assertEqual(os.environ["CODEX_THREAD_ID"], "00000000-0000-4000-8000-000000000001")
+
+            @unittest.skip("inapplicable OS")
+            def test_second(self):
+                self.fail("should be skipped")
+
+            def test_third(self):
+                self.assertTrue(True)
+
+        suite = unittest.defaultTestLoader.loadTestsFromTestCase(Fixture)
+        cases = tuple(suite)
+        ids = [case.id() for case in cases]
+        plan = mock.Mock(test_ids=ids)
+        inventory = mock.Mock(cases=cases)
+        selections = {n: [test] for n, test in enumerate(ids, 1)}
+        identity = {"python": "3.12", "GITHUB_SHA": "candidate", "GITHUB_RUN_ID": "1", "GITHUB_RUN_ATTEMPT": "1"}
+        with tempfile.TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            directory = Path(tmp)
+            for shard, selected in selections.items():
+                artifact = directory / f"windows-1-3.12-{shard}"
+                shards.run_shard(inventory, selected, identity, shard, artifact)
+            shards.verify_reports(plan, selections, identity, directory)
+            path = directory / "windows-1-3.12-2" / "shard-2.json"
+            original = path.read_text(encoding="utf-8")
+            report = json.loads(original)
+            self.assertEqual(report["tests"][0]["outcome"], "skip")
+            for label, changed in (
+                ("missing ID", {**report, "tests": []}),
+                ("duplicate", {**report, "tests": 2 * report["tests"]}),
+                ("wrong ID", {**report, "tests": [{**report["tests"][0], "id": ids[0]}]}),
+                ("failure", {**report, "success": False}),
+                ("wrong shard", {**report, "shard": 1}),
+                *((key, {**report, "identity": {**identity, key: "different"}}) for key in identity),
+            ):
+                with self.subTest(label):
+                    path.write_text(json.dumps(changed), encoding="utf-8")
+                    with self.assertRaises(ValueError):
+                        shards.verify_reports(plan, selections, identity, directory)
+            path.unlink()
+            with self.assertRaises(ValueError):
+                shards.verify_reports(plan, selections, identity, directory)
+            path.write_text(original, encoding="utf-8")
+            (directory / "windows-1-3.12-4").mkdir()
+            with self.assertRaises(ValueError):
+                shards.verify_reports(plan, selections, identity, directory)
+
+    def test_shard_refuses_an_unexecuted_or_skipped_timing_qualifier(self):
+        qualifier = MANUAL_TIMING_QUALIFICATION_TEST_IDS[0]
+        report = {"identity": {}, "shard": 1, "success": True, "tests": []}
+        with self.assertRaises(ValueError):
+            shards.check_report(report, {}, 1, [qualifier])
+        report["tests"] = [{"id": qualifier, "outcome": "skip", "ms": 0}]
+        with self.assertRaises(ValueError):
+            shards.check_report(report, {}, 1, [qualifier])
+
     def test_check_discovery_does_not_require_git_metadata(self):
         with tempfile.TemporaryDirectory() as temporary:
             environment = {

@@ -290,13 +290,13 @@ def _parse_ci_triggers(
     if bodies.get("pull_request"):
         return None
     dispatch_body = bodies.get("workflow_dispatch", [])
-    if (
-        len(dispatch_body) != 5
-        or dispatch_body[:2] != ["    inputs:", "      platform_only:"]
-        or not dispatch_body[2].startswith("        description: ")
-        or dispatch_body[3:] != ["        type: boolean", "        default: false"]
-    ):
+    if len(dispatch_body) != 9 or dispatch_body[0] != "    inputs:":
         return None
+    for index, name in ((1, "platform_only"), (5, "compare_shards")):
+        if (dispatch_body[index] != f"      {name}:"
+                or not dispatch_body[index + 1].startswith("        description: ")
+                or dispatch_body[index + 2:index + 4] != ["        type: boolean", "        default: false"]):
+            return None
     push_body = [line.strip() for line in bodies.get("push", [])]
     if not push_body or push_body[0] != "branches:":
         return None
@@ -1016,7 +1016,7 @@ def _workflow_checks(
     jobs_valid = (
         jobs is not None
         and tuple(jobs)
-        == ("policy", "test", "platform-smoke", "release-candidate")
+        == ("policy", "test", "platform-smoke", "release-candidate", "windows-shards", "shard-coverage")
     )
     policy_block = jobs.get("policy", "") if jobs is not None else ""
     test_block = jobs.get("test", "") if jobs is not None else ""
@@ -1068,7 +1068,7 @@ def _workflow_checks(
             "    name: Windows tests (${{ matrix.lane }}, "
             "Python ${{ matrix.python-version }})"
         ),
-        "    if: ${{ inputs.platform_only != true }}",
+        "    if: ${{ inputs.platform_only != true && inputs.compare_shards != true }}",
         "    needs: policy",
         "    runs-on: windows-latest",
         "    strategy:",
@@ -1149,7 +1149,7 @@ def _workflow_checks(
         (
             "    if: ${{ always() && github.event_name == "
             f"'{RELEASE_CANDIDATE_EVENT}' "
-            "&& inputs.platform_only != true "
+            "&& inputs.platform_only != true && inputs.compare_shards != true "
             "}}"
         ),
         "    needs:",
@@ -1184,6 +1184,10 @@ def _workflow_checks(
                 "CI does not enforce the complete manual release-candidate gate",
             )
         )
+    for job in ("windows-shards", "shard-coverage"):
+        if not _valid_shard_job(job, (jobs or {}).get(job, ""), expected_checkout, expected_test_python):
+            issues.append(ContractIssue("ci_shard_wiring_invalid", ".github/workflows/ci.yml",
+                                        f"Windows shard comparison wiring differs for {job}"))
     if not platform_valid:
         issues.append(
             ContractIssue(
@@ -1193,6 +1197,45 @@ def _workflow_checks(
             )
         )
     return versions
+
+
+def _valid_shard_job(job, block, checkout, setup_python):
+    matrix = (
+        "    runs-on: windows-latest",
+        "    strategy:",
+        "      fail-fast: false",
+        "      matrix:",
+        '        python-version: ["3.12", "3.14"]',
+    )
+    steps = {"Checkout": checkout, "Set up Python": setup_python}
+    entry = "python -B -m tools.windows_ci_shards"
+    version_args = '--python "${{ matrix.python-version }}" --results ci-results'
+    artifact = "windows-${{ github.run_attempt }}-${{ matrix.python-version }}-"
+    if job == "windows-shards":
+        preamble = (
+            "    name: Windows shard ${{ matrix.shard }} (Python ${{ matrix.python-version }})",
+            "    if: ${{ github.event_name == 'workflow_dispatch' && inputs.compare_shards && !inputs.platform_only }}",
+            "    needs: policy", *matrix, "        shard: [1, 2, 3]",
+        )
+        steps["Run ordered shard"] = ("        run: " + entry + " --shard ${{ matrix.shard }} " + version_args,)
+        steps["Upload shard result"] = (
+            "        if: ${{ !cancelled() }}", "        uses: actions/upload-artifact@v7",
+            "        with:", "          name: " + artifact + "${{ matrix.shard }}",
+            "          path: ci-results/shard-${{ matrix.shard }}.json", "          if-no-files-found: error",
+        )
+    else:
+        preamble = (
+            "    name: Check shard coverage (Python ${{ matrix.python-version }})",
+            "    needs: windows-shards", *matrix,
+        )
+        steps["Download shard results"] = (
+            "        uses: actions/download-artifact@v8", "        with:",
+            "          pattern: " + artifact + "*", "          path: ci-results",
+        )
+        steps["Verify actual IDs against standard discovery"] = ("        run: " + entry + " --verify " + version_args,)
+    actual_steps = _parse_named_steps(block)
+    return (_job_preamble(block) == preamble and actual_steps == steps
+            and tuple(actual_steps) == tuple(steps))
 
 
 def check_release_contract(
@@ -1221,7 +1264,8 @@ def check_release_contract(
         issues=issues,
     )
     for relative in (
-        "tools/release_contract.py", "tools/document_contract.py", "tools/test_lanes.py"
+        "tools/release_contract.py", "tools/document_contract.py", "tools/test_lanes.py",
+        "tools/windows_ci_shards.py",
     ):
         _read_utf8(
             root / Path(*relative.split("/")),

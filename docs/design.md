@@ -440,6 +440,8 @@ manifest and this allocation validate. `all` is a meta-lane over the unchanged
 standard suite, not a fourth maintained list.
 The runner disables bytecode generation, performs no network or repository
 write, and is not an installable package module or public CLI leaf.
+The repository-only Windows comparison runner reuses that discovery. It writes
+per-shard test outcomes and timings to the job's explicitly selected result directory.
 
 ### OS Operation Boundary
 
@@ -1544,6 +1546,18 @@ monolithic `all` on both versions without that deferral, and an
 and both existing platform checks succeed. The workflow trigger remains limited to pull requests, pushes to
 `main`, and manual dispatch; a candidate gate cannot be replaced by a skipped
 dependency job.
+
+In the opt-in manual comparison, each Python version discovers its own full
+suite. The Windows shard runner assigns whole modules, including designated
+Setup recovery and shared-runtime groups, to three runners. It assigns the
+heaviest estimated group to the least loaded runner first, using previous
+Windows timings where available and case counts for unmeasured modules.
+Each runner executes one ordered filter of discovery in a single process with
+full Git history. Its result artifact records the actual test IDs, outcomes
+and per-test durations with the SHA, workflow run, attempt, version and shard.
+A separate check using the same interpreter rediscovers the suite and compares
+all three ordered results, including both manual timing qualifiers. The serial
+suite retains order interactions between modules assigned to different runners.
 
 The additional platform job uses Ubuntu 24.04 x86-64 and macOS 15
 Apple Silicon with Python 3.12 and the same repository runner's

@@ -181,8 +181,11 @@ gates. It is not the product contract, execution ledger, or evidence store:
 - Manual `platform_only=true` runs policy validation and these platform checks
   without the Windows full matrix or release-candidate gate. It is an explicit
   platform-check route, never a substitute for full candidate qualification.
-  Omission or `false` preserves the existing Windows event matrix and full
-  manual gate; pull-request and push coverage are unchanged.
+  The platform-only selection takes precedence over other manual selections.
+- Manual `compare_shards=true` measures three Windows shards per version,
+  retaining both timing qualifiers and checking actual execution against each
+  version's discovery. Only the default manual mode with both inputs false
+  runs the serial full release-candidate gate.
 - A future release candidate requires the explicit aggregate manual gate after
   policy validation, both full-version Windows jobs, and both platform checks.
   Every dependency must succeed; a failure or skipped dependency cannot qualify.

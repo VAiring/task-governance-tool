@@ -24,6 +24,13 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def publication_digests(target):
+    """Hash the public index and all snapshot JSON, including retained snapshots."""
+    paths = [target.resolved_usage_index, *target.resolved_usage_snapshots.glob("*.json")]
+    return {str(path.relative_to(target.resolved_usage_root)): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in paths}
+
+
 def writer_wait(source):
     """Measure a real Core commit racing one selected overlay page."""
     from concurrent.futures import ThreadPoolExecutor
@@ -100,7 +107,7 @@ def writer_wait(source):
 
 def worker(source, root, turns, instrument):
     sys.path[:0] = [str(source / "task-governance-tool/scripts"), str(source)]
-    from task_governance_tool import usage_lifecycle as lifecycle, storage
+    from task_governance_tool import usage_evidence_service, usage_lifecycle as lifecycle, storage
     from task_governance_tool import usage_reconciliation_runtime as runtime
     from tests.test_usage_collection import THREAD
     from tests.test_usage_attribution import turn
@@ -131,12 +138,15 @@ def worker(source, root, turns, instrument):
                     pages.append({"phase": result["phase"], "ms": (time.monotonic() - started) * 1000})
                     return result
                 stack.enter_context(mock.patch.object(runtime, name, observed))
-        refresh = lifecycle.refresh_usage
+        refresh = usage_evidence_service.refresh_usage
         def published(*args, **kwargs):
             result = refresh(*args, **kwargs)
             publications.append(result)
             return result
         stack.enter_context(mock.patch.object(lifecycle, "refresh_usage", published))
+        # The continuation-aware Hook imports the publisher at call time.
+        # Older baselines use the reference held by the lifecycle module.
+        stack.enter_context(mock.patch.object(usage_evidence_service, "refresh_usage", published))
         host = root.parent / "codex-host"
         transcript = host / "sessions/2026/10/01" / f"rollout-fixture-{THREAD}.jsonl"
         events = []
@@ -156,10 +166,8 @@ def worker(source, root, turns, instrument):
             raise AssertionError(("no current publication", publications))
     from task_governance_tool.state_resolver import resolve_project_state
     target = resolve_project_state(skill_root=root / ".agents/skills/task-governance-tool", repo=root).target
-    evidence = {str(path.relative_to(target.resolved_usage_root)): hashlib.sha256(path.read_bytes()).hexdigest()
-                for path in target.resolved_usage_root.rglob("*.json")}
     return {"events_ms": events, "elapsed_ms": sum(events), "counts": dict(counts), "pages": pages,
-            "projection": evidence, "current": True}
+            "projection": publication_digests(target), "current": True}
 
 
 def compare(baseline, repeats, output):

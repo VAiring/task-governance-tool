@@ -4,6 +4,7 @@ from contextlib import closing
 import json
 import multiprocessing
 import os
+from threading import Event
 import unittest
 from unittest import mock
 from tests.current_database_fixture_support import ordinary_current_database, uses_current_database_fixture
@@ -35,8 +36,32 @@ def crash_page(target, path, basis):
     raise AssertionError("crash was not reached")
 
 
-def crash_hook(root):
-    from tools.benchmark_usage_response_pages import hook_worker
+def run_usage_service(root):
+    """Run the real service on accepted fixture intake until it confirms publication."""
+    from task_governance_tool import usage_continuation
+    from task_governance_tool.usage_continuation_service import UsageServiceObserver
+    finished = Event()
+    run_slice = usage_continuation.run_slice
+
+    def observed(*args, **kwargs):
+        result = run_slice(*args, **kwargs)
+        if result is not None and result["status"] == "caught_up":
+            finished.set()
+        return result
+
+    observer = UsageServiceObserver(skill_root=root / ".agents/skills/task-governance-tool", repo=root,
+        environment={"CODEX_HOME": str(root.parent / "codex-host")}, compatible=lambda: True, _poll_seconds=.02)
+    with mock.patch.object(usage_continuation, "run_slice", observed):
+        observer.start()
+        try:
+            if not finished.wait(60):
+                raise AssertionError("continuation service did not confirm publication")
+        finally:
+            if not observer.close():
+                raise AssertionError("continuation service did not stop")
+
+
+def crash_service(root):
     apply = membership.reconcile_response
     visited = 0
     def crash(*args, **kwargs):
@@ -46,8 +71,8 @@ def crash_hook(root):
         if visited == 3:
             os._exit(74)
     with mock.patch.object(membership, "reconcile_response", crash):
-        hook_worker(root, 1, "candidate", False)
-    raise AssertionError("Hook crash not reached")
+        run_usage_service(root)
+    raise AssertionError("service crash point was not reached")
 
 
 class ResponsePageExperimentTests(unittest.TestCase):
@@ -144,29 +169,60 @@ class ResponsePageExperimentTests(unittest.TestCase):
             self.assertEqual(fixture.assert_frozen_same(), expected)
 
     def test_later_hook_recovers_process_death_to_identical_public_json(self):
-        from tools.benchmark_usage_response_pages import hook_fixture, hook_worker, saved_files, restore
-        from task_governance_tool.usage_evidence_service import repository_for
+        """A single Hook supplies intake; only the restarted service resumes the work."""
+        from tools.benchmark_usage_response_pages import hook_fixture, saved_files, restore, check_publication
+        from tools.benchmark_usage_reconciliation_pages import publication_digests
+        from task_governance_tool import usage_continuation, usage_continuation_state as state
+        from tests.test_usage_attribution import turn
         with hook_fixture(129) as fixture:
             directory = fixture.root / ".taskgov"
+            target = fixture.target
+            core = target.db_path.read_bytes()
+            # A busy execution lease allows normal Hook intake while reserving
+            # all reconciliation for the service in both runs.
+            with state.lease(target, "execution", create=True):
+                fixture.hook("SessionStart", turn_id=turn(1))
+            with state.lease(target, "state") as root:
+                accepted = state.read(root, target)
+            self.assertEqual(accepted["status"], "requested")
+            self.assertTrue(accepted["intakes"])
             saved = saved_files(directory)
-            core = fixture.target.db_path.read_bytes()
-            expected = hook_worker(fixture.root, 1, "baseline", False)["projection"]
+            run_usage_service(fixture.root)
+            expected = publication_digests(target)
+            self.assertEqual(check_publication(target), 129)
+            self.assertEqual(target.db_path.read_bytes(), core)
             restore(directory, saved)
-            child = multiprocessing.get_context("spawn").Process(target=crash_hook, args=(fixture.root,))
+            child = multiprocessing.get_context("spawn").Process(target=crash_service, args=(fixture.root,))
             child.start()
-            child.join(60)
+            child.join(75)
             if child.is_alive():
                 child.kill()
                 child.join()
-                self.fail("isolated Hook did not reach crash point")
+                self.fail("isolated service did not reach crash point")
             self.assertEqual(child.exitcode, 74)
-            with repository_for(fixture.target).connection() as connection:
-                self.assertEqual(connection.execute("SELECT COUNT(*) FROM usage_reconcile_response_result").fetchone()[0], 1)
-                self.assertEqual(connection.execute("SELECT COUNT(*) FROM usage_reconcile_response_work").fetchone()[0], 128)
-            recovered = hook_worker(fixture.root, 1, "candidate", False)
-            self.assertEqual(recovered["projection"], expected)
-            self.assertTrue(recovered["frozen_oracle_equal"])
-            self.assertEqual(fixture.target.db_path.read_bytes(), core)
+            self.assertEqual(target.db_path.read_bytes(), core)
+            # Inspect the first resumed slice after native crash recovery has
+            # admitted the numerical DB, before the slice advances any work.
+            checkpoints = []
+            run_slice = usage_continuation.run_slice
+            def resumed(target, repository, roots, intent, **kwargs):
+                if not checkpoints:
+                    with repository.connection() as connection:
+                        def keys(table):
+                            return set(map(tuple, connection.execute("SELECT provider,response_id FROM " + table)))
+                        checkpoints.append((intent["request"], keys("usage_reconcile_response_result"),
+                                            keys("usage_reconcile_response_work")))
+                return run_slice(target, repository, roots, intent, **kwargs)
+            with mock.patch.object(usage_continuation, "run_slice", resumed):
+                run_usage_service(fixture.root)
+            request, committed, pending = checkpoints[0]
+            self.assertEqual(request, accepted["request"])
+            self.assertEqual((len(committed), len(pending)), (1, 128))
+            self.assertTrue(committed.isdisjoint(pending))
+            self.assertEqual(committed | pending, {("openai", f"r-{n}") for n in range(129)})
+            self.assertEqual(publication_digests(target), expected)
+            self.assertEqual(check_publication(target), 129)
+            self.assertEqual(target.db_path.read_bytes(), core)
 
     def test_changed_core_late_input_partial_diagnostics_and_publication_recovery(self):
         methods = (

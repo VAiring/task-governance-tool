@@ -253,20 +253,30 @@ def hook_worker(root, turns, name, instrument):
     result.pop("pages")
     result["counts"] = dict(counts)
     result["pages"] = pages
-    # Outside the timing/counting region, independently recompute attribution,
-    # numerical totals and diagnostics using the retained frozen classifier.
+    from task_governance_tool.state_resolver import resolve_project_state
+    target = resolve_project_state(skill_root=root / ".agents/skills/task-governance-tool", repo=root).target
+    check_publication(target)
+    result["frozen_oracle_equal"] = True
+    return result
+
+
+def check_publication(target):
+    """Compare the published index and snapshots with the independent full replay."""
     from contextlib import closing
     from tests.test_usage_reconciliation_changes_runtime import ChangedRuntimeTests
     from task_governance_tool import storage
-    from task_governance_tool.state_resolver import resolve_project_state
     from task_governance_tool.usage_evidence_service import repository_for
-    target = resolve_project_state(skill_root=root / ".agents/skills/task-governance-tool", repo=root).target
+    index = json.loads(target.resolved_usage_index.read_bytes())
     checker = ChangedRuntimeTests()
     checker.repository = repository_for(target)
     checker.reader = lambda: closing(storage.connect_initialized_readonly(target, operation_local=True))
-    assert checker.assert_frozen_same() == json.loads(target.resolved_usage_index.read_bytes())
-    result["frozen_oracle_equal"] = True
-    return result
+    checker.assertEqual(checker.assert_frozen_same(), index)
+    response_count = 0
+    for identity in index["current_snapshot_ids"]:
+        published = json.loads((target.resolved_usage_snapshots / (identity + ".json")).read_bytes())
+        checker.assertEqual(published, checker.repository.publication_snapshot(identity))
+        response_count += published["response_count"]
+    return response_count
 
 
 @contextmanager

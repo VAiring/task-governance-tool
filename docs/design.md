@@ -1550,6 +1550,15 @@ cannot supply jobs from an earlier attempt. The workflow trigger remains limited
 `main`, and manual dispatch; a candidate gate cannot be replaced by a skipped
 dependency job.
 
+The PR `fast` lane retains `test_review_handoff_preparation` and
+`test_review_workspace` so their tests run on Python 3.14. In the Windows
+comparison, these modules accounted for 35 minutes of Python 3.12 test time
+and 33 minutes on 3.14. The Python 3.12 `integration` lane had the largest
+sum of test durations. Moving the modules to that lane would increase its
+load. Moving them to `release` would leave that load unchanged. These estimates
+use per-test timings from the [manual comparison run](https://github.com/VAiring/task-governance-tool/actions/runs/44354562237).
+Actual PR elapsed time also includes runner queues and job setup.
+
 In both the default manual run and the opt-in shard comparison, each Python version discovers its own full
 suite. The Windows shard runner assigns whole modules, including designated
 Setup recovery and shared-runtime groups, to three runners. It assigns the

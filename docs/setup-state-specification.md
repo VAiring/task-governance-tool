@@ -72,7 +72,7 @@ is a declaration, not a signature; replacing both manifest and core can evade
 this local drift check.
 
 The backup object has exactly `code`, `due`, `interval_minutes`,
-`generations`, `last_success_at`, `last_outcome`, and `runtime`. The Viewer object has
+`generations`, `last_success_at`, `last_outcome`, `runtime`, and `observer`. The Viewer object has
 exactly `code`, `due`, `source_generation`, `rendered_generation`,
 `last_success_at`, and `last_outcome`. Each outcome contains only `code`
 (`none`, `succeeded`, `deferred`, or `failed`) and `occurred_at`; not-yet-owned
@@ -88,6 +88,14 @@ success. An earlier Setup backup can have a known core success without a
 runtime capture time. Runtime failure does not erase that core success. These
 six fields describe the worker, not a published opportunity or service
 availability. Publishing a request never changes them to started or completed.
+Observer diagnosis reports `ownership` (`held`, `released`, `unknown`, or
+`not_opted_in`), `observed_at`, and an optional historical `last_recorded`
+event with `stage`, `reason`, and `occurred_at`. A held lease can belong to a
+different service. The history identifies an owned readmission blocked by
+`database_busy`, or an unavailable or successful presence publication.
+Missing or unsafe control material provides no thread-liveness evidence.
+Startup without an admitted target leaves no project event. A later owner's
+activation supersedes earlier history when the observation can be saved.
 The Evidence object has exactly `code`, `due`, `source_generation`, `published_generation`, `last_success_at`, and `last_outcome`; doctor reports these stored facts only and never repairs or reads generated JSON.
 
 Readable/current state is exit 0, `ok=true`, and setup-eligible when package,

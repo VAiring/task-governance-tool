@@ -103,6 +103,7 @@ class ProjectReviewWaitSession:
         self.managed = ManagedWait(self)
         self.runtime_identity = runtime_identity
         self.backup_observer = None
+        self._backup_startup_reason = "unknown"
         self.usage_observer = None
 
     def start_usage_observer(self):
@@ -155,18 +156,23 @@ class ProjectReviewWaitSession:
                     include_runtime=False, include_package=False, include_ignore=True)
                 if (inspection.first_issue(allowed_codes=STRUCTURAL_CODES | {"state_ignore_required"})
                         or inspection.scope is None):
+                    self._backup_startup_reason = "unavailable"
                     return False
                 target = read_service_target(inspection.scope.skill_root,
                                              repo=inspection.scope.canonical_repo)
                 if target is None:
+                    self._backup_startup_reason = "not_opted_in"
                     return False
                 allow_output()
                 observer = BackupServiceObserver(target, compatibility=current_compatibility(),
                     compatible=compatible, launch=launch, admit_owner=admit_owner)
                 self.backup_observer = observer
                 return observer.start()
-        except Exception:
+        except Exception as exc:
             # No synchronous fallback, service restart or change to review tools.
+            from task_governance_tool.storage import StorageError
+            self._backup_startup_reason = ("database_busy" if isinstance(exc, StorageError)
+                                           and exc.code == "database_busy" else "unavailable")
             return False
 
     @staticmethod
@@ -659,6 +665,8 @@ class ProjectReviewWaitSession:
                 runtime = {"version": 1, "code_id": None, "supported_schema": None,
                            "deployed_supported_schema": None, "comparison": "unknown"}
             result = {**result, "runtime": runtime}
+            result["backup_observer"] = (self.backup_observer.observation() if self.backup_observer
+                else {"thread": "not_started", "stage": "startup", "reason": self._backup_startup_reason})
         if operation in {"inspect", "stop"} and admitted:
             from .worker_observation import observation
             from .review_wait_direct_repository import instant

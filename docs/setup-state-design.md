@@ -1530,6 +1530,18 @@ mutation supplies recovery. Presence checks use ABI and schema compatibility;
 full loaded/deployed runtime identity is checked only after fresh due admission
 and before actual worker startup effects.
 
+Under the service lease, the observer can replace one bounded historical
+record (`observer.json`, via `.observer-next.json`) for readmission contention
+or the result of presence publication. It uses the existing short state lock,
+512-byte physical file checks, and project/binding and compatibility fields.
+Diagnostic storage is best effort. Standbys never publish it. Other readmission
+failures may reflect a stale target and are available only in the local process.
+Doctor samples the service lease separately and reads existing history without
+creating locks or performing admission. The record describes the latest saved
+event, including when a newer event could not be saved. It grants no launch or
+retry. An admitted MCP inspection also reports the local thread and its last
+stage, so a standby can be distinguished from the lease holder.
+
 The fixed resolver supplies `.taskgov/current/backups/runtime/`. It contains
 the closed runtime control files `state.json`, `.state-next.json`, `state.lock`,
 `launch.lock`, `worker.lock` and the optional 32-byte `.launch-uncertain` attempt marker; the JSON

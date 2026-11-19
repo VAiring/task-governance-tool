@@ -838,7 +838,10 @@ class ManagedFailureDiagnosticsTests(unittest.TestCase):
         identity.inspect.side_effect = PermissionError(PRIVATE)
         self.session.runtime_identity = identity
         result = self.inspect()
-        self.assertEqual(expected, {key: value for key, value in result.items() if key != "runtime"})
+        self.assertEqual(expected, {key: value for key, value in result.items()
+                                    if key not in {"runtime", "backup_observer"}})
+        self.assertEqual(result["backup_observer"],
+                         {"thread": "not_started", "stage": "startup", "reason": "unknown"})
         self.assertEqual({"version": 1, "code_id": None, "supported_schema": None,
             "deployed_supported_schema": None, "comparison": "unknown"}, result["runtime"])
         identity.inspect.assert_called_once()

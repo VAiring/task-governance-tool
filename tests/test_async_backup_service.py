@@ -88,6 +88,16 @@ class AsyncBackupServiceTests(unittest.TestCase):
         self.compatible.assert_not_called()
         self.admit_owner.assert_called_once_with(self.target)
 
+    def test_thread_start_failure_remains_a_local_observation(self):
+        observer = BackupServiceObserver(self.target, compatibility=self.compatibility,
+                                         compatible=self.compatible)
+        with mock.patch.object(threading.Thread, "start", side_effect=RuntimeError("fixture")):
+            with self.assertRaises(RuntimeError):
+                observer.start()
+        self.assertEqual(observer.observation(), {"thread": "not_started", "stage": "startup", "reason": "unavailable"})
+        self.assertTrue(observer.close())
+        self.lease.assert_not_called()
+
     def test_non_contention_lease_failure_stops_without_admission_or_retry(self):
         for failure in (ArtifactLockError(contended=False), OSError("fixture I/O failure"),
                         ValueError("fixture malformed lease")):
@@ -265,6 +275,8 @@ class AsyncBackupServiceTests(unittest.TestCase):
         time.sleep(.04)
         self.assertTrue(observer.close())
         self.assertEqual(self.lease_calls, 1)
+        self.assertEqual(observer.observation(),
+                         {"thread": "stopped", "stage": "presence_publication", "reason": "unavailable"})
         self.admit_owner.assert_called_once_with(self.target)
         self.activate.assert_called_once()
         self.observe.assert_not_called()
@@ -336,6 +348,32 @@ class AsyncBackupServiceTests(unittest.TestCase):
 
 
 class AsyncBackupServiceOwnershipTests(unittest.TestCase):
+    def test_observer_history_is_separate_from_current_ownership_and_refuses_invalid_files(self):
+        from task_governance_tool import async_backup_opportunity as opportunity
+        from task_governance_tool import backup_observer_diagnostics as diagnostics
+        from task_governance_tool.async_backup_state import runtime_root
+        with tempfile.TemporaryDirectory() as directory:
+            _, target, _ = _setup_current(Path(directory))
+            root = runtime_root(target, create=True)
+            path = root / "observer.json"
+            compatibility = opportunity.current_compatibility()
+            with opportunity.service_lease(target) as owner:
+                diagnostics.record(target, owner, compatibility, "owner_readmission", "database_busy")
+            previous = path.read_bytes()
+            with opportunity.service_lease(target):
+                info = diagnostics.observe(target, enabled=True)
+                self.assertEqual(info["ownership"], "held")
+                self.assertEqual(info["last_recorded"]["reason"], "database_busy")
+            self.assertEqual(diagnostics.observe(target, enabled=False)["ownership"], "not_opted_in")
+            stale = replace(target, binding_generation=target.binding_generation + 1)
+            self.assertIsNone(diagnostics.observe(stale, enabled=True)["last_recorded"])
+            self.assertEqual(path.read_bytes(), previous)
+            path.write_bytes(b"unrecognized")
+            with opportunity.service_lease(target) as owner:
+                diagnostics.record(target, owner, compatibility, "presence_publication", "activated")
+            self.assertIsNone(diagnostics.observe(target, enabled=True)["last_recorded"])
+            self.assertEqual(path.read_bytes(), b"unrecognized")
+
     @contextmanager
     def serialized_opportunity_io(self, opportunity):
         # These tests judge owner takeover, not zero-wait file-lock contention.
@@ -561,6 +599,8 @@ with service_lease(target) as nonce:
                     first.start()
                     wait_for(lambda: len(activated) == 1)
                     second.start()
+                    wait_for(lambda: second.observation()["stage"] == "standby")
+                    self.assertEqual(second.observation()["reason"], "lease_contended")
                     self.assertEqual(request(target).code, "requested")
                     wait_for(lambda: first_launch.call_count == 1)
                     second_launch.assert_not_called()

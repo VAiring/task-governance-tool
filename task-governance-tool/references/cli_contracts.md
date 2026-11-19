@@ -723,6 +723,11 @@ A ready result has this structure:
           "captured_at": null,
           "published_at": null,
           "generation_id": null
+        },
+        "observer": {
+          "ownership": "unknown",
+          "observed_at": "2026-07-27T00:01:00Z",
+          "last_recorded": null
         }
       },
       "evidence": {
@@ -770,6 +775,11 @@ never starts or recovers a worker. Task completion and backup capture are
 separate facts; a running worker does not establish a successful backup.
 These six runtime fields describe the worker, not service availability or
 request publication. A published opportunity does not prove startup or success.
+`observer.ownership` samples the service lease (`held`, `released`, `unknown`,
+or `not_opted_in`) at `observed_at`. Its nullable `last_recorded` contains a
+historical `stage`, `reason`, and `occurred_at`. For example,
+`owner_readmission/database_busy` identifies the previously observed stop.
+An admitted MCP inspection separately identifies that service's local thread.
 The Evidence object has exactly `code`, `due`, `source_generation`,
 `published_generation`, `last_success_at`, and `last_outcome`; doctor never
 opens or repairs its JSON files.

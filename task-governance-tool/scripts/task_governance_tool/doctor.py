@@ -376,6 +376,8 @@ def run_doctor(
              or runtime["published_at"] != storage_state.maintenance.backup_last_success_at)):
         runtime.update(state="unknown", captured_at=None, published_at=None, generation_id=None)
     maintenance["backup"]["runtime"] = runtime
+    from task_governance_tool.backup_observer_diagnostics import observe
+    maintenance["backup"]["observer"] = observe(resolution.target, enabled=maintenance["opted_in"])
     if maintenance["opted_in"]:
         if runtime["state"] in {"failed", "deferred"}:
             maintenance["backup"]["code"] = runtime["state"]

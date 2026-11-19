@@ -87,6 +87,7 @@ BACKUP_KEYS = {
     "last_success_at",
     "last_outcome",
     "runtime",
+    "observer",
 }
 BACKUP_RUNTIME_KEYS = {
     "state",
@@ -316,6 +317,9 @@ class DoctorCommandTests(unittest.TestCase):
             self.assertEqual(backup["code"], "due")
             self.assertTrue(backup["due"])
             self.assert_backup_runtime(backup["runtime"], "idle")
+            self.assertEqual(set(backup["observer"]), {"ownership", "observed_at", "last_recorded"})
+            self.assertEqual(backup["observer"]["ownership"], "unknown")
+            self.assertIsNone(backup["observer"]["last_recorded"])
             self.assertIsNone(backup["last_success_at"])
             self.assertEqual(
                 backup["last_outcome"],

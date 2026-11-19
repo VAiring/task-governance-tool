@@ -114,6 +114,24 @@ class AsyncBackupIntegrationTests(unittest.TestCase):
             self.assertEqual(session.close(), {"ok": True})
             factory.return_value.close.assert_called_once_with()
 
+    def test_initial_admission_reports_known_reason_without_publishing(self):
+        from task_governance_tool.review_wait_runtime import project_server
+        config = ProjectConfig(self.install.project_root, self.directory / "server.exe", self.directory / "codex", "UTC")
+        scope = SimpleNamespace(skill_root=self.install.skill_root, canonical_repo=self.install.project_root)
+        inspection = SimpleNamespace(scope=scope, first_issue=lambda **_: None)
+        for failure, reason in ((None, "not_opted_in"),
+                                (storage.StorageError("database_busy", "fixture"), "database_busy"),
+                                (OSError("fixture"), "unavailable")):
+            with self.subTest(reason=reason):
+                session = ProjectReviewWaitSession(config, runtime_identity=mock.Mock())
+                self.addCleanup(session.close)
+                with mock.patch.object(project_server, "inspect_project_scope", return_value=inspection), \
+                        mock.patch.object(repository, "read_service_target", side_effect=failure, return_value=None):
+                    self.assertFalse(session.start_backup_observer())
+                self.assertEqual(session._backup_startup_reason, reason)
+                self.assertIsNone(session.backup_observer)
+                self.assertFalse(state.runtime_root(self.target).exists())
+
 
 if __name__ == "__main__":
     unittest.main()

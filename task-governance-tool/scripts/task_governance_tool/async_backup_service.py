@@ -41,6 +41,14 @@ class BackupServiceObserver:
         self._stopped = threading.Event()
         self._lifecycle = threading.Lock()
         self._thread = None
+        self._last_event = ("startup", "unknown")
+
+    def observation(self):
+        """Local process only. A standby thread does not own the service lease."""
+        stage, reason = self._last_event
+        thread = self._thread
+        return {"thread": "not_started" if thread is None else "running" if thread.is_alive() else "stopped",
+                "stage": stage, "reason": reason}
 
     def start(self):
         """Start once; startup advertises no claim that a backup has begun."""
@@ -50,7 +58,12 @@ class BackupServiceObserver:
             if self._thread is None:
                 self._thread = threading.Thread(
                     target=self._run, name="taskgov-backup-opportunity", daemon=True)
-                self._thread.start()
+                try:
+                    self._thread.start()
+                except RuntimeError:
+                    self._thread = None
+                    self._last_event = ("startup", "unavailable")
+                    raise
             return True
 
     def close(self):
@@ -82,6 +95,8 @@ class BackupServiceObserver:
         return read_control(self.target).maintenance.enabled is True
 
     def _run(self):
+        from task_governance_tool import backup_observer_diagnostics as diagnostics
+        from task_governance_tool.storage import StorageError
         from task_governance_tool.artifact_lock import ArtifactLockError
         from task_governance_tool.async_backup_opportunity import (
             activate_service, observe_opportunity, service_lease,
@@ -93,18 +108,32 @@ class BackupServiceObserver:
                     lease_acquired = True
                     if self._stopped.is_set():
                         return
+                    stage = "owner_readmission"
+                    self._last_event = (stage, "in_progress")
                     try:
-                        if not self._admit_owner() or self._stopped.is_set():
+                        if not self._admit_owner():
+                            self._last_event = (stage, "not_opted_in")
                             return
+                        if self._stopped.is_set():
+                            return
+                        stage = "presence_publication"
+                        self._last_event = (stage, "in_progress")
                         # Publish presence and baseline old input only after
                         # current admission has closed its DB snapshot.
                         last_request = activate_service(
                             self.target, owner_nonce, self.compatibility)
-                    except Exception:
+                    except Exception as exc:
                         # Invalid admission or activation is terminal for this
                         # observer. Retrying would turn unavailable control
                         # artifacts into a database read on every idle tick.
+                        reason = ("database_busy" if stage == "owner_readmission"
+                                  and isinstance(exc, StorageError) and exc.code == "database_busy"
+                                  else "unavailable")
+                        self._last_event = (stage, reason)
+                        diagnostics.record(self.target, owner_nonce, self.compatibility, stage, reason)
                         return
+                    self._last_event = (stage, "activated")
+                    diagnostics.record(self.target, owner_nonce, self.compatibility, stage, "activated")
                     while not self._stopped.wait(self._poll_seconds):
                         try:
                             request = observe_opportunity(
@@ -130,9 +159,12 @@ class BackupServiceObserver:
                 # Only confirmed acquisition contention permits standby.
                 # Once owned, cleanup failure cannot authorize reacquisition.
                 if lease_acquired or not exc.contended:
+                    self._last_event = ("service_lease", "unavailable")
                     return
+                self._last_event = ("standby", "lease_contended")
             except Exception:
                 # Unsafe paths and other lease failures require service restart.
+                self._last_event = ("service_lease", "unavailable")
                 return
             if self._stopped.wait(self._poll_seconds):
                 return

@@ -2832,6 +2832,11 @@ uncaptured imports, mixed source or unavailable reads leave comparison unknown.
 The diagnostic reads no Task DB, writes no state, runs no migration and starts
 no process or worker. The ordinary inspect path retains its own admitted
 read-only association inspection; a stored ACTIVE flag is never live readiness.
+On the project service, admitted inspection also includes `backup_observer`
+with `thread`, `stage`, and `reason` for that process. Startup admission,
+standby, owner readmission, and presence publication are separate observations.
+The project lease and last saved event are available in Doctor's
+[`maintenance.backup.observer`](setup-state-specification.md).
 
 Conditional diagnosis adds no normal-loop poll, doctor, status or ACK, automatic
 restart, alternate sender, private API or substitute supervisor. The development

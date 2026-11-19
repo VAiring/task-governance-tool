@@ -1535,7 +1535,12 @@ class SkillSelfContainmentTests(unittest.TestCase):
         self.assertIn("runs-on: windows-latest", workflow)
         self.assertIn("os: [ubuntu-24.04, macos-15]", workflow)
         self.assertIn("Platform checks", workflow)
-        self.assertIn("inputs.platform_only != true", workflow)
+        self.assertIn(
+            "    name: Full release-candidate gate\n"
+            "    if: ${{ always() && github.event_name == 'workflow_dispatch' "
+            "&& !inputs.platform_only && !inputs.compare_shards && !inputs.serial_diagnostic }}",
+            workflow,
+        )
 
     def test_tracked_skill_package_contains_runtime_but_no_generated_state(self):
         result = subprocess.run(

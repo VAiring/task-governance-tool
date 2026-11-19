@@ -673,10 +673,8 @@ class PublicMcpHost:
                        timezone_reader=_node_timezone_reader(node), **kwargs)
             host._auto_server = server_path if automatic else None
             from .item_reader import installed_runtime, open_reader
-            executable = installed_runtime(host._codex_home)
             host._verify_whole_turn_tail = True
-            if executable is not None:
-                host.item_reader = lambda: open_reader(executable, host._codex_home)
+            host.item_reader = lambda: open_reader(installed_runtime(host._codex_home), host._codex_home)
             return host
         except HostAdapterError:
             raise
@@ -877,18 +875,22 @@ class PublicMcpHost:
                 raise annotate_read_failure(error, "reviewer_identity", pages)
             # Only replace an unavailable first read. No validated conflict or
             # historical mapping can be discarded in favor of a different child.
-            from ..review_answer_item_pages import DispatchTurn, latest_turn_id
+            from ..review_answer_item_pages import DispatchTurn, PaginationUnsupported, latest_turn_id
             from ..review_answer import AnswerError
             try:
                 turn_id = executor_turn_id(self._metadata)
                 with self.item_reader() as rpc:
                     if latest_turn_id(rpc, self._parent_id) != turn_id:
-                        raise annotate_read_failure(error, "reviewer_identity", pages)
+                        raise annotate_read_failure(HostAdapterError("reviewer_identity_unavailable"), "reviewer_identity", pages)
                     turn = DispatchTurn(rpc, self._parent_id, turn_id)
                     turn.read()
                     identities = turn.resolve(references)
-            except AnswerError:
+            except PaginationUnsupported:
                 raise annotate_read_failure(error, "reviewer_identity", pages) from None
+            except AnswerError as failure:
+                code = {"conflict": "reviewer_identity_ambiguous", "transport_unavailable": "host_transport_unavailable"}.get(
+                    failure.failure["reason"], "reviewer_identity_unavailable")
+                raise annotate_read_failure(HostAdapterError(code), "reviewer_identity", pages) from None
             self._reviewers = identities
         self._reviewer_paths = dict(zip(identities, references))
         return identities

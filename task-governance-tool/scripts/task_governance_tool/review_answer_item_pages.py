@@ -1,18 +1,20 @@
 """Read one dispatch turn through the public paginated App Server interface."""
 
-from .review_answer_host import _content_complete, _dispatch_activity, _fail, _host_id, _uuid, initial_observation
+from .review_answer import AnswerError
+from .review_answer_host import _NON_ACTIVITY, _content_complete, _dispatch_activity, _fail, _host_id, _uuid, initial_observation
 from .review_answer_collection import source
 
 
 PAGE_SIZE = 4
 MAX_PAGES = 768
 MAX_ITEMS = 3072
-_NON_ACTIVITY = frozenset({
-    "userMessage", "hookPrompt", "agentMessage", "functionCallOutput", "plan",
-    "reasoning", "commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall",
-    "webSearch", "imageView", "sleep", "imageGeneration", "enteredReviewMode",
-    "exitedReviewMode", "contextCompaction",
-})
+
+
+class PaginationUnsupported(AnswerError):
+    """An explicit capability result; unknown or malformed replies never qualify."""
+
+    def __init__(self):
+        super().__init__("collection_unavailable", reason="incomplete")
 
 
 def _cursor(page, limit):
@@ -32,8 +34,12 @@ def latest_turn_id(rpc, thread, *, sole=False):
     _content_complete(result)
     meta = result.get("thread")
     _content_complete(meta)
-    if meta.get("id") != thread or meta.get("historyMode") != "paginated":
+    if meta.get("id") != thread:
         _fail("identity", "binding_mismatch")
+    if meta.get("historyMode") == "legacy":
+        raise PaginationUnsupported()
+    if meta.get("historyMode") != "paginated":
+        _fail("shape")
     limit = 2 if sole else 1
     page = rpc("thread/turns/list", threadId=thread, sortDirection="desc",
                itemsView="notLoaded", limit=limit)
@@ -119,7 +125,6 @@ class DispatchTurn:
         return tuple(identities)
 
     def dispatches(self, children):
-        from .review_answer import AnswerError
         dispatches = []
         for child in children:
             try:
@@ -131,14 +136,22 @@ class DispatchTurn:
             _fail("initial_dispatch_unobserved", "binding_mismatch")
         return dispatches
 
-    def bind(self, children, references):
+    def bind(self, children, references, *, whole_child=None):
         if latest_turn_id(self.rpc, self.parent) != self.turn:
             _fail("identity", "binding_mismatch")
         self.read()
         if self.resolve(references) != children:
             _fail("conflict", "binding_mismatch")
         initial = self.dispatches(children)
-        child_turns = [latest_turn_id(self.rpc, child, sole=True) for child in children]
+        child_turns = []
+        for child in children:
+            try:
+                child_turn = latest_turn_id(self.rpc, child, sole=True)
+            except PaginationUnsupported:
+                if whole_child is None:
+                    raise
+                child_turn = whole_child(child)
+            child_turns.append(child_turn)
         self.read(tail=True)
         if self.resolve(references) != children or self.dispatches(children) != initial:
             _fail("conflict", "binding_mismatch")

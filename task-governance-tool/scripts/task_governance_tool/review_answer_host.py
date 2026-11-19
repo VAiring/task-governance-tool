@@ -14,10 +14,17 @@ from uuid import UUID
 from .review_answer import AnswerError
 from .review_answer_collection import AnswerTurnInProgress, source
 from .review_wait_runtime.review_wait_mcp_relay import MAX_READ_RESPONSE_BYTES
+from .review_wait_runtime.review_wait_host import HostAdapterError, _oversized_read
 
 
 _HOST_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/+-]{0,255}\Z")
 _TERMINALS = {"inProgress": "in_progress", "completed": "completed", "failed": "failed", "interrupted": "interrupted"}
+_NON_ACTIVITY = frozenset({
+    "userMessage", "hookPrompt", "agentMessage", "functionCallOutput", "plan",
+    "reasoning", "commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall",
+    "webSearch", "imageView", "sleep", "imageGeneration", "enteredReviewMode",
+    "exitedReviewMode", "contextCompaction",
+})
 
 
 def _fail(reason="incomplete", classification="collection_unavailable"):
@@ -63,7 +70,8 @@ def _item_ids(turn):
     ids = []
     for item in items:
         _content_complete(item)
-        if type(item.get("type")) is not str or item["type"] == "collabAgentToolCall":
+        kind = item.get("type")
+        if type(kind) is not str or kind != "subAgentActivity" and kind not in _NON_ACTIVITY:
             _fail("incomplete")
         if item["type"] == "subAgentActivity":
             _uuid(item.get("agentThreadId"))
@@ -177,6 +185,8 @@ class PublicAnswerHost:
             return value
         except AnswerError:
             raise
+        except HostAdapterError as error:
+            _fail("bound" if _oversized_read(error) else "transport_unavailable")
         except Exception:
             _fail("transport_unavailable")
 
@@ -207,6 +217,16 @@ class PublicAnswerHost:
         return dict(parent_session_id=self.parent_session_id, reviewer_session_id=child,
                     initial_turn_id=child_turns[0]["id"], source=source("dispatch_binding"))
 
+    def _sole_child_turn(self, child):
+        page, turns = _page(self._read(child, 1), child, 1)
+        if page["hasMore"] or page["nextCursor"] is not None:
+            _fail("incomplete")
+        turn = turns[0]
+        _content_complete(turn)
+        if turn["error"] is not None and turn["status"] not in ("failed", "interrupted"):
+            _fail("incomplete")
+        return turn["id"]
+
     def bind_reviewers(self, reviewer_ids, *, creation_context=False, known_conflict=False):
         """Resolve exact returned children from this dispatch turn only."""
         if (self.parent_turn_id is None or type(reviewer_ids) not in (tuple, list) or not 1 <= len(reviewer_ids) <= 8
@@ -216,10 +236,18 @@ class PublicAnswerHost:
         if len(set(children)) != len(children) or self.parent_session_id in children:
             _fail("identity", "binding_mismatch")
         if self.item_reader is not None:
-            from .review_answer_item_pages import DispatchTurn
+            from .review_answer_item_pages import DispatchTurn, PaginationUnsupported
             references = tuple(self.reviewer_paths.get(child, child) for child in children)
-            with self.item_reader() as rpc:
-                return DispatchTurn(rpc, self.parent_session_id, self.parent_turn_id).bind(children, references)
+            observation = None
+            try:
+                with self.item_reader() as rpc:
+                    observation = DispatchTurn(rpc, self.parent_session_id, self.parent_turn_id)
+                    return observation.bind(children, references, whole_child=self._sole_child_turn)
+            except PaginationUnsupported:
+                # A missing first capability can select the complete Desktop
+                # read. Never discard a page or restart after the tail changed.
+                if observation is not None and observation.pages:
+                    _fail("incomplete")
         _page_info, turns = _page(self._read(self.parent_session_id, 1), self.parent_session_id, 1)
         parent = turns[0]
         _content_complete(parent)
@@ -242,15 +270,9 @@ class PublicAnswerHost:
             _fail("conflict", "binding_mismatch")
         results = []
         for child, dispatch in zip(children, dispatches):
-            page_info, child_turns = _page(self._read(child, 1), child, 1)
-            if page_info["hasMore"] is not False or page_info["nextCursor"] is not None:
-                _fail("incomplete")
-            _content_complete(child_turns[0])
-            if child_turns[0]["error"] is not None and child_turns[0]["status"] not in ("failed", "interrupted"):
-                _fail("incomplete")
             results.append(dict(dispatch_id=dispatch, parent_session_id=self.parent_session_id,
-                reviewer_session_id=child, initial_turn_id=child_turns[0]["id"], source=source("dispatch_binding")))
-        if self.verify_whole_turn_tail:
+                reviewer_session_id=child, initial_turn_id=self._sole_child_turn(child), source=source("dispatch_binding")))
+        if self.verify_whole_turn_tail or self.item_reader is not None:
             before = _item_ids(parent)
             _, final_turns = _page(self._read(self.parent_session_id, 1), self.parent_session_id, 1)
             final = final_turns[0]

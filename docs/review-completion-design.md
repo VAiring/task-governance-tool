@@ -960,8 +960,9 @@ is invoked, and no observation is persisted or reused as an effect token.
 Legacy-only and non-dispatching checks keep their existing output shape.
 
 `review_answer_host.py` uses bounded public observations. For a fresh binding
-on the tested Windows Desktop App Server (`0.169.0-alpha.11.1`, paginated
-history), a short-lived stdio reader checks its initialized version and home.
+on Windows Desktop, a short-lived stdio reader uses the host-selected bundled
+executable under the official WindowsApps package and checks its initialized
+home. The package build and the server's advertised build may vary independently.
 It reads thread metadata, own turn headers and ascending item pages. It keeps
 item identities and structured activities in memory. After checking all
 children it requests successors of the last item and follows every cursor to
@@ -975,9 +976,15 @@ The auxiliary reader can observe an active turn as interrupted when it does
 not own that session. Only the owning Desktop's existing current-parent read
 admits a running wait. An oversized or unavailable owner response can leave
 valid initial assignments saved while the service creates no reservation.
-On other builds, an initial assignment that fits in a complete Desktop read
-can use a second whole-turn read after the child checks. Its ordered prefix
-and dispatches must still agree. Both paths use the same observation fields.
+An explicit legacy parent history or an unavailable initial pagination method
+selects the bounded whole-turn Desktop read. The same route remains available
+on non-Windows hosts. Missing Windows executable selection leaves provenance
+unknown and rejects assignment. An explicitly legacy child can be checked
+with a whole child read between the paginated parent reads. Whole parent reads
+must agree on the ordered prefix, identities and dispatches before and after
+the child checks. An unknown response, a missing continuation, a changed parent
+or a reader cleanup failure rejects initial assignment. Both paths use the same
+observation fields.
 The following exact-turn recovery behavior is retained for version-one bases.
 Initial admission reads the exact parent's dispatch turn and a dedicated new
 child's sole own turn, rejecting additional child turns, interaction/reuse and known

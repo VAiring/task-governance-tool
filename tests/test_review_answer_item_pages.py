@@ -6,17 +6,18 @@ from hashlib import sha256
 import json
 from pathlib import Path
 import sys
+from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "task-governance-tool/scripts"))
 from task_governance_tool.review_answer import AnswerError
 from task_governance_tool.review_answer_host import PublicAnswerHost
-from task_governance_tool.review_answer_item_pages import DispatchTurn
+from task_governance_tool.review_answer_item_pages import DispatchTurn, PaginationUnsupported
 from task_governance_tool.review_answer_runtime import bind_initial
 from task_governance_tool.review_answer_collection_repository import CollectionRepository, RepositoryError
 from task_governance_tool.review_wait_runtime.review_wait_host import PublicMcpHost
-from task_governance_tool.review_wait_runtime.item_reader import open_reader
+from task_governance_tool.review_wait_runtime.item_reader import _bundled_runtime, installed_runtime, open_reader
 from tests import test_review_answer_runtime_setup as setup
 from tests.test_review_continuation import A, B
 
@@ -73,6 +74,63 @@ class PublicPages:
 
 
 class DispatchPageTests(unittest.TestCase):
+    def test_build_changes_admit_complete_small_and_large_dispatches(self):
+        with TemporaryDirectory() as temp:
+            home = Path(temp)
+            for package_version in ("26.1111.2228.0", "27.2.3.4"):
+                package = f"OpenAI.Codex_{package_version}_x64__2p2nqsd0c76g0"
+                executable = home / "WindowsApps" / package / "app/resources/codex.exe"
+                executable.parent.mkdir(parents=True)
+                executable.touch()
+                self.assertEqual(_bundled_runtime(executable, home, home, home), executable)
+                for server_version in ("0.169.0-alpha.11.1", "1.2.3"):
+                    for large, handles in ((False, False), (False, True), (True, False), (True, True)):
+                        with self.subTest(package=package_version, server=server_version, large=large, handles=handles):
+                            rpc = PublicPages()
+                            if large:
+                                rpc.rows.extend(dict(v, text="x" * (512 * 1024)) for v in messages(34))
+                            with patch("task_governance_tool.review_wait_runtime.item_reader._ItemSession") as launch:
+                                child = launch.return_value
+                                child.close.return_value = True
+                                def reply(_limit):
+                                    sent = json.loads(child.send.call_args.args[0])
+                                    method = sent["method"]
+                                    value = (dict(userAgent="Codex Desktop/" + server_version, codexHome=str(home))
+                                             if method == "initialize" else rpc(method, **sent["params"]))
+                                    return dict(id=sent["id"], result=value)
+                                child._message.side_effect = reply
+                                paths = {A: "/root/a", B: "/root/b"} if handles else {}
+                                adapter = PublicAnswerHost(None, PARENT, TURN, reviewer_paths=paths,
+                                    item_reader=lambda: open_reader(executable, home))
+                                rows = adapter.bind_reviewers((A, B), creation_context=True)
+                                self.assertEqual([row["initial_turn_id"] for row in rows], [A, B])
+                                self.assertTrue(all(row["initial_observation"]["item_count"] == len(rpc.rows)
+                                                    for row in rows))
+                                child.close.assert_called_once_with()
+
+    def test_official_package_layout_and_home_are_required(self):
+        with patch("task_governance_tool.review_wait_runtime.item_reader.os") as environment:
+            environment.name = "nt"
+            environment.environ = {}
+            with self.assertRaises(AnswerError) as missing:
+                installed_runtime(Path.cwd())
+            self.assertEqual(missing.exception.failure["reason"], "identity")
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            other_home = root / "other"
+            other_home.mkdir()
+            for package, relative, home in (
+                    ("OpenAI.Codex_27.2.3.4_x64__other", "app/resources/codex.exe", root),
+                    ("Other.Codex_27.2.3.4_x64__2p2nqsd0c76g0", "app/resources/codex.exe", root),
+                    ("OpenAI.Codex_27.2.3.4_x64__2p2nqsd0c76g0", "app/codex.exe", root),
+                    ("OpenAI.Codex_27.2.3.4_x64__2p2nqsd0c76g0", "app/resources/codex.exe", other_home)):
+                executable = root / "WindowsApps" / package / relative
+                executable.parent.mkdir(parents=True, exist_ok=True)
+                executable.touch()
+                with self.subTest(package=package, relative=relative, home=home), self.assertRaises(AnswerError) as error:
+                    _bundled_runtime(executable, home, root, root)
+                self.assertEqual(error.exception.failure["reason"], "identity")
+
     def test_small_whole_turn_fallback_rechecks_after_children(self):
         from tests.test_review_answer_host import page, turn
         base = [activity("start-a", A), activity("start-b", B)]
@@ -94,6 +152,97 @@ class DispatchPageTests(unittest.TestCase):
                     with self.assertRaises(AnswerError) as failure:
                         host.bind_reviewers((A, B), creation_context=True)
                     self.assertEqual(failure.exception.failure["reason"], reason)
+
+    def test_only_explicit_parent_unsupported_can_select_whole_history(self):
+        from tests.test_review_answer_host import page, turn
+        for mode, identity, clipped, success in (
+                ("legacy", PARENT, False, True), ("legacy", A, False, False),
+                ("legacy", PARENT, True, False), ("unknown", PARENT, False, False),
+                (None, PARENT, False, False)):
+            with self.subTest(mode=mode, identity=identity, clipped=clipped):
+                meta = {"id": identity, "truncated": clipped}
+                if mode is not None:
+                    meta["historyMode"] = mode
+                peer = Mock()
+                parent = page(PARENT, 1, turn(TURN, items=[activity("a", A)]))
+                peer._json_call.side_effect = [parent, page(A, 1, turn(A)), parent]
+                host = PublicAnswerHost(peer, PARENT, TURN,
+                    item_reader=lambda: nullcontext(Mock(return_value=dict(thread=meta))))
+                if success:
+                    row, = host.bind_reviewers((A,), creation_context=True)
+                    self.assertEqual(row["initial_observation"]["item_count"], 1)
+                    self.assertEqual(peer._json_call.call_count, 3)
+                else:
+                    with self.assertRaises(AnswerError):
+                        host.bind_reviewers((A,), creation_context=True)
+                    peer._json_call.assert_not_called()
+
+    def test_legacy_child_requires_single_own_turn_and_parent_tail(self):
+        from tests.test_review_answer_host import page, turn
+        for fault in ("none", "reused", "contact"):
+            rpc, peer = PublicPages(), Mock()
+            def mixed(method, *, threadId, **params):
+                if method == "thread/read" and threadId == B:
+                    return dict(thread=dict(id=B, historyMode="legacy"))
+                return rpc(method, threadId=threadId, **params)
+            def child_read(_name, arguments):
+                self.assertEqual(arguments["threadId"], B)
+                own = page(B, 1, turn(B))
+                if fault == "reused":
+                    own["page"].update(hasMore=True, nextCursor="older")
+                if fault == "contact":
+                    rpc.rows.append(activity("extra", B, "interacted"))
+                return own
+            peer._json_call.side_effect = child_read
+            host = PublicAnswerHost(peer, PARENT, TURN, item_reader=lambda: nullcontext(mixed))
+            if fault == "none":
+                self.assertEqual([f["initial_turn_id"] for f in host.bind_reviewers((A,B), creation_context=True)], [A,B])
+            else:
+                with self.assertRaises(AnswerError):
+                    host.bind_reviewers((A,B), creation_context=True)
+            peer._json_call.assert_called_once()
+
+    def test_only_clean_correlated_method_absence_can_enable_fallback(self):
+        home = Path.cwd()
+        init = dict(id=1, result=dict(userAgent="codex/2.1", codexHome=str(home)))
+        missing = dict(code=-32601, message="Method not found")
+        for response, clean, prior, eligible in (
+                (dict(id=2, error=missing), True, False, True),
+                (dict(id=2, error=missing), False, False, False),
+                (dict(id=3, error=missing), True, False, False),
+                (dict(id=2, error=dict(code=-32603,message="unsupported")), True, False, False),
+                (dict(id=2, error=dict(missing, data={"unknown":True})), True, False, False),
+                (dict(id=3, error=missing), True, True, False)):
+            with self.subTest(response=response, clean=clean, prior=prior), patch(
+                    "task_governance_tool.review_wait_runtime.item_reader._ItemSession") as launch:
+                child = launch.return_value
+                child.close.return_value = clean
+                child._message.side_effect = [init] + ([dict(id=2, result={})] if prior else []) + [response]
+                with self.assertRaises(AnswerError) as caught, open_reader(home/"codex.exe",home) as read:
+                    if prior:
+                        read("thread/items/list", threadId=PARENT)
+                    read("thread/items/list", threadId=PARENT)
+                self.assertEqual(isinstance(caught.exception, PaginationUnsupported), eligible)
+                child.close.assert_called_once_with()
+
+    def test_oversized_handle_lookup_retains_the_observed_failure(self):
+        from task_governance_tool.review_wait_runtime.review_wait_host import HostAdapterError
+        for failure, expected in ((PaginationUnsupported(), "host_call_failed"),
+                (AnswerError("binding_mismatch", reason="conflict"), "reviewer_identity_ambiguous"),
+                (AnswerError("collection_unavailable", reason="transport_unavailable"), "host_transport_unavailable")):
+            host = PublicMcpHost(metadata=dict(threadId=PARENT,turnId=TURN), automation_id="pending",
+                codex_home=Path.cwd(), confirmed_timezone="UTC", timezone_source="host_os",
+                reviewer_ids=["/root/a"], command=["offline-peer"])
+            too_large = HostAdapterError("host_call_failed", operation="read_thread", termination="confirmed")
+            too_large.oversized_turn = True
+            host._json_call = Mock(side_effect=too_large)
+            host.item_reader = Mock(side_effect=failure)
+            with self.subTest(expected=expected), self.assertRaises(HostAdapterError) as result:
+                host.resolve_reviewer_ids()
+            self.assertEqual(result.exception.code, expected)
+            self.assertEqual(result.exception.read_failure["conclusion"], "unknown")
+            host.item_reader.assert_called_once()
+            host._json_call.assert_called_once()
 
     def test_reader_closes_on_invalid_frame_unknown_operation_and_cleanup_failure(self):
         home = Path.cwd()
@@ -163,6 +312,59 @@ class DispatchPageTests(unittest.TestCase):
                 DispatchTurn(Mock(side_effect=sequence), PARENT, TURN).read()
 
     service = setup.InitialBindingStateTests.service
+
+    def test_whole_fallback_is_atomic_reusable_and_reports_oversize(self):
+        from tests.test_review_answer_host import page, turn
+        from task_governance_tool.review_wait_runtime.review_wait_host import HostAdapterError
+        for fault in ("none", "oversized", "unknown_item", "changed_tail", "second_start", "extra_contact"):
+            with self.subTest(fault=fault):
+                service, meta = self.service(True)
+                parent = meta["binding"]["parent_session_id"]
+                items = [activity("a", A), activity("b", B)]
+                first = page(parent, 1, turn(TURN, items=items))
+                final_items = items + {
+                    "unknown_item": [dict(type="future", id="later")],
+                    "second_start": [activity("another", B)],
+                    "extra_contact": [activity("later", B, "interacted")],
+                }.get(fault, [])
+                last = page(parent, 1, turn(A if fault == "changed_tail" else TURN, items=final_items))
+                peer = Mock()
+                if fault == "oversized":
+                    too_large = HostAdapterError("host_call_failed", operation="read_thread", termination="confirmed")
+                    too_large.oversized_turn = True
+                    peer._json_call.side_effect = too_large
+                else:
+                    peer._json_call.side_effect = [first, page(A, 1, turn(A)), page(B, 1, turn(B)), last]
+                initial = Mock(return_value=dict(thread=dict(id=parent, historyMode="legacy")))
+                host = PublicAnswerHost(peer, parent, TURN, item_reader=lambda: nullcontext(initial),
+                                        reviewer_paths={A:"/root/a", B:"/root/b"})
+                if fault == "none":
+                    rows = bind_initial(service, host, (A, B), creation_context=True)
+                    self.assertEqual(rows, bind_initial(service, host, (A, B)))
+                    self.assertEqual(peer._json_call.call_count, 4)
+                    initial.assert_called_once()
+                else:
+                    with self.assertRaises(AnswerError) as error:
+                        bind_initial(service, host, (A, B), creation_context=True)
+                    if fault == "oversized":
+                        self.assertEqual(error.exception.failure["reason"], "bound")
+                    self.assertTrue(all(row["binding"] is None for row in service.repository.read()))
+
+    def test_invalid_initialized_home_never_uses_whole_turn(self):
+        with TemporaryDirectory() as temp:
+            home = Path(temp)
+            other = home / "other"
+            other.mkdir()
+            with patch("task_governance_tool.review_wait_runtime.item_reader._ItemSession") as launch:
+                launch.return_value._message.return_value = dict(id=1, result=dict(userAgent="official client", codexHome=str(other)))
+                launch.return_value.close.return_value = True
+                peer = Mock()
+                host = PublicAnswerHost(peer, PARENT, TURN, item_reader=lambda: open_reader(home/"codex.exe", home))
+                with self.assertRaises(AnswerError) as error:
+                    host.bind_reviewers((A,B), creation_context=True)
+                self.assertEqual(error.exception.failure["reason"], "identity")
+                peer._json_call.assert_not_called()
+                launch.return_value.close.assert_called_once()
 
     def test_observation_survives_restart_and_cannot_be_retrofitted(self):
         for tracking in (False, True):

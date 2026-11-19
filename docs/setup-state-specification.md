@@ -1206,6 +1206,9 @@ not the Hook payload, source bodies or arbitrary paths. It is re-admitted before
 use and does not itself grant participant/source/attribution rights. Duplicate
 pending intakes coalesce; the closed runtime record is limited to 1,024 pending
 intakes and 8 MiB, refusing excess input without evicting accepted work.
+If an intake acknowledgment is interrupted, the service retries it on its
+ordinary processing schedule. A retained intake alone cannot establish that
+external input is missing.
 
 Catch-up acknowledgment requires a completed bounded source pass and current
 guarded numerical publication. Candidate rotation, an attempted operation or

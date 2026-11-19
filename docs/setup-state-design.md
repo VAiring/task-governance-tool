@@ -456,8 +456,13 @@ and full-byte comparison and a budget check precede the request CAS while the
 guard readers remain open. A timeout retains confirmation; a rejected publication
 basis returns to publication. No file identity, index or admission result is
 retained between opportunities, and confirmation does not prepare a new audit.
-Operational CAS acknowledges only the exact request it consumed. Process restart
-preserves unfinished traversal subject to the next fresh checkpoint validation;
+Operational CAS acknowledges only the exact request it consumed. An intake
+retained after an interrupted acknowledgment or an exhausted metadata budget
+gets another intake opportunity on the next pass. A capture that rejects the
+input records its waiting reason for the current pass. The intervening review,
+inventory, source and publication opportunities still run in either case.
+Process restart preserves unfinished traversal subject to the next fresh
+checkpoint validation;
 terminal results are reconsidered while preserving committed numerical positions.
 Each completed source opportunity saves its operational frontier before another
 deadline-checked database operation. A later timeout or stop cannot discard that

@@ -101,16 +101,19 @@ def run_slice(target, repository, roots, expected, *, deadline, stopped=lambda: 
             if saved is None:
                 return None
             if item is not None:
+                reason = "pending"
                 try:
                     payload, thread = restore(item, roots, target.project.canonical_repo)
                     hint = _capture(repository, target, payload, roots, target.project.canonical_repo, thread, deadline)
-                    accepted = hint is None or repository.locator_by_id(hint.source_id) is not None
-                except UsageError:
-                    accepted = False
-                if accepted:
-                    retained = list(saved["intakes"])
-                    retained.remove(item)
-                return state.update(target, saved, round_=saved["round"], status="pending", intakes=retained)
+                    if hint is None or repository.locator_by_id(hint.source_id) is not None:
+                        retained = retained[:-1]
+                    else:
+                        reason = "waiting_input"
+                except UsageError as error:
+                    if error.code != "usage_pending":
+                        reason = "waiting_input"
+                return state.update(target, saved, round_={**saved["round"], "reason": reason},
+                                    status="pending", intakes=retained)
             expected, round_ = saved, saved["round"]
         if round_["phase"] == "review":
             saved = state.update(target, expected, round_={**round_, "phase": "inventory"}, status="pending")

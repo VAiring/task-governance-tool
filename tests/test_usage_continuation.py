@@ -769,6 +769,51 @@ class ContinuationTests(unittest.TestCase):
         self.assertTrue(observer.close())
         self.assertEqual(self.read()["status"], "caught_up")
 
+    def test_interrupted_intake_ack_retries_without_waiting_for_input(self):
+        request = self.intake()
+        update = state.update
+
+        def contend_on_ack(target, expected, **changes):
+            if expected["intakes"] and changes.get("intakes") == []:
+                with state.lease(target, "state"):
+                    return update(target, expected, **changes)
+            return update(target, expected, **changes)
+
+        with mock.patch.object(state, "update", side_effect=contend_on_ack):
+            with self.assertRaises(ArtifactLockError) as conflict:
+                self.run_slice()
+        self.assertTrue(conflict.exception.contended)
+        self.assertEqual(self.read()["intakes"], request["intakes"])
+        self.assertEqual(self.read()["round"]["phase"], "review")
+
+        self.repo = repository_for(self.target)
+        for _ in range(20):
+            result = self.run_slice()
+            self.assertNotIn(result["status"], {"waiting_input", "waiting_review", "unavailable"})
+            if result["status"] == "caught_up":
+                break
+        self.assertEqual(result["status"], "caught_up")
+        self.assertEqual(result["request"], request["request"])
+        self.assertEqual(result["intakes"], [])
+        self.assertEqual(self.repo.summary()["models"][0]["response_count"], 20)
+
+    def test_intake_budget_and_unreadable_input_have_distinct_retry_statuses(self):
+        for code, should_wait in (("usage_pending", False), ("source_unreadable", True)):
+            with self.subTest(code=code):
+                self.intake()
+                with mock.patch("task_governance_tool.usage_locator_collection._capture",
+                                side_effect=UsageError(code)):
+                    self.run_slice()
+                statuses = []
+                for _ in range(20):
+                    result = self.run_slice()
+                    statuses.append(result["status"])
+                    if result["status"] == "caught_up":
+                        break
+                self.assertEqual("waiting_input" in statuses, should_wait)
+                self.assertEqual(result["status"], "caught_up")
+                self.assertEqual(self.repo.summary()["models"][0]["response_count"], 20)
+
     def test_service_without_actual_intake_neither_creates_state_nor_reads_sources(self):
         observer = self.observer()
         observer.start()

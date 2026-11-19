@@ -44,7 +44,7 @@ def source_round(repository, round_):
     with repository.connection() as connection:
         through = repository._sequence_value(connection)
     return {**round_, "phase": "sources", "through": through,
-            "after_order": 0, "after_source": "", "reason": "pending"}
+            "after_order": 0, "after_source": ""}
 
 
 def extend_sources(repository, round_, *, connection=None):
@@ -134,12 +134,13 @@ def completion(repository, round_, roots, intakes, connection, *, missing=()):
         return "pending", checkpoint(repository, extend_sources(repository, round_, connection=connection),
                                      connection=connection)
     if status is None:
-        status = "waiting_input" if intakes else round_["reason"]
+        status = round_["reason"]
         if status in {"pending", "available_complete"}:
-            status = "pending" if inventory else "available_complete" if missing else "caught_up"
+            status = "pending" if intakes or inventory else "available_complete" if missing else "caught_up"
     if status not in {"caught_up", "available_complete"}:
         if inventory:
-            round_ = {**round_, "phase": "inventory" if status == "pending" else "intake"}
+            phase = "inventory" if status == "pending" and not intakes else "intake"
+            round_ = {**round_, "phase": phase, "reason": "pending"}
         else:
             round_ = begin(repository, connection=connection)
     return status, checkpoint(repository, round_, connection=connection)

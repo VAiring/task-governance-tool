@@ -530,7 +530,7 @@ published last, SQLite remains canonical, and JSON is never imported. Failure
 preserves the committed mutation and last-good index with one fixed warning.
 
 The Viewer is a self-contained, read-only `file://` projection under the
-ignored project state. Snapshot v4 accepts source schemas v5-v28 and includes
+ignored project state. Snapshot v4 accepts source schemas v5-v37 and includes
 the same bounded newest-first completion history as `task show --audit`; sources v5-v14
 receive an empty, legacy-incomplete history and sources v15-v22 use stored
 cycles. It omits internal event links,
@@ -701,17 +701,21 @@ provenance.
 
 ## Safety And Privacy
 
-`taskgov` may write only canonical generated Skill state after setup, the
-explicit task-state operation requested by the caller, and, only under explicit
-`task edit --runner-plan-action`, the canonical ignored Runner Plan for Task
-entry authoring. Explicit Setup optional-feature selection may separately
-save/apply its closed local choices and feature configs, including Runner
+After setup, ordinary Task operations record the requested changes in canonical
+project state. Explicit `task edit --runner-plan-action` may also write the
+canonical ignored Runner Plan for Task entry authoring. Explicit Setup
+optional-feature selection may separately save/apply its closed local choices
+and feature configs, including Runner
 global trust or an empty Plan, under the
 [Setup contract](setup-state-specification.md#optional-feature-selection).
 Setup may also prepare the bounded project `.codex/hooks.json` definition,
-preserving unrelated hooks; user-operated host trust remains separate. It does not
-edit target-project source, stage or write Git, open a browser, create an Issue
-or PR, or use the network.
+preserving unrelated hooks; user-operated host trust remains separate.
+
+The sole Git write is [integrated review finalization](review-completion-specification.md#integrated-review-finalization).
+When explicitly invoked for an already authorized, reviewed snapshot, it can
+create one local commit and advance the existing branch only if its tip still
+matches the reviewed base. It never stages files, edits target-project source,
+or pushes. Taskgov does not open a browser, create an Issue or PR, or use the network.
 
 Default retention excludes raw stdout/stderr, stack traces, environment dumps,
 full prompts or conversations, authorization material, raw provider bodies,
@@ -858,9 +862,10 @@ for new completion Evidence without rewriting previous sealed history.
 Schema v31 adds the explicit-Setup
 [criterion-link producer repair](database-specification.md#collected-answer-criterion-link-repair)
 and identifies new Bundles as source 31 with the same formats and digest domains.
-Schema v32 adds the non-unique combined-session lookup index. Current schema
-v33 adds own-review history and reverse-reference indexes and identifies new
-Bundles as source 33 with those same formats and domains.
+Schema v32 added the non-unique combined-session lookup index. Schema v33 added
+own-review history and reverse-reference indexes. The current core schema is
+v37. Newly sealed Bundles record source 37 and retain Bundle format 4, index
+format 3, and the existing digest domains.
 The [storage contract](database-specification.md#collected-answer-persistence)
 preserves v0/v1 provenance and all older original/sidecar readers. Dedicated
 answer collection remains separately opted in; host trust, observed initial
@@ -881,9 +886,10 @@ Runner dispatch and retains its two closed route fields. With no post-target `ta
 manual/fallback no-finding Tier 2 flow with batch review-result registration is
 bounded to six calls, or seven with
 the enabled Effort Advisory, using automatic Packet preparation after a
-qualifying Receipt. The Receiptless Runner-pass path uses standalone
-preparation and has the same bound. The public inventory is exactly 24 leaves. No exact final candidate
-commit, tag, archive, checksum, or GitHub Release identity is fixed. An ordinary
+qualifying Receipt. On `runner_pass`, target setting returns the bound Review
+Packet directly. Standalone `review prepare` is for recovery if Packet
+preparation fails after the target is saved. The public inventory is exactly 24 leaves.
+No exact final candidate commit, tag, archive, checksum, or GitHub Release identity is fixed. An ordinary
 push to `main` is CI input, not release publication; nothing here dispatches CI
 or publishes a Release.
 

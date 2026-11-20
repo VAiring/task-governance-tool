@@ -114,13 +114,15 @@ class ProjectWaitTests(PreparationFixture):
         self.assertEqual({"task_id", "reviewer_ids"}, set(tools["review_wait_wait"]["inputSchema"]["properties"]))
         self.assertTrue(tools["review_wait_inspect"]["annotations"]["readOnlyHint"])
         after = file_snapshot(self.root)
-        # The separately opted-in backup observer may establish bounded service
-        # presence on entry. Discovery still creates no request/worker/backup,
-        # review state, or business mutation. Every preexisting byte is retained.
+        # The opted-in observer may publish its presence and last observation
+        # before stdin closes. All preexisting files must retain their contents.
         prefix = self.paths.backup_runtime.relative_to(self.root).as_posix()
-        presence = {prefix + "/" + name for name in (
-            "service.lock", "service.json", "opportunity.lock")}
-        self.assertLessEqual(set(after) - set(before), presence)
+        observer_controls = {prefix + "/" + name for name in (
+            "service.lock", "service.json", "opportunity.lock", "state.lock", "observer.json")}
+        self.assertLessEqual(set(after) - set(before), observer_controls)
+        if prefix + "/observer.json" in after:
+            self.assertIn(prefix + "/state.lock", after)
+            self.assertLessEqual((self.paths.backup_runtime / "observer.json").stat().st_size, 512)
         self.assertEqual(before, {name: value for name, value in after.items() if name in before})
 
     def test_auto_entry_discovery_does_not_require_or_resolve_host_marketplace(self):

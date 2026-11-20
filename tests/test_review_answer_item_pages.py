@@ -82,7 +82,8 @@ class DispatchPageTests(unittest.TestCase):
                 executable = home / "WindowsApps" / package / "app/resources/codex.exe"
                 executable.parent.mkdir(parents=True)
                 executable.touch()
-                self.assertEqual(_bundled_runtime(executable, home, home, home), executable)
+                admitted = _bundled_runtime(executable, home, home, home)
+                self.assertEqual(admitted, executable.resolve(strict=True))
                 for server_version in ("0.169.0-alpha.11.1", "1.2.3"):
                     for large, handles in ((False, False), (False, True), (True, False), (True, True)):
                         with self.subTest(package=package_version, server=server_version, large=large, handles=handles):
@@ -101,7 +102,7 @@ class DispatchPageTests(unittest.TestCase):
                                 child._message.side_effect = reply
                                 paths = {A: "/root/a", B: "/root/b"} if handles else {}
                                 adapter = PublicAnswerHost(None, PARENT, TURN, reviewer_paths=paths,
-                                    item_reader=lambda: open_reader(executable, home))
+                                    item_reader=lambda: open_reader(admitted, home))
                                 rows = adapter.bind_reviewers((A, B), creation_context=True)
                                 self.assertEqual([row["initial_turn_id"] for row in rows], [A, B])
                                 self.assertTrue(all(row["initial_observation"]["item_count"] == len(rpc.rows)

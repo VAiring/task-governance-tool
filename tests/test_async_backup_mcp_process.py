@@ -138,13 +138,21 @@ class AsyncBackupMcpProcessTests(unittest.TestCase):
                 failure = backup["observer"]["last_recorded"]
                 self.assertEqual((failure["stage"], failure["reason"]), ("owner_readmission", "database_busy"))
                 # A new service takes ownership while the first still responds.
+                record_path = root / "observer.json"
+                previous = record_path.stat()
                 with self.running_service(install, directory) as (_, new_send, _):
                     stop = time.monotonic() + 8
+                    history = None
                     while time.monotonic() < stop:
-                        history = diagnostics.observe(target, enabled=True)
-                        if (history["last_recorded"] or {}).get("reason") == "activated":
-                            break
+                        # The writer acquires state.lock once. Poll the atomic
+                        # replacement without contending for that same lock.
+                        current = record_path.stat()
+                        if (current.st_ino, current.st_size) != (previous.st_ino, previous.st_size):
+                            history = diagnostics.observe(target, enabled=True)
+                            if (history["last_recorded"] or {}).get("reason") == "activated":
+                                break
                         time.sleep(.05)
+                    self.assertIsNotNone(history, "replacement service did not publish an observer record")
                     self.assertEqual(history["ownership"], "held")
                     self.assertEqual(history["last_recorded"]["reason"], "activated")
                     self.assertEqual(opportunity.request_backup(target).code, "requested")

@@ -6,7 +6,8 @@ connection, reads originals, commits, invokes a host or finalizes a Task.
 """
 
 from . import task_ownership
-from .review_answer_transport import CollectedSubmission, CollectedItem, LegacyItem, SettledRegistrationRecovery, decode_collected_submission
+from .review_answer_transport import (CollectedSubmission, CollectedItem, LegacyItem,
+    SettledRegistrationRecovery, ManualRegistrationRecovery, decode_collected_submission, input_error)
 from .review_answer_repository import CollectedReceiptInput, record_dispatch_locked
 from .review_results import _invalid_input, _basis_mismatch, normalize_review_results, decode_review_results
 from .reviews import (normalize_receipt, add_review_receipt, add_review_finding,
@@ -62,7 +63,7 @@ def add_collected_review_results(connection, project, task_id, submission, *, ca
     # Internal callers receive the same closed byte validation as CLI stdin.
     submission = decode_collected_submission(submission.raw)
     if registration_recovery is not None:
-        if type(registration_recovery) is not SettledRegistrationRecovery or database_target is None:
+        if type(registration_recovery) not in (SettledRegistrationRecovery, ManualRegistrationRecovery) or database_target is None:
             raise _invalid_input()
         registration_recovery.require_submission(submission, finalization_basis)
     task_id = validate_task_id(task_id)
@@ -95,6 +96,14 @@ def add_collected_review_results(connection, project, task_id, submission, *, ca
         raise _basis_mismatch()
     validate_stored_review_target(locked)
     require_current_capture(locked)
+    if type(registration_recovery) is ManualRegistrationRecovery:
+        from .review_continuation_repository import require_current_basis
+        for item in submission.items:
+            require_current_basis(connection, item.metadata["basis"]["execution_basis"], caller)
+        receipts = _manual_recorded_results(connection, project.project_id, task_id,
+            submission, registration_recovery, normalized)
+        if receipts is not None:
+            return _result(connection, project.project_id, task_id, locked, target, receipts)
     if registration_recovery is not None:
         from .review_answer_repository import require_absent_registration_locked
         require_absent_registration_locked(connection, submission)
@@ -102,7 +111,6 @@ def add_collected_review_results(connection, project, task_id, submission, *, ca
     batch = begin_collected_locked(connection, project_id=project.project_id, task_id=task_id,
         submission=submission, caller=caller, database_target=database_target)
     if registration_recovery is not None and any(value is not None for value in batch.existing_receipt_ids):
-        from .review_answer_transport import input_error
         raise input_error("registration_unknown", reason="effect_unknown")
     receipts = []
     for index, (item, entry) in enumerate(zip(submission.items, normalized)):
@@ -142,7 +150,51 @@ def add_collected_review_results(connection, project, task_id, submission, *, ca
         submission_digest=submission.submission_digest, project_id=project.project_id, task_id=task_id,
         entries=[dispatch_entry(item, result["receipt"]["review_receipt_id"], submission.submission_digest)
                  for item, result in zip(submission.items, receipts)])
-    evidence = read_review_evidence(connection, project.project_id, task_id, validated_task=locked)
+    return _result(connection, project.project_id, task_id, locked, target, receipts)
+
+
+def _manual_recorded_results(connection, project_id, task_id, submission, recovery, normalized):
+    """Confirm a complete current native effect; absence is checked separately by the writer."""
+    from .review_answer_repository import read_registration
+    from .review_continuation_registration_repository import existing_acknowledgement
+    observed = read_registration(connection, project_id=project_id, task_id=task_id,
+        preparation_id=submission.preparation_id, submission_digest=submission.submission_digest)
+    if (type(observed) is not dict or set(observed) != {
+            "status", "preparation_id", "submission_digest", "current_basis", "entries", "reason"}
+            or observed["preparation_id"] != submission.preparation_id
+            or observed["submission_digest"] != submission.submission_digest
+            or type(observed["entries"]) is not list):
+        raise input_error("registration_unknown", reason="effect_unknown")
+    if observed["status"] == "absent":
+        if (observed["reason"] is not None or observed["current_basis"] is not None
+                or observed["entries"] or any(value is not None for value in recovery.receipt_ids)):
+            raise input_error("registration_unknown", reason="effect_unknown")
+        return None
+    entries = observed["entries"]
+    if (observed["status"] != "recorded" or observed["current_basis"] is not True or observed["reason"] is not None
+            or len(entries) != len(submission.items)
+            or entries != [dispatch_entry(item, row["receipt_id"], submission.submission_digest)
+                           for item, row in zip(submission.items, entries)]
+            or any(saved is not None and saved != row["receipt_id"]
+                   for saved, row in zip(recovery.receipt_ids, entries))):
+        raise input_error("registration_unknown", reason="effect_unknown")
+    receipts = []
+    for row, original in zip(entries, normalized):
+        saved = existing_acknowledgement(connection, row["receipt_id"])
+        # Native IDs are random and cannot reconstruct the original array order.
+        # Keep current resolution facts, but order every Finding by its bound payload.
+        findings = {(entry["finding"]["severity"], entry["finding"]["summary"]): entry
+                    for entry in saved["findings"]}
+        order = [(finding["severity"], finding["summary"]) for finding in original["findings"]]
+        if len(findings) != len(saved["findings"]) or len(order) != len(findings) or set(order) != set(findings):
+            raise input_error("registration_unknown", reason="effect_unknown")
+        saved["findings"] = [findings[key] for key in order]
+        receipts.append(saved)
+    return receipts
+
+
+def _result(connection, project_id, task_id, locked, target, receipts):
+    evidence = read_review_evidence(connection, project_id, task_id, validated_task=locked)
     blocker = first_review_gate_error(evidence)
     return dict(receipts=receipts, review_gate={**evidence["gate"],
         "blocking_code": blocker.code if blocker else None,

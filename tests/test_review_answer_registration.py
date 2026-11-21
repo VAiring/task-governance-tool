@@ -214,6 +214,29 @@ class RetainedSourceAdmissionTests(TestCase):
 
 
 class AdmissionSelectionTests(TestCase):
+    def test_manual_recovery_request_rejects_partial_mixed_and_integrated_inventory(self):
+        from tests.test_review_answer_pure_values import metadata_fixture
+        from task_governance_tool.review_answer_transport import ManualRegistrationRecovery, LegacyItem
+        meta, answer = metadata_fixture()
+        meta["basis"]["route"] = "manual"
+        from task_governance_tool.review_answer_values import basis_digest
+        meta["binding"]["basis_digest"] = basis_digest(meta["basis"])
+        submitted = decode_collected_submission(frame_collected_submission(meta["basis"]["preparation_id"],
+            (CollectedItem(1, answer.raw, meta, answer),)))
+        request = ManualRegistrationRecovery(submitted.preparation_id, submitted.submission_digest, (None,))
+        request.require_submission(submitted, None)
+        integrated = deepcopy(meta)
+        integrated["basis"]["route"] = "integrated"
+        for value, submission, basis in ((replace(request, receipt_ids=()), submitted, None),
+                (replace(request, receipt_ids=[None]), submitted, None),
+                (replace(request, submission_digest="sha256:" + "f" * 64), submitted, None),
+                (replace(request, preparation_id="tg_review_preparation_" + "f" * 16), submitted, None),
+                (request, submitted, object()),
+                (request, replace(submitted, items=(LegacyItem(1, b"", "", {}, None),)), None),
+                (request, replace(submitted, items=(replace(submitted.items[0], metadata=integrated),)), None)):
+            with self.subTest(value=value, basis=basis), self.assertRaises(ReviewResultInputError):
+                value.require_submission(submission, basis)
+
     def test_paired_selectors_and_audit_required(self):
         valid = dict(audit=True, collection_preparation="tg_review_preparation_" + "a"*16,
             collection_submission="sha256:" + "b"*64)
@@ -530,6 +553,7 @@ class RegistrationBoundaryTests(TestCase):
             args=SimpleNamespace(task_id=self.fixture.basis["task_id"],
                 user_approved_reviewers=()))
         self.admitted = mock.Mock()
+        self.admitted.manual_recovery.return_value = None
         self.admission = mock.MagicMock()
         self.admission.__enter__.return_value = self.admitted
         self.admission.__exit__.return_value = False
@@ -694,6 +718,303 @@ class _ConnectionCleanupFailure:
         self.connection.close()
         if self.phase == "close":
             raise OSError("SENTINEL private connection cleanup detail")
+
+
+class ManualRegistrationRecoveryTests(TestCase):
+    """Real saved originals, source leases and native registration transactions."""
+
+    def setUp(self):
+        from task_governance_tool import review_answer_handoff as handoff
+        from task_governance_tool import review_handoff_transport as files
+        from task_governance_tool.review_answer import decode_answer
+        from task_governance_tool.review_answer_collection import CollectionService, source
+        from task_governance_tool.review_answer_collection_repository import CollectionRepository
+
+        self.fixture = self.enterContext(review_fixture(schema_version=30, contract=None))
+        originals = [self.fixture.metadata(1, "changes_requested", [
+            dict(severity="medium", summary="Preserve the blocking finding"),
+            dict(severity="low", summary="Preserve the advisory finding")]),
+            self.fixture.metadata(2, "unable_to_review", [
+                dict(severity="low", summary="Preserve the partial review finding")])]
+        paths = ("reviews/result-1.json", "reviews/result-2.json")
+        (self.fixture.repo / "reviews").mkdir()
+        self.store = CollectionRepository(self.fixture.repo / "collection.sqlite3")
+        self.store.initialize(tuple(metadata["basis"] for metadata, _ in originals))
+        self.service = CollectionService(self.fixture.repo, self.store,
+            original_paths=paths, admit_basis=mock.Mock())
+        # Only fixed-path location/current-admission and ignore policy are fixture
+        # seams. Publication, exact byte readback, leases and native checks run.
+        self.enterContext(mock.patch.object(files, "require_ignored"))
+        items = []
+        for slot, (metadata, answer) in enumerate(originals, 1):
+            self.service.bind(slot, metadata["binding"])
+            self.service.observe(slot, dict(source_identity=metadata["source_identity"],
+                answer_bytes=answer.raw, complete=True, terminal="completed",
+                answer_source=source("answer_observation"),
+                terminal_source=source("terminal_observation")))
+            raw, saved = self.service.readback(slot)
+            items.append(CollectedItem(slot, raw, saved, decode_answer(raw)))
+        self.submitted = decode_collected_submission(frame_collected_submission(
+            items[0].metadata["basis"]["preparation_id"], items))
+        root = SimpleNamespace(version=2, result_paths=paths,
+            basis=self.fixture.basis, preparation_id=self.submitted.preparation_id)
+        resolution = SimpleNamespace(target=self.fixture.target, paths=SimpleNamespace(
+            review_continuation_store=lambda *_: self.fixture.repo / "absent-transition.sqlite"))
+        self.enterContext(mock.patch.object(handoff, "root_for", return_value=(resolution, root)))
+        self.enterContext(mock.patch.object(handoff, "service_for", return_value=self.service))
+        self.context = SimpleNamespace(repo=self.fixture.repo, caller=self.fixture.caller,
+            args=SimpleNamespace(task_id=self.fixture.task_id, user_approved_reviewers=()))
+        self.writer = self.enterContext(mock.patch.object(review_answer_registration,
+            "add_collected_review_results", wraps=add_collected_review_results))
+        self.dispatch = self.enterContext(mock.patch.object(self.service,
+            "mark_registration_locked", wraps=self.service.mark_registration_locked))
+        self.originals = tuple((self.fixture.repo / path).read_bytes() for path in paths)
+        self.metadata = tuple(deepcopy(item.metadata) for item in self.submitted.items)
+
+    def register(self):
+        return review_answer_registration.register(self.context, self.fixture.target, self.submitted)
+
+    def registrations(self):
+        return [record["registration"] for record in self.store.read()]
+
+    def reserve(self):
+        self.service.mark_registration((1, 2), self.submitted.submission_digest)
+
+    def snapshot(self):
+        tables = ("review_receipts", "review_findings", "review_collection_sources",
+            "review_collection_dispatches", "review_collection_dispatch_entries",
+            "review_receipt_provenance_v2", "review_receipt_sessions",
+            "review_receipt_judgments", "task_events", "evidence_references")
+        with closing(storage.connect_initialized_readonly(self.fixture.target)) as connection:
+            return {table: [tuple(row) for row in connection.execute("SELECT * FROM " + table)]
+                for table in tables}
+
+    def assert_originals_unchanged(self):
+        for item, raw, metadata in zip(self.submitted.items, self.originals, self.metadata):
+            self.assertEqual((self.fixture.repo / metadata["original"]["path"]).read_bytes(), raw)
+            self.assertEqual(item.raw, raw)
+            self.assertEqual(item.metadata, metadata)
+        self.assertTrue(all(not row.get("retired_registrations") for row in self.store.read()))
+
+    def test_database_busy_after_dispatch_recovers_originals_once_and_preserves_all_findings(self):
+        before = self.snapshot()
+        with mock.patch.object(review_answer_registration, "connect_initialized",
+                side_effect=storage.StorageError("database_busy", "task database is busy")):
+            with self.assertRaises(storage.StorageError) as caught:
+                self.register()
+        self.assertEqual(caught.exception.code, "database_busy")
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual([row["state"] for row in self.registrations()], ["dispatched"] * 2)
+        self.writer.assert_not_called()
+        result, warnings = self.register()
+        self.assertEqual(warnings, [])
+        self.assertEqual(self.dispatch.call_count, 1)
+        self.assertEqual([row["receipt"]["verdict"] for row in result["receipts"]],
+            ["changes_requested", "unable_to_review"])
+        self.assertEqual([finding["finding"]["summary"] for row in result["receipts"]
+            for finding in row["findings"]], ["Preserve the blocking finding",
+                "Preserve the advisory finding", "Preserve the partial review finding"])
+        self.assertFalse(result["review_gate"]["satisfied"])
+        self.assertEqual([row["receipt_id"] for row in self.registrations()],
+            [row["receipt"]["review_receipt_id"] for row in result["receipts"]])
+        after = self.snapshot()
+        repeated, warnings = self.register()
+        self.assertEqual((repeated, warnings), (result, []))
+        self.assertEqual(self.snapshot(), after)
+        self.assertEqual(len(after["review_receipts"]), 2)
+        self.assertEqual(len(after["review_findings"]), 3)
+        self.assert_originals_unchanged()
+
+    def test_lost_confirmation_recovers_exact_committed_ids_without_new_native_rows(self):
+        with mock.patch.object(self.service, "confirm_registration_locked",
+                side_effect=OSError("SENTINEL lost collection acknowledgement")):
+            result, warnings = self.register()
+        self.assertEqual([warning["code"] for warning in warnings],
+            ["collection_registration_acknowledgement_unavailable"])
+        self.assertNotIn("SENTINEL", str(warnings))
+        before = self.snapshot()
+        repeated, warnings = self.register()
+        self.assertEqual((repeated, warnings), (result, []))
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual(self.dispatch.call_count, 1)
+        self.assert_originals_unchanged()
+
+    def test_unknown_source_and_partially_confirmed_exact_batch_can_acknowledge(self):
+        self.reserve()
+        with self.store.serial() as lease:
+            self.service.unknown_registration_locked(lease, (2,), self.submitted.submission_digest)
+        actual = self.service.confirm_registration_locked
+        def fail_second(lease, slot, digest, receipt_id):
+            if slot == 2:
+                raise OSError("lost second acknowledgement")
+            return actual(lease, slot, digest, receipt_id)
+        with mock.patch.object(self.service, "confirm_registration_locked", side_effect=fail_second):
+            result, warnings = self.register()
+        self.assertEqual(len(warnings), 1)
+        self.assertEqual([row["state"] for row in self.registrations()], ["registered", "unknown"])
+        before = self.snapshot()
+        self.assertEqual(self.register(), (result, []))
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual(self.dispatch.call_count, 1)
+
+    def test_recovery_holds_source_lease_through_native_commit_close_and_confirmation(self):
+        self.reserve()
+        actual_connect = review_answer_registration.connect_initialized
+        owner = self
+        def assert_locked():
+            with owner.assertRaises(RepositoryError):
+                with owner.store.serial():
+                    owner.fail("source lease was released before registration settled")
+        class ObservedConnection(_ConnectionCleanupFailure):
+            def __exit__(self, *error):
+                assert_locked()
+                return super().__exit__(*error)
+            def close(self):
+                assert_locked()
+                return super().close()
+        def connect(target, **options):
+            assert_locked()
+            self.assertTrue(options["operation_local"])
+            self.assertEqual(options["review_task_id"], self.fixture.task_id)
+            return ObservedConnection(actual_connect(target, **options), "observe")
+        actual_confirm = self.service.confirm_registration_locked
+        def confirm(*args):
+            assert_locked()
+            return actual_confirm(*args)
+        with mock.patch.object(review_answer_registration, "connect_initialized", side_effect=connect), \
+                mock.patch.object(self.service, "confirm_registration_locked", side_effect=confirm):
+            self.assertEqual(self.register()[1], [])
+
+    def test_busy_source_or_changed_saved_original_rejects_before_native_connection(self):
+        self.reserve()
+        before = self.snapshot()
+        with mock.patch.object(review_answer_registration, "connect_initialized") as connect:
+            with self.store.serial(), self.assertRaises(ReviewResultInputError):
+                self.register()
+            path = self.fixture.repo / self.metadata[1]["original"]["path"]
+            path.write_bytes(self.originals[1] + b" ")
+            with self.assertRaises(ReviewResultInputError):
+                self.register()
+            connect.assert_not_called()
+        self.assertEqual(self.snapshot(), before)
+
+    def test_partial_dispatch_and_conflicting_submission_digest_reject_before_writer(self):
+        before = self.snapshot()
+        self.service.mark_registration((1,), self.submitted.submission_digest)
+        with self.assertRaises(ReviewResultInputError):
+            self.register()
+        self.service.mark_registration((2,), "sha256:" + "f" * 64)
+        with self.assertRaises(ReviewResultInputError):
+            self.register()
+        self.writer.assert_not_called()
+        self.assertEqual(self.snapshot(), before)
+
+    def test_unsettled_publication_rejects_saved_file_without_native_or_source_writes(self):
+        from task_governance_tool.review_answer_collection_repository import _encode
+        record = self.store.read()[0]
+        record["attempts"][0]["publication"]["state"] = "unknown"
+        # Model a lost original-publication acknowledgement in the disposable
+        # operational store; a physical file alone cannot settle that effect.
+        with closing(sqlite3.connect(self.store.path)) as connection, connection:
+            connection.execute("UPDATE slots SET record_json=? WHERE slot=1", (_encode(record),))
+        before, sources = self.snapshot(), self.store.read()
+        with mock.patch.object(review_answer_registration, "connect_initialized") as connect:
+            with self.assertRaises(ReviewResultInputError) as caught:
+                self.register()
+            self.assertEqual(caught.exception.code, "save_unknown")
+            connect.assert_not_called()
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual(self.store.read(), sources)
+        self.assert_originals_unchanged()
+
+    def test_registered_source_without_native_effect_is_not_absence_permission(self):
+        self.reserve()
+        self.service.confirm_registration(1, self.submitted.submission_digest,
+            "tg_review_receipt_" + "f" * 16)
+        before = self.snapshot()
+        with self.assertRaises(ReviewResultInputError):
+            self.register()
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual(self.registrations()[0]["receipt_id"], "tg_review_receipt_" + "f" * 16)
+
+    def test_conflicting_confirmed_receipt_is_not_repaired_from_native_inventory(self):
+        with mock.patch.object(self.service, "confirm_registration_locked", side_effect=OSError):
+            self.register()
+        self.service.confirm_registration(1, self.submitted.submission_digest,
+            "tg_review_receipt_" + "f" * 16)
+        before = self.snapshot()
+        with self.assertRaises(ReviewResultInputError):
+            self.register()
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual(self.registrations()[0]["receipt_id"], "tg_review_receipt_" + "f" * 16)
+
+    def assert_native_residue_rejected(self, tables):
+        with mock.patch.object(self.service, "confirm_registration_locked", side_effect=OSError):
+            self.register()
+        # Deliberate malformed native state is confined to this disposable DB.
+        with closing(storage.connect(self.fixture.db)) as connection, connection:
+            connection.execute("PRAGMA foreign_keys=OFF")
+            guards = SettledRecoveryTests.remove_guards(connection)
+            for table in tables:
+                connection.execute("DELETE FROM " + table)
+            for guard in guards:
+                connection.execute(guard)
+        def raw_state():
+            with closing(storage.connect(self.fixture.db)) as connection:
+                return tuple(connection.iterdump())
+        before, states = raw_state(), self.registrations()
+        with self.assertRaises((storage.StorageError, ReviewResultInputError)):
+            self.register()
+        self.assertEqual(raw_state(), before)
+        self.assertEqual(self.registrations(), states)
+        self.assert_originals_unchanged()
+
+    def test_partial_native_dispatch_inventory_never_becomes_recovery_permission(self):
+        self.assert_native_residue_rejected(("review_collection_dispatches",))
+
+    def test_native_source_residue_without_dispatch_never_becomes_recovery_permission(self):
+        self.assert_native_residue_rejected(("review_collection_dispatches", "review_collection_dispatch_entries"))
+
+    def test_target_mutation_after_source_admission_rejects_without_registering(self):
+        from tests.verification_receipt_test_support import set_target, FINGERPRINT_B
+        from task_governance_tool.reviews import ReviewEvidenceError
+        self.reserve()
+        actual_connect = review_answer_registration.connect_initialized
+        def connect(target, **options):
+            set_target(self.fixture.db, self.fixture.repo, self.fixture.task_id, fingerprint=FINGERPRINT_B)
+            return actual_connect(target, **options)
+        with mock.patch.object(review_answer_registration, "connect_initialized", side_effect=connect), \
+                self.assertRaises(ReviewEvidenceError) as caught:
+            self.register()
+        self.assertEqual(caught.exception.code, "review_target_mismatch")
+        self.assertEqual(len(self.snapshot()["review_receipts"]), 0)
+        self.assertEqual([row["state"] for row in self.registrations()], ["dispatched"] * 2)
+
+    def test_block_and_resume_same_owner_same_execution_rejects_old_answers_inside_writer(self):
+        from task_governance_tool.tasks import edit_task
+        from task_governance_tool.task_ownership import read_basis
+        from task_governance_tool.task_values import TaskValidationError
+        self.reserve()
+        actual_connect = review_answer_registration.connect_initialized
+        def connect(target, **options):
+            for change in (dict(status="blocked", blocked_reason="Temporary review registration block"),
+                    dict(status="in_progress")):
+                with closing(storage.connect_initialized(target)) as changed, changed:
+                    edit_task(changed, target.project, self.fixture.task_id,
+                        database_target=target, caller=self.fixture.caller, **change)
+            with closing(storage.connect_initialized_readonly(target)) as observed:
+                owner = read_basis(observed, project_id=target.project.project_id, task_id=self.fixture.task_id)
+            self.assertEqual(owner.execution_id, self.fixture.basis["execution_id"])
+            self.assertEqual(owner.owner_session_id, self.fixture.basis["parent_session_id"])
+            self.assertGreater(owner.generation, self.fixture.basis["ownership_generation"])
+            return actual_connect(target, **options)
+        with mock.patch.object(review_answer_registration, "connect_initialized", side_effect=connect), \
+                self.assertRaises(TaskValidationError) as caught:
+            self.register()
+        self.assertEqual(caught.exception.code, "task_ownership_changed")
+        self.assertEqual(len(self.snapshot()["review_receipts"]), 0)
+        self.assertEqual([row["state"] for row in self.registrations()], ["dispatched"] * 2)
+        self.assert_originals_unchanged()
 
 
 class SettledRecoveryTests(TestCase):

@@ -1047,8 +1047,12 @@ not another target or Receipt write.
 
 Invalid input saves no prefix. Obtain corrections from their actual source.
 Post-commit display warnings or emission failure do not undo saved results.
-If a response is lost, inspect recorded state before retrying; committed replay
-is not idempotent. JSON grants no approval. Use a named-reviewer approval flag
+If a response is lost, inspect recorded state before retrying. For an unchanged
+all-collected manual preparation, the retained submit command supports
+[locked recovery or exact recorded-batch confirmation](cli_contracts.md#recover-review-handoff);
+it never repeats a committed registration. Legacy replay remains rejected, and
+changed ownership or target cannot be repaired by reusing stale answers.
+JSON grants no approval. Use a named-reviewer approval flag
 only with actual current user approval under the existing fallback rule.
 If the received review is not in that structured format but supplies the actual
 Receipt declarations, use the [single Receipt path](cli_contracts.md#review-provenance)

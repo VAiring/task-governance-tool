@@ -1670,7 +1670,11 @@ unchanged index lock is removed by the adapter. Failure after dispatch is not
 claimed as rollback: the saved candidate and actual refs determine recovery.
 An explicit retry may reuse only that candidate after observing the original
 base/index, with the same old-ID comparison, never a second commit.
-The adapter rejects detached HEAD and nested project-relative snapshots;
+The adapter checks the selected worktree's `MERGE_HEAD` before saving intent,
+before creating a candidate and immediately before committing the prepared
+ref transaction while the index and HEAD locks are held. A pending merge is
+left intact and prevents the single-parent commit from advancing the branch.
+The adapter also rejects detached HEAD and nested project-relative snapshots;
 the manual route preserves project-required hooks, signing and those layouts.
 Core connections are closed during Git work; operational writer leases do not
 hold SQLite transactions across subprocesses.

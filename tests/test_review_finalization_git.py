@@ -450,6 +450,49 @@ class FinalizationGitTests(unittest.TestCase):
                     adapter.publish_candidate(repo, candidate=candidate, **binding)
                 self.assertEqual(git(repo, "rev-parse", "HEAD").stdout.strip(), before)
 
+    def test_pending_merge_with_reviewed_index_cannot_publish_single_parent(self):
+        with self.project() as (repo, binding):
+            candidate = self.candidate(repo, binding)
+            git(repo, "switch", "-c", "incoming")
+            git(repo, "commit", "--quiet", "-m", "incoming change")
+            incoming = git(repo, "rev-parse", "HEAD").stdout.strip()
+            git(repo, "switch", "-")
+            git(repo, "merge", "--no-ff", "--no-commit", "incoming")
+            self.assertEqual(capture_git_snapshot(repo).fingerprint, binding["fingerprint"])
+            with self.assertRaises(adapter.FinalizationGitError) as create:
+                self.candidate(repo, binding)
+            with self.assertRaises(adapter.FinalizationGitError) as publish:
+                adapter.publish_candidate(repo, candidate=candidate, **binding)
+            self.assertEqual(create.exception.code, "finalization_git_unsupported")
+            self.assertEqual(publish.exception.code, "finalization_git_unsupported")
+            self.assertEqual(git(repo, "rev-parse", "HEAD").stdout.strip(), binding["base"])
+            self.assertEqual(git(repo, "rev-parse", "MERGE_HEAD").stdout.strip(), incoming)
+            self.assertEqual(capture_git_snapshot(repo).fingerprint, binding["fingerprint"])
+
+    def test_merge_marker_appearing_at_final_gate_aborts_prepared_update(self):
+        with self.project() as (repo, binding):
+            candidate = self.candidate(repo, binding)
+            marker = repo / ".git" / "MERGE_HEAD"
+            def revalidate():
+                if (marker.parent / "HEAD.lock").exists():
+                    marker.write_text(binding["base"] + "\n", encoding="ascii")
+            with self.assertRaises(adapter.FinalizationGitError) as error:
+                adapter.publish_candidate(repo, candidate=candidate, revalidate=revalidate, **binding)
+            self.assertEqual(error.exception.code, "finalization_git_unsupported")
+            self.assertEqual(git(repo, "rev-parse", "HEAD").stdout.strip(), binding["base"])
+            self.assertTrue(marker.is_file())
+
+    def test_merge_marker_belongs_to_the_selected_worktree(self):
+        with self.project() as (repo, binding):
+            linked = repo.parent / "linked"
+            git(repo, "worktree", "add", "-b", "linked", str(linked), binding["base"])
+            marker = Path(git(linked, "rev-parse", "--path-format=absolute", "--git-path", "MERGE_HEAD").stdout.strip())
+            marker.write_text(binding["base"] + "\n", encoding="ascii")
+            adapter.require_no_pending_merge(repo)
+            with self.assertRaises(adapter.FinalizationGitError) as error:
+                adapter.require_no_pending_merge(linked)
+            self.assertEqual(error.exception.code, "finalization_git_unsupported")
+
     def test_foreign_lock_is_preserved_and_no_ref_moves(self):
         with self.project() as (repo, binding):
             candidate = self.candidate(repo, binding)

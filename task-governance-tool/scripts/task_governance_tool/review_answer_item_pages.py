@@ -113,20 +113,31 @@ class DispatchTurn:
             cursors.add(cursor)
         _fail("bound")
 
-    def resolve(self, references):
+    def resolve(self, references, *, expected=None):
         identities = []
-        for ref in references:
+        for index, ref in enumerate(references):
             if ref.startswith("/"):
                 matches = {item["agentThreadId"] for item in self.activities
                            if item.get("agentPath") == ref and item["kind"] in ("started", "interacted")}
-                if len(matches) != 1:
-                    _fail("conflict" if matches else "initial_dispatch_unobserved", "binding_mismatch")
-                identities.append(matches.pop())
+                if not matches:
+                    continue
+                if len(matches) > 1:
+                    _fail("conflict", "binding_mismatch")
+                identity = matches.pop()
             else:
-                identities.append(_uuid(ref))
+                identity = _uuid(ref)
+            if expected is not None and identity != expected[index]:
+                _fail("conflict", "binding_mismatch")
+            identities.append(identity)
         if self.parent in identities or len(set(identities)) != len(identities):
             _fail("conflict", "binding_mismatch")
-        _check_wait_order(self.activities, identities)
+        children = identities if expected is None else expected
+        _check_wait_order(self.activities, children)
+        if len(identities) != len(references):
+            # An absent handle must not mask a known child's conflicting activity.
+            self.dispatches(children)
+            # If every expected child dispatched, the missing path disagrees with its UUID.
+            _fail("initial_dispatch_unobserved" if expected is None else "conflict", "binding_mismatch")
         return tuple(identities)
 
     def dispatches(self, children):
@@ -145,8 +156,7 @@ class DispatchTurn:
         if latest_turn_id(self.rpc, self.parent) != self.turn:
             _fail("identity", "binding_mismatch")
         self.read()
-        if self.resolve(references) != children:
-            _fail("conflict", "binding_mismatch")
+        self.resolve(references, expected=children)
         initial = self.dispatches(children)
         child_turns = []
         for child in children:
@@ -170,7 +180,8 @@ class DispatchTurn:
                     or self.activities[:len(first_activities)] != first_activities):
                 _fail("conflict", "binding_mismatch")
         self.read(tail=True)
-        if self.resolve(references) != children or self.dispatches(children) != initial:
+        self.resolve(references, expected=children)
+        if self.dispatches(children) != initial:
             _fail("conflict", "binding_mismatch")
         if latest_turn_id(self.rpc, self.parent) != self.turn:
             _fail("identity", "binding_mismatch")

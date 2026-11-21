@@ -114,6 +114,7 @@ def prepare_intent(repo, packet_path, result_paths, caller):
                    for key in ("kind", "value", "base_revision", "generation"))):
         _fail("review_target_mismatch")
     expected_branch = git.branch(repo)
+    git.require_no_pending_merge(repo)
     git.matching_snapshot(repo, base=basis["target_base_revision"], fingerprint=basis["target_value"],
                           expected_branch=expected_branch)
     resolution = resolve(repo, writing=True)

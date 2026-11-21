@@ -1955,10 +1955,12 @@ and gates immediately before updating only the already existing current branch
 with an old-ID comparison, then verifies the actual resulting commit again.
 Ordinary index/HEAD writers are excluded during this final comparison and ref
 publication. It does not execute hooks, signing, editors or filters; callers
-whose project requires them use manual Git completion. Detached HEAD and nested
-project-relative snapshots also retain the manual path.
-Their existing manual completion and material reads use the governed-subtree
-binding below; this does not extend integrated finalization to nested projects.
+whose project requires them use manual Git completion. A pending merge in the
+selected worktree excludes integrated preparation and commit publication, even
+after all index conflicts are resolved. The adapter leaves the merge for Git
+to finish. Detached HEAD and nested project-relative snapshots also retain the
+manual path. For nested projects, manual completion and material reads use
+the governed-subtree binding below.
 
 Within one integrated finalizer execution, a successful complete candidate
 parent/tree/fingerprint validation may be shared by candidate creation,

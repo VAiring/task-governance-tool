@@ -2488,6 +2488,8 @@ target_generation}` and a fully quoted `finalization_command`, and omits
 actual owner, execution, Contract, target generation, stable base/index, existing
 branch, complete Packet and named original paths in canonical operational state.
 The target must be `git_snapshot` at the Git root on an existing attached branch.
+Integrated preparation and commit publication require that this worktree have
+no pending merge, including a merge whose index conflicts are already resolved.
 The adapter preserves index/worktree content and executes no commit hooks,
 signing, filters or editor. Projects requiring those use the manual Git workflow.
 No stage, new branch, push, arbitrary command or permission/config write occurs.

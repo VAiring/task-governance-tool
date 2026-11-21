@@ -4,7 +4,6 @@ from contextlib import nullcontext
 from dataclasses import replace
 from hashlib import sha256
 import json
-import os
 from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
@@ -114,6 +113,18 @@ class DispatchPageTests(unittest.TestCase):
                                                      after=items + messages(1))
                         self.assertEqual([f["initial_turn_id"] for f in facts], list(children))
                         self.assertTrue(all(f["initial_observation"]["item_count"] == 5 for f in facts))
+
+    def test_missing_dispatch_preserves_other_reviewers_failure_across_readers(self):
+        for route in ("whole", "paged"):
+            for handles in (False, True):
+                for children in ((A, B), (B, A)):
+                    for extra, reason in (([], "initial_dispatch_unobserved"),
+                                          ([activity("touch", B, "interacted")], "initial_binding_interacted"),
+                                          ([activity("other-start", B)], "conflict")):
+                        with self.subTest(route=route, handles=handles, children=children, reason=reason):
+                            with self.assertRaises(AnswerError) as failure:
+                                self.observe_history(route, [activity("start-b", B), *extra], children, handles=handles)
+                            self.assertEqual(failure.exception.failure["reason"], reason)
 
     def test_legacy_wait_rejects_unproved_effect_order_and_changed_prefix(self):
         start, second = activity("a", A), activity("b", B)
@@ -237,11 +248,11 @@ class DispatchPageTests(unittest.TestCase):
                     (default_home, "CODEX_APP_RUNTIME_CLI_PATH", False), (custom_home, "CODEX_HOME", False)):
                 source = desktop if home == default_home else {**desktop, "CODEX_HOME": str(custom_home)}
                 inherited = {key: source[key] for key in forwarded_names if key in source and key != omitted}
+                environment = SimpleNamespace(name="nt", environ={"ProgramFiles": str(root), **inherited})
                 with (self.subTest(home=home.name, omitted=omitted),
-                      patch.dict(os.environ, {"ProgramFiles": str(root), **inherited}, clear=True),
                       patch.object(Path, "home", return_value=root),
-                      patch("task_governance_tool.review_wait_runtime.item_reader.os",
-                            SimpleNamespace(name="nt", environ=os.environ)),
+                      patch("task_governance_tool.review_wait_runtime.review_wait_host.os", environment),
+                      patch("task_governance_tool.review_wait_runtime.item_reader.os", environment),
                       patch("task_governance_tool.review_wait_runtime.item_reader.open_reader",
                             return_value=nullcontext(PublicPages())) as reader):
                     host = PublicMcpHost.from_environment(server_path=server, metadata=dict(threadId=PARENT, turnId=TURN),

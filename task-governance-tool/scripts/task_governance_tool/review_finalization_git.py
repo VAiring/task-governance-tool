@@ -36,6 +36,21 @@ def branch(repo):
     return value
 
 
+def _require_merge_absent(marker):
+    try:
+        marker.lstat()
+    except FileNotFoundError:
+        return
+    except OSError:
+        _fail("finalization_git_unsupported")
+    _fail("finalization_git_unsupported")
+
+
+def require_no_pending_merge(repo):
+    raw = run_git_bytes(repo, ["rev-parse", "--path-format=absolute", "--git-path", "MERGE_HEAD"], output_limit=16384)
+    _require_merge_absent(_path(Path(os.fsdecode(raw.rstrip(b"\n")))))
+
+
 def matching_snapshot(repo, *, base, fingerprint, expected_branch):
     before = branch(repo)
     snapshot = capture_git_snapshot(repo)
@@ -76,6 +91,7 @@ def create_candidate(repo, *, base, fingerprint, expected_branch, task_id, git_v
     """
     if run_git_bytes(repo, ["rev-parse", "--show-prefix"], output_limit=4096).strip():
         _fail("finalization_git_unsupported")
+    require_no_pending_merge(repo)
     matching_snapshot(repo, base=base, fingerprint=fingerprint, expected_branch=expected_branch)
     directories = {(): {}}
 
@@ -186,6 +202,8 @@ def _publish_transaction(repo, *, candidate, base, expected_branch, revalidate):
         if not _physical(lock.lstat()) or branch(repo) != expected_branch:
             _fail("review_target_mismatch")
         revalidate()
+        # HEAD.lock and MERGE_HEAD belong to this worktree, including linked worktrees.
+        _require_merge_absent(lock.with_name("MERGE_HEAD"))
         exchange(b"commit\n", b"commit: ok\n")
         process.stdin.close()
         if process.wait(timeout=15) != 0:

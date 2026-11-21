@@ -141,6 +141,24 @@ class InstalledFinalizationTests(fixtures.PreparationFixture):
     git = fixtures.ReviewerMaterialTests.git
     committed_fixture = fixtures.ReviewerMaterialTests.committed_fixture
 
+    def test_pending_merge_refuses_integrated_preparation(self):
+        base = self.committed_fixture()
+        task = self.task()
+        self.git("switch", "-c", "incoming")
+        (self.root / "source.py").write_text("value = 2\n", encoding="utf-8")
+        self.git("commit", "-am", "incoming change")
+        incoming = self.git("rev-parse", "HEAD")
+        self.git("switch", "-")
+        self.git("merge", "--no-ff", "--no-commit", "incoming")
+        run = self.invoke("prepare-finalization", "--repo", str(self.root),
+                          "--directory=reviews/g1", "target", task, "--kind=git_snapshot")
+        self.assertNotEqual(run.returncode, 0)
+        response = json.loads(run.stdout)
+        self.assertEqual(response["errors"][0]["code"], "finalization_git_unsupported", response)
+        self.assertEqual(response["handoff"], {"status": "failed"})
+        self.assertEqual(self.git("rev-parse", "HEAD").decode().strip(), base)
+        self.assertEqual(self.git("rev-parse", "MERGE_HEAD"), incoming)
+
     def prepared(self):
         self.committed_fixture()
         task = self.task("Focused isolated verification")

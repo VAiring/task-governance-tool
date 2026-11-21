@@ -143,6 +143,27 @@ def _page(value, expected_thread, limit):
     return page, turns
 
 
+def _observed_reviewer_ids(items, references, *, expected=None):
+    """Return observed IDs in slot order; reject known handle conflicts even if another handle is absent."""
+    identities = []
+    for index, ref in enumerate(references):
+        if ref.startswith("/"):
+            matches = {item["agentThreadId"] for item in items
+                       if item.get("type") == "subAgentActivity" and item.get("agentPath") == ref
+                       and item.get("kind") in ("started", "interacted")}
+            if not matches:
+                continue
+            if len(matches) != 1:
+                _fail("conflict", "binding_mismatch")
+            identity = matches.pop()
+        else:
+            identity = _uuid(ref)
+        if expected is not None and identity != expected[index]:
+            _fail("conflict", "binding_mismatch")
+        identities.append(identity)
+    return tuple(identities)
+
+
 def _dispatch_activity(items, child, expected_dispatch=None):
     """A completion notice is not another dispatch or permission to reuse a child."""
     activities = [item for item in items if type(item) is dict
@@ -276,6 +297,8 @@ class PublicAnswerHost:
         verify_tail = self.verify_whole_turn_tail or self.item_reader is not None or any(
             isinstance(item, dict) and item.get("type") == "collabAgentToolCall" for item in parent["items"])
         before = _item_prefix(parent, self.parent_session_id, children) if verify_tail and parent["items"] else []
+        references = tuple(self.reviewer_paths.get(child, child) for child in children)
+        observed = _observed_reviewer_ids(parent["items"], references, expected=children) if verify_tail else children
         dispatches = []
         missing_dispatch = False
         for child in children:
@@ -289,7 +312,7 @@ class PublicAnswerHost:
                 missing_dispatch = True
         if missing_dispatch:
             _fail("initial_dispatch_unobserved", "binding_mismatch")
-        if len(set(dispatches)) != len(dispatches):
+        if observed != children or len(set(dispatches)) != len(dispatches):
             _fail("conflict", "binding_mismatch")
         results = []
         for child, dispatch in zip(children, dispatches):
@@ -304,16 +327,10 @@ class PublicAnswerHost:
             after = _item_prefix(final, self.parent_session_id, children)
             if after[:len(before)] != before:
                 _fail("conflict", "binding_mismatch")
+            if _observed_reviewer_ids(final["items"], references, expected=children) != children:
+                _fail("conflict", "binding_mismatch")
             for child, dispatch, result in zip(children, dispatches, results):
                 _dispatch_activity(final["items"], child, dispatch)
-                path = self.reviewer_paths.get(child)
-                if path and path.startswith("/"):
-                    for snapshot in (parent, final):
-                        identities = {item.get("agentThreadId") for item in snapshot["items"]
-                                      if item.get("type") == "subAgentActivity" and item.get("agentPath") == path
-                                      and item.get("kind") in ("started", "interacted")}
-                        if identities != {child}:
-                            _fail("conflict", "binding_mismatch")
                 result["initial_observation"] = initial_observation(self.parent_turn_id, len(after), after[-1][0])
         return tuple(results)
 

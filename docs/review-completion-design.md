@@ -597,7 +597,10 @@ remaining activity identity and completeness before making that negative
 observation; it never follows older turns. The multi-reviewer adapter defers
 this reason while checking every other requested reviewer. Other observed
 activity failures take precedence over absence regardless of slot order, before
-child-turn reads. `bind_initial` exposes this reason
+child-turn reads. Whole-turn and paginated reads use the same handle lookup.
+A handle that identifies multiple reviewers or contradicts its assigned UUID
+is a conflict even when another requested reviewer has no dispatch.
+`bind_initial` exposes the absence reason
 only for a completely unbound initial set. A partially saved set retains its
 existing conflict boundary, and exact saved bindings still bypass dispatch I/O.
 The closed failure validator restricts both initial reasons to

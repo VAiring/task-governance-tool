@@ -126,6 +126,23 @@ class DispatchPageTests(unittest.TestCase):
                                 self.observe_history(route, [activity("start-b", B), *extra], children, handles=handles)
                             self.assertEqual(failure.exception.failure["reason"], reason)
 
+    def test_missing_dispatch_preserves_handle_conflicts_across_readers(self):
+        start_b = activity("start-b", B)
+        foreign = activity("third-start", TURN)
+        histories = (
+            [start_b, foreign],  # Two UUIDs use B's handle.
+            [dict(start_b, agentPath="/root/other"), foreign],  # B's handle maps only to the third UUID.
+            [start_b, dict(foreign, agentPath="/root/a")],  # The absent A's handle maps to the third UUID.
+        )
+        for rows in histories:
+            for route in ("whole", "paged"):
+                for children in ((A, B), (B, A)):
+                    for handles, reason in ((True, "conflict"), (False, "initial_dispatch_unobserved")):
+                        with self.subTest(rows=rows, route=route, children=children, handles=handles):
+                            with self.assertRaises(AnswerError) as failure:
+                                self.observe_history(route, rows, children, handles=handles)
+                            self.assertEqual(failure.exception.failure["reason"], reason)
+
     def test_legacy_wait_rejects_unproved_effect_order_and_changed_prefix(self):
         start, second = activity("a", A), activity("b", B)
         base = [legacy_wait(), start, second]

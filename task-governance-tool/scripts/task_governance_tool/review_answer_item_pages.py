@@ -3,7 +3,7 @@
 from .review_answer import AnswerError
 from .review_answer_host import (
     _NON_ACTIVITY, _check_wait_order, _content_complete, _dispatch_activity, _fail,
-    _host_id, _require_empty_wait, _uuid, initial_observation,
+    _host_id, _observed_reviewer_ids, _require_empty_wait, _uuid, initial_observation,
 )
 from .review_answer_collection import source
 
@@ -114,21 +114,7 @@ class DispatchTurn:
         _fail("bound")
 
     def resolve(self, references, *, expected=None):
-        identities = []
-        for index, ref in enumerate(references):
-            if ref.startswith("/"):
-                matches = {item["agentThreadId"] for item in self.activities
-                           if item.get("agentPath") == ref and item["kind"] in ("started", "interacted")}
-                if not matches:
-                    continue
-                if len(matches) > 1:
-                    _fail("conflict", "binding_mismatch")
-                identity = matches.pop()
-            else:
-                identity = _uuid(ref)
-            if expected is not None and identity != expected[index]:
-                _fail("conflict", "binding_mismatch")
-            identities.append(identity)
+        identities = _observed_reviewer_ids(self.activities, references, expected=expected)
         if self.parent in identities or len(set(identities)) != len(identities):
             _fail("conflict", "binding_mismatch")
         children = identities if expected is None else expected
@@ -138,7 +124,7 @@ class DispatchTurn:
             self.dispatches(children)
             # If every expected child dispatched, the missing path disagrees with its UUID.
             _fail("initial_dispatch_unobserved" if expected is None else "conflict", "binding_mismatch")
-        return tuple(identities)
+        return identities
 
     def dispatches(self, children):
         dispatches = []

@@ -503,9 +503,11 @@ generation-retention rules.
 
 The already configured MCP service observes the fixed opportunity file every
 ten seconds independently of review-wait policy and reviewer activity. Idle
-observation opens no database and hashes no package contents. An absent or
-incompatible service defers an eligible request with business success unchanged;
-ordinary commands do not start a service, alter configuration, launch a backup
+observation opens no database and hashes no package contents. When the CLI
+detects an absent or incompatible service at request time, it defers the
+request and the mutation succeeds. After publication, the service checks that
+its loaded runtime matches the deployed runtime before starting a worker.
+Ordinary commands do not start a service, alter configuration, launch a backup
 themselves or fall back to a synchronous copy. Service startup/takeover baselines
 old requests instead of replaying them. No extra LLM command or host timer is
 needed, and clock ticks alone do not schedule backups.

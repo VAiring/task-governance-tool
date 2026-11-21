@@ -427,12 +427,13 @@ configuration file.
 After opt-in, an eligible successful mutation closes its SQLite write before
 refreshing due Evidence and then the Viewer when relevant. The Viewer renders
 at most twice to absorb one concurrent change. A deferred or failed refresh
-leaves the projection due and preserves the mutation's result. When a backup is due or needs recovery,
-the command can then publish one request to the existing compatible project MCP
-service. A service-owned worker creates the backup asynchronously. If the service
-is absent or incompatible, the mutation still succeeds with
-`backup_request_deferred`. A later eligible mutation can request the backup
-again. Check the last confirmed backup with `doctor`.
+leaves the projection due and preserves the mutation's result. When a backup
+is due or needs recovery, the CLI can publish one request to the existing
+project MCP service. If the CLI detects an absent or incompatible service at
+request time, the mutation succeeds with `backup_request_deferred`. After a
+request is published, the service checks its runtime before starting the backup
+worker. A later eligible mutation can request the backup again. Check the last
+confirmed backup with `doctor`.
 See [asynchronous backup](docs/setup-state-specification.md#asynchronous-backup).
 
 Generated Evidence JSON, Viewer, and managed backups

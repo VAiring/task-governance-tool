@@ -1183,9 +1183,9 @@ general adversarial TOCTOU defense.
 ## Published Release Artifact And Compatibility Design
 
 The v0.10.0 publication is an external projection of one reviewed repository
-commit, not a product runtime subsystem. The exact accepted commit, remote
-`main`, and unpeeled lightweight tag `v0.10.0` are
-`a9b80ce177a6dead10d51a070b76ff01f7af0294`. GitHub Release `362617903`
+commit, not a product runtime subsystem. The lightweight tag `v0.10.0` points
+directly to the accepted commit `a9b80ce177a6dead10d51a070b76ff01f7af0294`.
+Remote `main` pointed to that commit at publication. GitHub Release `362617903`
 has prerelease visibility. Runtime code does not derive current behavior from
 a branch, tag, Release, local candidate directory, or historical Task evidence.
 

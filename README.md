@@ -618,8 +618,9 @@ for the closed input, result, and error contracts.
 ## Immutable Published v0.10.0 Artifact
 
 Version 0.10.0 is published from exact commit
-`a9b80ce177a6dead10d51a070b76ff01f7af0294`; remote `main` and lightweight
-tag `v0.10.0` resolve to that commit. GitHub Release `362617903` has prerelease
+`a9b80ce177a6dead10d51a070b76ff01f7af0294`. At publication, remote `main`
+pointed to this commit. The lightweight tag `v0.10.0` identifies it.
+GitHub Release `362617903` has prerelease
 visibility. Its title is `task-governance-tool v0.10.0`, archive
 `task-governance-tool-0.10.0.zip`, and checksum
 `task-governance-tool-0.10.0.zip.sha256`. The canonical Release body is

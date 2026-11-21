@@ -94,7 +94,7 @@ total LLM token or elapsed-time savings.
 | Archive root | `task-governance-tool/` |
 | Release title | not assigned |
 | Release notes | `docs/releases/v0.13.0.md` candidate note |
-| Workflow/name/job | `.github/workflows/ci.yml`, `CI`, `test` |
+| Candidate CI workflow / qualifying job | `CI` (`.github/workflows/ci.yml`) / `Full release-candidate gate` (job ID `release-candidate`) |
 | CI Python matrix | 3.12 and 3.14 |
 
 Ordinary support covers physical installation, setup/read-only use, the Task
@@ -112,8 +112,9 @@ its Windows-only support.
 ## Immutable Published v0.10.0 Identity
 
 Version 0.10.0 remains published from exact accepted commit
-`a9b80ce177a6dead10d51a070b76ff01f7af0294`; remote `main` and the lightweight
-tag `v0.10.0` resolve to that commit. GitHub Release `362617903` has prerelease
+`a9b80ce177a6dead10d51a070b76ff01f7af0294`. At publication, remote `main`
+pointed to this commit. The lightweight tag `v0.10.0` identifies it.
+GitHub Release `362617903` has prerelease
 visibility. Its archive is `task-governance-tool-0.10.0.zip`, its checksum is
 `task-governance-tool-0.10.0.zip.sha256`, its title is
 `task-governance-tool v0.10.0`, and its exact canonical body remains

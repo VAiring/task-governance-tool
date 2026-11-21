@@ -1364,8 +1364,8 @@ unfinished invocation can leave no diagnostic file; absence is not success.
 ## Published v0.10.0 Release Record
 
 Version 0.10.0 is published from the exact accepted commit
-`a9b80ce177a6dead10d51a070b76ff01f7af0294`. Remote `main` and the
-unpeeled lightweight tag `v0.10.0` resolve to that commit. GitHub Release
+`a9b80ce177a6dead10d51a070b76ff01f7af0294`. Remote `main` pointed there
+at publication. The lightweight tag `v0.10.0` points directly to that commit. GitHub Release
 `362617903` is the canonical publication record and has prerelease
 visibility. A mutable branch name, remote-tracking reference, generated state,
 or an older completion cycle is not release authority.
@@ -1379,7 +1379,7 @@ The published identity is:
 | Viewer | snapshot v4, source schemas v5-v16 |
 | Public command leaves | 20 |
 | Runtime/CI | Windows Python 3.12+, CI 3.12 and 3.14 |
-| Commit / `main` / tag | `a9b80ce177a6dead10d51a070b76ff01f7af0294` |
+| Published commit | `a9b80ce177a6dead10d51a070b76ff01f7af0294` |
 | Tag | lightweight `v0.10.0` |
 | Remote/repository | `origin`, `VAiring/task-governance-tool` |
 | GitHub Release | `362617903`, prerelease |

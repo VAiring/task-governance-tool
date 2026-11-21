@@ -32,6 +32,7 @@ INSTRUCTIONS = (
 def answer_request(read_command, task_id):
     arguments = json.dumps({"task_id": validate_task_id(task_id)}, separators=(",", ":"))
     return ("You are assigned an independent review of the complete exact target under current project authority. "
+        "Allow enough output capacity in both execution and outer return for up to 100000 response bytes; token limits are not byte limits. One response per call without batching or echoing. "
         "Before the fixed read, use your own tool context to call the configured taskgov_review_wait server's "
         "review_wait_inspect once with " + arguments + ", if available. "
         "Reuse its available tool definition; discover only this tool if needed. This read-only connection preparation "

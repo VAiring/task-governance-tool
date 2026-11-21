@@ -1417,12 +1417,14 @@ directory selects that project's root; directory output is directory relative.
 Links are link text, never followed; required submodule material remains
 unavailable until supplied. Opaque targets require supplied material and binding.
 
-Delivery has two independent **5000-token allowances**: the aggregate unique
+Delivery has two independent **20,000-byte allowances (20 KB each)**: the aggregate unique
 before/after and selected dependency body text, and the unique patch text.
 These are not per-file allowances or a combined body-plus-diff allowance.
-The implementation charges original UTF-8 bytes as a conservative token upper
-bound for byte-tokenized model text, not characters or an exact model-token
-measurement. It introduces no tokenizer dependency or measured savings claim.
+Each individual text range, including a section's serialized JSON text, also
+allows up to 20,000 original UTF-8 bytes. KB is decimal (1,000 bytes).
+These are selected byte limits, not exact model-token measurements or a
+guaranteed 5,000-token ceiling. They introduce no tokenizer dependency or
+measured savings claim. The limits permit capacity; they do not pad responses.
 A whole-file addition/deletion diff refers to the already delivered body and
 operation without duplicating its text; that body is charged once to the body
 allowance. Identical blobs share their immutable ID; patches share only after
@@ -1430,13 +1432,15 @@ complete byte equality, including headers and line endings. Patch IDs are
 response-local. A body that exceeds its allowance does not consume the separate
 patch allowance or prevent a bounded patch from being supplied.
 
-Every response also obeys a separate 24000-byte conservative transport allowance:
+Every response also obeys a separate 100,000-byte (100 KB) transport allowance:
 compact UTF-8 JSON plus LF, serialized as an execution `output` string and again
 as an outer `text` string, plus 1024 bytes reserved for wrapper metadata.
 Instructions, selectors, dependencies, JSON escaping and next commands count.
-The generated procedure requests at least 24000 output tokens at both the
-execution tool and outer return, one response per call without echoing or
-batching. This model does not guarantee delivery through smaller host caps or
+The generated procedure requests sufficient output capacity at both the
+execution tool and outer return for that byte allowance, one response per call
+without echoing or batching. Token-based host settings are separate from these
+byte limits; 100,000 bytes is not a claim of 100,000 tokens or a measured host
+capacity. This model does not guarantee delivery through smaller host caps or
 additional wrappers; actual tool truncation is an incomplete delivery to recover.
 Even when both text groups fit, combined wrapper overflow switches to a bounded
 mapping page and individual body/diff responses, preserving both allowances.

@@ -477,7 +477,7 @@ def _requests(repo, args, packet_path, *, collected=False):
             invocation = save + " <<'TASKGOV_REVIEW_RESULT'\n<completed original JSON>\nTASKGOV_REVIEW_RESULT"
         reviewers.append({"result_path": path, "request": (
             "You are assigned an independent review of the complete exact target under current project authority. "
-            "Reserve at least 24000 output tokens in both execution and outer return; one response per call without batching or echoing. "
+            "Allow enough output capacity in both execution and outer return for up to 100000 response bytes; token limits are not byte limits. One response per call without batching or echoing. "
             "Run the fixed read below and follow its result_instructions with the supplied material and verification guidance. "
             "Inspect every changed entry and its complete diff, then the affected context, dependencies and governing sections needed for judgment. Complete before/after file bodies are not a blanket prerequisite; follow project mandatory reading rules and expand to full files when needed. Follow explicit section/page/range commands for required content. Recover only missing required fixed-target content; if identity or required recovery cannot be established, report the insufficiency to the caller before judgment."
             + "\n\nRead command:\n" + read + "\n\nSave command:\n" + invocation

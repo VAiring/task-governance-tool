@@ -2708,11 +2708,13 @@ that match. Preserve complete diff coverage, required context and project reread
 obligations. Missing unrelated full bodies alone do not block judgment; missing
 required context or diffs requires recovery or an insufficiency report before PASS.
 
-Bodies share an aggregate 5000-token allowance; diffs have a separate 5000.
-The helper conservatively charges UTF-8 bytes, not exact model tokens, and
-separately bounds the complete response to 24000 bytes. Execute
-one response per call with at least 24000 output tokens at both the execution
-tool and outer return. Do not batch/echo outputs. Smaller host caps or extra
+Bodies share an aggregate 20,000-byte allowance; diffs have a separate 20,000.
+Individual text ranges, including serialized section text, also allow up to
+20,000 UTF-8 bytes. The complete response, including wrappers, is bounded to
+100,000 bytes (decimal 100 KB). These are byte limits, not exact token counts
+or a guaranteed 5,000-token ceiling. Execute one response per call with enough
+output capacity for that byte allowance at both the execution tool and outer
+return; token-based host limits are separate. Do not batch/echo outputs. Smaller host caps or extra
 wrappers can still truncate and require recovery.
 
 Small targets remain a single complete display/collection. Oversized first reads

@@ -26,7 +26,8 @@ class DeliveryBudgetTests(unittest.TestCase):
         first = delivery.range_result(raw, {"object_id": "fixed"}, self.command)
         guidance = first["instructions"]
         for rule in ("identity/hash", "Last range alone", "both the execution tool and outer return",
-                     "do not batch", "separate 5000", "24000", "UTF-8 bytes",
+                     "Do not batch", "20000 UTF-8 byte allowance", "100000 response bytes",
+                     "token limits are not byte limits", "individual text range",
                      "not exact model tokens", "recover only missing ranges", "not full material",
                      "omitted entries remain in scope", "never review coverage or PASS"):
             self.assertIn(rule, guidance)
@@ -58,8 +59,8 @@ class DeliveryBudgetTests(unittest.TestCase):
                 with self.assertRaises(RecordPolicyError):
                     validate_record_arguments("review_handoff.py", [*arguments, extra])
 
-    def test_token_allowance_boundaries_and_lossless_giant_line(self):
-        for raw in (b"x" * 4999, b"x" * 5000, b"x" * 5001,
+    def test_byte_allowance_boundaries_and_lossless_giant_line(self):
+        for raw in (b"x" * 5444, b"x" * 19999, b"x" * 20000, b"x" * 20001,
                     ("日本語\\\"\r\n" * 1900).encode(), b"x" * 90000):
             with self.subTest(size=len(raw)):
                 start, pieces, expected = 0, [], None
@@ -67,7 +68,7 @@ class DeliveryBudgetTests(unittest.TestCase):
                     page = delivery.range_result(raw, {"object_id": "fixed"}, self.command, start=start, expected=expected)
                     self.assertTrue(delivery.fits(page))
                     piece = page["text"].encode()
-                    self.assertLessEqual(len(piece), 5000)
+                    self.assertLessEqual(len(piece), 20000)
                     self.assertEqual(raw[start:page["end"]], piece)
                     pieces.append(piece)
                     expected = page["content_sha256"]
@@ -77,13 +78,24 @@ class DeliveryBudgetTests(unittest.TestCase):
                     start = page["next_start"]
                 self.assertEqual(b"".join(pieces), raw)
                 self.assertEqual(expected, hashlib.sha256(raw).hexdigest())
+                if len(raw) <= 20000:
+                    self.assertEqual(len(pieces), 1)
+                    self.assertEqual(page["status"], "complete")
+
+    def test_complete_transport_exact_byte_boundaries(self):
+        overhead = delivery.transport_size({"text": ""})
+        for size in (99999, 100000, 100001):
+            with self.subTest(size=size):
+                payload = {"text": "x" * (size - overhead)}
+                self.assertEqual(delivery.transport_size(payload), size)
+                self.assertEqual(delivery.fits(payload), size <= 100000)
 
     def test_wrappers_are_charged_separately_from_text(self):
-        payload = {"text": "\"\\" * 2500}
+        payload = {"text": "\"\\" * 10000}
         self.assertLess(len(delivery.encode(payload)), delivery.transport_size(payload))
         page = delivery.range_result(payload["text"].encode(), {}, self.command)
         self.assertEqual(page["status"], "partial")
-        self.assertLess(page["end"], 5000)
+        self.assertLess(page["end"], 20000)
         self.assertLessEqual(delivery.transport_size(page), delivery.OUTPUT_BUDGET)
 
     def test_bad_offset_or_digest_is_closed(self):
@@ -101,14 +113,14 @@ class DeliveryBudgetTests(unittest.TestCase):
         self.assertEqual(page["total_bytes"], len(raw))
         self.assertEqual(page["content_sha256"], hashlib.sha256(raw).hexdigest())
         self.assertEqual(page["text"].encode(), raw[9000:page["end"]])
-        for bad in (b"x" * 9000 + b"\xff", b"x" * 9000 + b"\0"):
+        for bad in (b"x" * 20100 + b"\xff", b"x" * 20100 + b"\0"):
             with mock.patch.object(delivery, "run_git_stream", side_effect=lambda repo, args, consume: consume(bad)):
                 with self.assertRaises(HandoffError) as raised:
                     delivery.git_range(Path("unused"), [], {}, self.command)
                 self.assertEqual(raised.exception.code, "review_material_non_text")
 
     def test_body_and_patch_budgets_are_independent_and_deduplicated(self):
-        values = {"before": b"a" * 2500, "after": b"b" * 2500, "extra": b"c", "patch": b"d" * 5000}
+        values = {"before": b"a" * 10000, "after": b"b" * 10000, "extra": b"c", "patch": b"d" * 20000}
         def stream(repo, args, consume):
             consume(values["patch"] if args[0] == "diff" else values[args[-1]])
         bodies = collection._Bodies(Path("unused"))
@@ -154,9 +166,9 @@ class DeliveryBudgetTests(unittest.TestCase):
         self.assertLessEqual(len(page["entries"]), 20)
 
     def test_large_context_ranges_keep_exact_document_and_evidence_time_outside_hash(self):
-        view = {"task": {"title": "日本語" * 5000}, "review_target": {"value": "fixed"},
+        view = {"task": {"title": "日本語" * 15000}, "review_target": {"value": "fixed"},
                 "review_material": {"changes": [], "instructions": [], "changes_command": "fixed changes"},
-                "verification_evidence": {"observed_at": "first", "value": "x" * 5100},
+                "verification_evidence": {"observed_at": "first", "value": "x" * 20100},
                 "verification_guidance": "guidance", "context_check": "matched_at_read", "warnings": []}
         raw = b"fixed original"
         nav = review_read_delivery.bound(view, Path("repo"), "reviews/packet.json", raw)

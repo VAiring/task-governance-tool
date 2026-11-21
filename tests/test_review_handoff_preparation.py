@@ -105,6 +105,10 @@ class ReviewRequestLayoutTests(unittest.TestCase):
                     self.assertIn(requirement, request)
                 self.assertIn("Read command:", request)
                 self.assertEqual("Save command:" in request, not collected)
+                prefix = request.split("\n\nRead command:\n", 1)[0]
+                self.assertIn("output capacity in both execution and outer return for up to 100000 response bytes", prefix)
+                self.assertIn("token limits are not byte limits", prefix)
+                self.assertIn("One response per call without batching or echoing", prefix)
 
     def test_collected_requests_prepare_connection_once_in_the_child_context(self):
         from task_governance_tool.review_answer_preparation import INSTRUCTIONS
@@ -198,7 +202,8 @@ class ReviewRequestLayoutTests(unittest.TestCase):
             self.assertNotIn(result_detail, prefixes[0])
         for rule in ("complete exact target under current project authority",
                      "Run the fixed read below",
-                     "24000 output tokens in both execution and outer return",
+                     "output capacity in both execution and outer return for up to 100000 response bytes",
+                     "token limits are not byte limits",
                      "section/page/range", "Recover only missing required fixed-target content",
                      "report the insufficiency to the caller before judgment"):
             self.assertIn(rule, prefixes[0])
@@ -974,7 +979,7 @@ class ReviewerMaterialTests(PreparationFixture):
     def test_complete_small_diff_and_needed_context_do_not_require_large_unchanged_bodies(self):
         self.committed_fixture()
         prefix = b"# unchanged context\n" * 600
-        suffix = b"# unrelated tail\n" * 600
+        suffix = b"# unrelated tail\n" * 1500
         before_body = prefix + b"value = 1\n" + suffix
         after_body = prefix + b"value = 2\n" + suffix
         (self.root / "source.py").write_bytes(before_body)
@@ -1888,7 +1893,10 @@ class ReviewerMaterialTests(PreparationFixture):
         result = self.displayed(packet)
         self.assertEqual(result.returncode, 0, result.stdout)
         view = json.loads(result.stdout)
-        self.assertEqual(view["status"], "partial")
+        self.assertEqual(len(view["review_material"]["changes"]), 103)
+        from task_governance_tool.review_delivery import transport_size
+        self.assertGreater(transport_size(view), 24000)
+        self.assertLessEqual(transport_size(view), 100000)
         raw = (self.root / packet).read_bytes()
         digest = hashlib.sha256(raw).hexdigest()
         self.assertTrue(json.loads(raw)["changed_paths_truncated"])
@@ -1915,12 +1923,43 @@ class ReviewerMaterialTests(PreparationFixture):
         mode = next(e for e in entries if e["new_path"] == "SPEC.md")
         self.assertEqual((mode["before_mode"], mode["after_mode"]), ("100644", "100755"))
 
+    def test_material_above_old_limit_is_complete_in_one_collection_and_read(self):
+        self.committed_fixture()
+        content = b"x" * 5444
+        (self.root / "source.py").write_bytes(content)
+        self.git("add", "--", "source.py")
+        _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"])
+        packet = prepared["handoff"]["packet_path"]
+        digest = hashlib.sha256((self.root / packet).read_bytes()).hexdigest()
+        before_snapshot = file_snapshot(self.root)
+        result = self.invoke("material", "--repo", str(self.root), "collect", "--packet=" + packet,
+                             "--packet-sha256=" + digest, raw=encode(["AGENTS.md", "SPEC.md"]))
+        self.assertEqual(result.returncode, 0, result.stdout)
+        page = json.loads(result.stdout)
+        self.assertEqual(page["status"], "complete")
+        self.assertIsNone(page["next_command"])
+        self.assertEqual(len(page["dependencies"]), 2)
+        row, = page["changes"]
+        object_id = row["after"]["object_id"]
+        self.assertEqual(page["bodies"][object_id]["text"].encode(), content)
+        self.assertEqual(row["diff"]["status"], "provided")
+        for table in (page["bodies"], page["patches"]):
+            self.assertTrue(all(value["status"] == "provided" for value in table.values()))
+            self.assertLessEqual(sum(value["byte_count"] for value in table.values()), 20000)
+        result = self.invoke("material", "--repo", str(self.root), "blob", object_id)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        body = json.loads(result.stdout)
+        self.assertEqual(body["status"], "complete")
+        self.assertEqual(body["text"].encode(), content)
+        self.assertIsNone(body["next_command"])
+        self.assertEqual(file_snapshot(self.root), before_snapshot)
+
     def test_individual_budgets_fit_but_combined_transport_requires_split(self):
         self.committed_fixture()
-        (self.root / "source.py").write_bytes(b'"' * 2000)
+        (self.root / "source.py").write_bytes(b'"' * 8000)
         self.git("add", "--", "source.py")
         self.git("commit", "--quiet", "-m", "Escaped body fixture")
-        (self.root / "source.py").write_bytes(b"\\" * 2000)
+        (self.root / "source.py").write_bytes(b"\\" * 8000)
         self.git("add", "--", "source.py")
         _, prepared = self.prepare(self.task(), options=["--kind", "git_snapshot"])
         packet = prepared["handoff"]["packet_path"]
@@ -1934,8 +1973,8 @@ class ReviewerMaterialTests(PreparationFixture):
         self.assertEqual(page["status"], "partial")
         row, = page["changes"]
         ids = [row[side]["object_id"] for side in ("before", "after")]
-        self.assertEqual(sum(len(self.git("cat-file", "blob", oid)) for oid in ids), 4000)
-        self.assertLessEqual(len(self.git("diff", "--no-ext-diff", "--no-textconv", *ids, "--")), 5000)
+        self.assertEqual(sum(len(self.git("cat-file", "blob", oid)) for oid in ids), 16000)
+        self.assertLessEqual(len(self.git("diff", "--no-ext-diff", "--no-textconv", *ids, "--")), 20000)
         self.assertTrue(all(body["status"] == "range_required" and "text" not in body for body in page["bodies"].values()))
         self.assertEqual(row["diff"]["status"], "range_required")
         self.assertEqual(page["patches"], {})
@@ -1983,7 +2022,7 @@ class ReviewerMaterialTests(PreparationFixture):
                 self.assertTrue(fits(page))
                 self.assertEqual(page["start"], offset)
                 self.assertEqual(page["content_sha256"], hashlib.sha256(expected).hexdigest())
-                self.assertLessEqual(len(page["text"].encode()), 5000)
+                self.assertLessEqual(len(page["text"].encode()), 20000)
                 parts.append(page["text"].encode())
                 self.assertEqual(b"".join(parts), expected[:page["end"]])
                 if page["next_start"] is None:
@@ -2005,8 +2044,8 @@ class ReviewerMaterialTests(PreparationFixture):
             page = json.loads(response.stdout)
             self.assertTrue(fits(page))
             self.assertEqual((page["start"], page["total"]), (start, 23))
-            self.assertLessEqual(sum(row.get("byte_count", 0) for row in page["bodies"].values()), 5000)
-            self.assertLessEqual(sum(row.get("byte_count", 0) for row in page["patches"].values()), 5000)
+            self.assertLessEqual(sum(row.get("byte_count", 0) for row in page["bodies"].values()), 20000)
+            self.assertLessEqual(sum(row.get("byte_count", 0) for row in page["patches"].values()), 20000)
             seen.extend(row["path"] for row in page["dependencies"])
             self.assertEqual(page["status"], "partial")
             selection_hash = page["selection_sha256"]

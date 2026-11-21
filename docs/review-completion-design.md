@@ -465,7 +465,10 @@ neither traverses an unchanged inventory. Only explicit inventory retrieval
 streams the dependency tree, excludes changed paths and counts omitted entries.
 
 `review_delivery.py` owns UTF-8 serialization, text allowance, two-layer JSON
-transport measurement and range formatting. Its Git reader uses existing safe
+transport measurement and range formatting. The shared text limit applies to
+each independent body/patch total and each individual text or section range;
+the wrapper-inclusive response limit is separate. These are byte capacities,
+not model-token measurements or discovered host limits. Its Git reader uses existing safe
 Git timeout/cleanup, incrementally validates full-stream UTF-8/NUL and hashes all
 bytes, retaining only the requested window plus a code-point boundary margin.
 It emits nothing before validation. The full-stream hash rejects mixed resumed

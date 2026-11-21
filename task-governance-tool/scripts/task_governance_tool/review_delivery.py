@@ -9,8 +9,8 @@ import json
 from task_governance_tool import review_handoff_transport as files
 from task_governance_tool.git_snapshot import GitSnapshotError, run_git_stream
 
-TEXT_BUDGET = 5000
-OUTPUT_BUDGET = 24000
+TEXT_BUDGET = 20_000
+OUTPUT_BUDGET = 100_000
 WRAPPER_RESERVE = 1024
 
 
@@ -24,7 +24,7 @@ def encode(value):
 
 def transport_size(value):
     # Include stdout LF, exec output JSON, and a second JSON string transport.
-    # UTF-8 bytes are a conservative token allowance, not tokenizer measurements.
+    # This is a byte allowance, not a model-token measurement or host limit.
     output = encode(value).decode("utf-8") + "\n"
     return len(encode({"text": encode({"output": output}).decode("utf-8")})) + WRAPPER_RESERVE
 
@@ -40,10 +40,12 @@ def require_fit(value):
 
 
 GUIDANCE = (
-    "One response per tool call: reserve at least 24000 output tokens in both the execution tool "
-    "and outer return; do not batch outputs or duplicate them. Body and diff totals each have a "
-    "separate 5000 allowance, conservatively charged in UTF-8 bytes, not exact model tokens; "
-    "the full response is bounded to 24000 bytes. Lower host limits or extra wrappers can still "
+    "One response per tool call: allow enough output capacity in both the execution tool "
+    "and outer return for up to 100000 response bytes; token limits are not byte limits. "
+    "Do not batch outputs or duplicate them. Body and diff totals each have a separate "
+    "20000 UTF-8 byte allowance; each individual text range also allows up to 20000 bytes. "
+    "These are byte limits, not exact model tokens; the full response is bounded to "
+    "100000 bytes. Lower host limits or extra wrappers can still "
     "truncate: recover only missing ranges. "
     "List/partial delivery is not full material, omitted entries remain in scope, and delivery is "
     "never review coverage or PASS. Reuse only complete matching immutable objects."

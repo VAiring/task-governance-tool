@@ -1169,11 +1169,14 @@ files. Only explicit `inventory_command` requests its bounded 20-entry/4096-byte
 pages. Omitted paths remain directly collectible; unknown locations can use
 fixed-revision directory discovery.
 
-Reserve at least 24000 output tokens in both the execution tool and outer
-return, one response per call without batching/echoing. The helper accounts
-UTF-8 bytes conservatively: aggregate body allowance 5000, separate patch
-allowance 5000, and a separate wrapper-inclusive response limit. These are not
-exact measured model tokens. Actual host truncation still requires recovery.
+Allow enough output capacity in both the execution tool and outer return for
+up to 100,000 response bytes, one response per call without batching/echoing.
+Token-based host limits are separate from these byte limits. The helper allows
+20,000 UTF-8 bytes for the aggregate body text, another 20,000 for patch text,
+and up to 20,000 per individual text/section range, within a 100,000-byte
+wrapper-inclusive response limit. These are decimal 20 KB/100 KB capacities,
+not exact measured model tokens or a guaranteed 5,000-token ceiling.
+Actual host truncation still requires recovery.
 `list` supplies selectors; `partial` supplies only a page/range; `incomplete`
 reports unavailable material. The last range alone does not constitute the full
 document. Reuse only matching fully received text and fetch missing ranges or

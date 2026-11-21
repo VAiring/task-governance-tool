@@ -35,8 +35,24 @@ selection is fresh per exchange. Host protocol/Node changes may still need a
 restart. Review the destination
 `<governed-project>/.codex/config.toml` and existing authorization before editing;
 preserve unrelated settings and allow the normal `review_wait_wait` tool.
-Inherit `CODEX_APP_TOOLS_PIPE_PATH`, `CODEX_MCP_NODE_PATH` and `CODEX_THREAD_ID`
-by name, never copy values or synthesize executor metadata. Existing validated
+The service inherits `CODEX_APP_TOOLS_PIPE_PATH`, `CODEX_MCP_NODE_PATH` and
+`CODEX_THREAD_ID` by name. On Windows Desktop, include the following names
+in the existing `[mcp_servers.taskgov_review_wait]` table:
+
+```toml
+env_vars = [
+  "CODEX_APP_TOOLS_PIPE_PATH", "CODEX_MCP_NODE_PATH", "CODEX_THREAD_ID",
+  "CODEX_APP_RUNTIME_CLI_PATH", "CODEX_HOME",
+]
+```
+
+For a new reviewer assignment, `CODEX_APP_RUNTIME_CLI_PATH` selects the
+official executable running Desktop's history reader. With the default home,
+`CODEX_HOME` can be unset. When Desktop uses a custom home, forward its
+`CODEX_HOME` and set `--codex-home` to that same directory. Missing executable
+selection or a home mismatch rejects the initial assignment. Preserve other
+approved entries and inherit values by name. Never synthesize executor
+metadata. Existing validated
 TZif data may be configured with `PYTHONTZPATH`; do not install/download data as
 a side effect. Restart only when required to load reviewed configuration.
 Discovery, inspection and restart never start or replay an old worker.

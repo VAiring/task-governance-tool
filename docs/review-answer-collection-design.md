@@ -1252,4 +1252,3 @@ check or parent resumption under the original recovery/effect rules. Hook,
 Setup/trust, real-host integration verification and ordinary Task completion
 gates remain separate; no new timer, resident monitoring or heavy proof duty
 is introduced.
-

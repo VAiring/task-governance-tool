@@ -4,9 +4,12 @@ from contextlib import nullcontext
 from dataclasses import replace
 from hashlib import sha256
 import json
+import os
 from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
+import tomllib
+from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
@@ -208,6 +211,53 @@ class DispatchPageTests(unittest.TestCase):
                 with self.subTest(package=package, relative=relative, home=home), self.assertRaises(AnswerError) as error:
                     _bundled_runtime(executable, home, root, root)
                 self.assertEqual(error.exception.failure["reason"], "identity")
+
+    def test_documented_windows_environment_binds_new_reviewers(self):
+        guide = Path(__file__).resolve().parents[1] / "task-governance-tool/references/review_wait.md"
+        setup_section = guide.read_text(encoding="utf-8").split("## Setup And Connection\n", 1)[1].split("\n## ", 1)[0]
+        example = setup_section.split("```toml\n", 1)[1].split("\n```", 1)[0]
+        forwarded_names = tomllib.loads(example)["env_vars"]
+        self.assertIn("CODEX_THREAD_ID", forwarded_names)
+
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            default_home = root / ".codex"
+            custom_home = root / "custom-home"
+            default_home.mkdir()
+            custom_home.mkdir()
+            executable = root / "WindowsApps/OpenAI.Codex_27.2.3.4_x64__2p2nqsd0c76g0/app/resources/codex.exe"
+            executable.parent.mkdir(parents=True)
+            executable.touch()
+            server = root / "server.mjs"
+            server.touch()
+            desktop = {"CODEX_APP_TOOLS_PIPE_PATH": "fixture", "CODEX_MCP_NODE_PATH": sys.executable,
+                       "CODEX_THREAD_ID": PARENT, "CODEX_APP_RUNTIME_CLI_PATH": str(executable)}
+            for home, omitted, accepted in (
+                    (default_home, None, True), (custom_home, None, True),
+                    (default_home, "CODEX_APP_RUNTIME_CLI_PATH", False), (custom_home, "CODEX_HOME", False)):
+                source = desktop if home == default_home else {**desktop, "CODEX_HOME": str(custom_home)}
+                inherited = {key: source[key] for key in forwarded_names if key in source and key != omitted}
+                with (self.subTest(home=home.name, omitted=omitted),
+                      patch.dict(os.environ, {"ProgramFiles": str(root), **inherited}, clear=True),
+                      patch.object(Path, "home", return_value=root),
+                      patch("task_governance_tool.review_wait_runtime.item_reader.os",
+                            SimpleNamespace(name="nt", environ=os.environ)),
+                      patch("task_governance_tool.review_wait_runtime.item_reader.open_reader",
+                            return_value=nullcontext(PublicPages())) as reader):
+                    host = PublicMcpHost.from_environment(server_path=server, metadata=dict(threadId=PARENT, turnId=TURN),
+                        automation_id="pending", codex_home=home, confirmed_timezone="UTC",
+                        timezone_source="host_node_intl", reviewer_ids=[A, B])
+                    answer = PublicAnswerHost(host, PARENT, TURN, **host.item_binding_options())
+                    if accepted:
+                        facts = answer.bind_reviewers((A, B), creation_context=True)
+                        self.assertEqual([fact["initial_turn_id"] for fact in facts], [A, B])
+                        reader.assert_called_once_with(executable.resolve(), home)
+                    else:
+                        with self.assertRaises(AnswerError) as failure:
+                            answer.bind_reviewers((A, B), creation_context=True)
+                        self.assertEqual(failure.exception.failure,
+                                         {"class": "binding_mismatch", "field": None, "reason": "identity"})
+                        reader.assert_not_called()
 
     def test_small_whole_turn_fallback_rechecks_after_children(self):
         from tests.test_review_answer_host import page, turn

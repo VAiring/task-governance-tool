@@ -1,7 +1,10 @@
 """Read one dispatch turn through the public paginated App Server interface."""
 
 from .review_answer import AnswerError
-from .review_answer_host import _NON_ACTIVITY, _content_complete, _dispatch_activity, _fail, _host_id, _uuid, initial_observation
+from .review_answer_host import (
+    _NON_ACTIVITY, _check_wait_order, _content_complete, _dispatch_activity, _fail,
+    _host_id, _require_empty_wait, _uuid, initial_observation,
+)
 from .review_answer_collection import source
 
 
@@ -61,7 +64,7 @@ class DispatchTurn:
 
     def __init__(self, rpc, parent, turn):
         self.rpc, self.parent, self.turn = rpc, _uuid(parent), _uuid(turn)
-        self.seen_ids = set()
+        self.seen_ids = {}
         self.activities = []
         self.last = None
         self.pages = 0
@@ -87,20 +90,21 @@ class DispatchTurn:
                     _fail("conflict", "binding_mismatch")
                 if len(self.seen_ids) >= MAX_ITEMS:
                     _fail("bound")
-                self.seen_ids.add(item_id)
                 self.last = item_id
                 kind = item.get("type")
                 if type(kind) is not str:
                     _fail("shape")
+                self.seen_ids[item_id] = kind
                 if kind == "subAgentActivity":
                     if (item.get("kind") not in ("started", "completed", "interacted", "failed", "interrupted")
                             or type(item.get("agentPath")) is not str or len(item["agentPath"]) > 256):
                         _fail("shape")
                     self.activities.append(dict(type="subAgentActivity", id=item_id, kind=item["kind"],
                                                agentPath=item["agentPath"], agentThreadId=_uuid(item.get("agentThreadId"))))
+                elif kind == "collabAgentToolCall":
+                    _require_empty_wait(item, self.parent)
+                    self.activities.append(dict(type=kind, id=item_id))
                 elif kind not in _NON_ACTIVITY:
-                    # The older collaboration-call representation does not
-                    # prove the same start/contact lifecycle as a native activity.
                     _fail("incomplete")
             if cursor is None:
                 return
@@ -114,7 +118,7 @@ class DispatchTurn:
         for ref in references:
             if ref.startswith("/"):
                 matches = {item["agentThreadId"] for item in self.activities
-                           if item["agentPath"] == ref and item["kind"] in ("started", "interacted")}
+                           if item.get("agentPath") == ref and item["kind"] in ("started", "interacted")}
                 if len(matches) != 1:
                     _fail("conflict" if matches else "initial_dispatch_unobserved", "binding_mismatch")
                 identities.append(matches.pop())
@@ -122,6 +126,7 @@ class DispatchTurn:
                 identities.append(_uuid(ref))
         if self.parent in identities or len(set(identities)) != len(identities):
             _fail("conflict", "binding_mismatch")
+        _check_wait_order(self.activities, identities)
         return tuple(identities)
 
     def dispatches(self, children):
@@ -152,6 +157,18 @@ class DispatchTurn:
                     raise
                 child_turn = whole_child(child)
             child_turns.append(child_turn)
+        if "collabAgentToolCall" in self.seen_ids.values():
+            # A successor cursor cannot prove the wait is still before every
+            # selected start. Recheck that ordered prefix on the same budget.
+            first_items = tuple(self.seen_ids.items())
+            first_activities = self.activities
+            self.seen_ids = {}
+            self.activities = []
+            self.last = None
+            self.read()
+            if (tuple(self.seen_ids.items())[:len(first_items)] != first_items
+                    or self.activities[:len(first_activities)] != first_activities):
+                _fail("conflict", "binding_mismatch")
         self.read(tail=True)
         if self.resolve(references) != children or self.dispatches(children) != initial:
             _fail("conflict", "binding_mismatch")

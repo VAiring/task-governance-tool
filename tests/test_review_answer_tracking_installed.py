@@ -6,6 +6,7 @@ record or Receipt is injected; every subprocess starts with fresh runtime state.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import subprocess
 import sys
 
@@ -116,6 +117,58 @@ class InstalledAnswerTrackingTests(fixtures.PreparationFixture):
 
     def audited_receipts(self):
         return self.cli("task", "show", self.task_id, "--audit")["review_evidence"]["recent_receipts"]
+
+    def check_wait_replay(self, history, route):
+        self.cli("setup", "--review-wait", "on")
+        expected = [[row["id"], row["turn_id"], len(history["items"])] for row in history["reviewers"]]
+        for resumed in (False, True):
+            request = dict(task_id=self.task_id, route=route, resume=resumed, history=history)
+            completed = subprocess.run(
+                [sys.executable, "-I", "-S", "-B", str(Path(__file__).with_name("review_answer_wait_replay.py")),
+                 str(self.install.skill_root / "scripts"), str(self.root)],
+                input=json.dumps(request).encode(), cwd=self.root, capture_output=True)
+            self.assertEqual(completed.returncode, 0, completed.stderr.decode(errors="replace"))
+            result = json.loads(completed.stdout)
+            self.assertEqual(result["saved"], expected)
+            if resumed:
+                self.assert_collected(result, [1, 2])
+                self.assertEqual({tuple(read) for read in result["reads"]}, {(row[0], 2) for row in expected})
+            else:
+                self.assertEqual(result["response"]["status"], "waiting")
+                self.assertTrue(result["response"]["parent_may_end"])
+        ids = None
+        for _ in range(2):
+            completed, report = self.finalize(self.task_id)
+            self.assertEqual(completed.returncode, 0, report)
+            current = report["registered_receipt_ids"]
+            self.assertEqual(len(set(current)), 2)
+            if ids is not None:
+                self.assertEqual(current, ids)
+            ids = current
+        receipts = self.audited_receipts()
+        self.assertEqual(len(receipts), 2)
+        self.assertEqual({row["verdict"] for row in receipts}, {"pass"})
+        provenance = [row["review_provenance"]["host_observation"] for row in receipts]
+        self.assertEqual({(row["reviewer_session_id"], row["turn_id"]) for row in provenance},
+                         {(row[0], row[1]) for row in expected})
+
+    def check_prelaunch_wait(self, route):
+        from task_governance_tool.session_identity import capture_caller_identity
+        parent = capture_caller_identity().require()
+        reviewers = [dict(id=reviewer(i), path=f"/root/reviewer_{i}", turn_id=turn(i)) for i in (1, 2)]
+        items = [dict(type="reasoning", id=f"item-{i}") for i in range(58)]
+        items[28].update(type="collabAgentToolCall", tool="wait", status="completed",
+                         senderThreadId=parent, receiverThreadIds=[])
+        for index, row in enumerate(reviewers, 53):
+            items[index].update(type="subAgentActivity", kind="started", agentPath=row["path"],
+                                agentThreadId=row["id"])
+        self.check_wait_replay(dict(parent_id=parent, turn_id=turn(3), items=items, reviewers=reviewers), route)
+
+    def test_paged_prelaunch_wait_registers_two_answers_after_resume(self):
+        self.check_prelaunch_wait("paged")
+
+    def test_whole_prelaunch_wait_registers_two_answers_after_resume(self):
+        self.check_prelaunch_wait("whole")
 
     def continue_reviewer(self, prior, *, directory="reviews/continued"):
         selection = dict(version=1, reviewers=[dict(session_id=reviewer(1), action="reassess",

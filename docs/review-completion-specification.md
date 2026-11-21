@@ -654,7 +654,12 @@ reads forward from the last item through the final tail page. The last page
 of that second read fixes the observation boundary. Ordinary messages may
 extend the turn. A conflicting dispatch or contact through that boundary
 rejects the assignment. Later contact follows the saved answer and continuation
-rules. Missing pages, ambiguous identity or an exhausted read budget leave the
+rules. Both readers admit a completed legacy `collabAgentToolCall` wait from
+the same parent with an explicitly empty recipient list and no send effect
+only before the first start of any requested reviewer. Its ID and position
+count toward the observation boundary. Missing recipients, unknown effects
+and a legacy wait between or after requested starts leave assignment unconfirmed.
+Missing pages, ambiguous identity or an exhausted read budget leave the
 assignment unconfirmed. Explicit legacy history or an unsupported initial
 pagination method permits a bounded complete Desktop read. A whole parent
 turn must retain its ordered prefix, dispatches and handle identities on a

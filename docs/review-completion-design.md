@@ -998,6 +998,15 @@ must agree on the ordered prefix, identities and dispatches before and after
 the child checks. An unknown response, a missing continuation, a changed parent
 or a reader cleanup failure rejects initial assignment. Both paths use the same
 observation fields.
+For legacy collaboration calls the readers share one structural check. It
+requires `tool=wait`, `status=completed`, the exact parent sender and an
+explicitly empty `receiverThreadIds`. Only known fields without send effects
+qualify. Paginated traversal keeps a marker in activity order until the
+requested handles or direct IDs are resolved. When that marker is present,
+it rechecks the ordered prefix after the child reads within the same budget,
+then checks successors through the final tail page. Whole reads validate both snapshots and compare their
+ordered item IDs and types. A marker after any requested start rejects the
+group. Starts of unrelated children do not move that boundary.
 The following exact-turn recovery behavior is retained for version-one bases.
 Initial admission reads the exact parent's dispatch turn and a dedicated new
 child's sole own turn, rejecting additional child turns, interaction/reuse and known

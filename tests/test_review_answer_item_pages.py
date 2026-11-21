@@ -35,6 +35,12 @@ def messages(n):
     return [dict(type="agentMessage", id=f"message-{i}") for i in range(n)]
 
 
+def legacy_wait(**changes):
+    item = dict(type="collabAgentToolCall", id="wait", tool="wait", status="completed",
+                senderThreadId=PARENT, receiverThreadIds=[], prompt=None)
+    return {**item, **changes}
+
+
 class PublicPages:
     def __init__(self, parent=PARENT, turn=TURN):
         self.parent = parent
@@ -74,6 +80,77 @@ class PublicPages:
 
 
 class DispatchPageTests(unittest.TestCase):
+    def observe_history(self, route, items, children, *, handles=False, after=None):
+        from tests.test_review_answer_host import page, turn
+        paths = {A: "/root/a", B: "/root/b"} if handles else {}
+        if route == "whole":
+            peer = Mock()
+            peer._json_call.side_effect = [
+                page(PARENT, 1, turn(TURN, items=items)),
+                *(page(child, 1, turn(child)) for child in children),
+                page(PARENT, 1, turn(TURN, items=items if after is None else after))]
+            host = PublicAnswerHost(peer, PARENT, TURN, verify_whole_turn_tail=True, reviewer_paths=paths)
+        else:
+            rpc = PublicPages()
+            rpc.rows = items.copy()
+            def read(method, **params):
+                if after is not None and rpc.child_read == set(children):
+                    rpc.rows = after
+                return rpc(method, **params)
+            host = PublicAnswerHost(None, PARENT, TURN, item_reader=lambda: nullcontext(read), reviewer_paths=paths)
+        return host.bind_reviewers(children, creation_context=True)
+
+    def test_legacy_wait_precedes_every_selected_start_across_history_readers(self):
+        unrelated = dict(activity("other", TURN), agentPath="/root/other")
+        items = [unrelated, legacy_wait(), activity("a", A), activity("b", B)]
+        for route in ("whole", "paged"):
+            for children in ((A,), (B, A)):
+                for handles in (False, True):
+                    with self.subTest(route=route, children=children, handles=handles):
+                        facts = self.observe_history(route, items, children, handles=handles,
+                                                     after=items + messages(1))
+                        self.assertEqual([f["initial_turn_id"] for f in facts], list(children))
+                        self.assertTrue(all(f["initial_observation"]["item_count"] == 5 for f in facts))
+
+    def test_legacy_wait_rejects_unproved_effect_order_and_changed_prefix(self):
+        start, second = activity("a", A), activity("b", B)
+        base = [legacy_wait(), start, second]
+        invalid = [legacy_wait(**change) for change in (
+            dict(senderThreadId=A), dict(receiverThreadIds=None), dict(receiverThreadIds=[A]),
+            dict(status="inProgress"), dict(tool="sendInput"), dict(prompt="send"),
+            dict(unknownEffect=True), dict(truncated=True), dict(id="a"))]
+        invalid.append({k:v for k,v in legacy_wait().items() if k != "receiverThreadIds"})
+        cases = [([item, start, second], None) for item in invalid]
+        cases.extend([([start, legacy_wait(), second], None),
+                      (base, base + [legacy_wait(id="later")]),
+                      (base, base + [activity("contact", B, "interacted")]),
+                      (base, [start, base[0], second]), (base, [start, second]),
+                      (base, [dict(id="wait", type="reasoning"), start, second])])
+        for route in ("whole", "paged"):
+            for rows, after in cases:
+                with self.subTest(route=route, rows=rows, after=after), self.assertRaises(AnswerError):
+                    self.observe_history(route, rows, (A, B), after=after)
+
+    def test_oversized_handle_read_resolves_mixed_references_with_prelaunch_wait(self):
+        from task_governance_tool.review_wait_runtime.review_wait_host import HostAdapterError
+        for valid in (True, False):
+            with self.subTest(valid=valid):
+                host = PublicMcpHost(metadata=dict(threadId=PARENT, turnId=TURN), automation_id="pending",
+                    codex_home=Path.cwd(), confirmed_timezone="UTC", timezone_source="host_os",
+                    reviewer_ids=["/root/b", A], command=["offline-peer"])
+                oversized = HostAdapterError("host_call_failed", operation="read_thread", termination="confirmed")
+                oversized.oversized_turn = True
+                host._json_call = Mock(side_effect=oversized)
+                rpc = PublicPages()
+                rpc.rows.insert(0 if valid else 1, legacy_wait())
+                host.item_reader = lambda: nullcontext(rpc)
+                if valid:
+                    self.assertEqual(host.resolve_reviewer_ids(), (B, A))
+                else:
+                    with self.assertRaises(HostAdapterError) as error:
+                        host.resolve_reviewer_ids()
+                    self.assertEqual(error.exception.code, "reviewer_identity_unavailable")
+
     def test_build_changes_admit_complete_small_and_large_dispatches(self):
         with TemporaryDirectory() as temp:
             home = Path(temp)
@@ -407,6 +484,7 @@ class DispatchPageTests(unittest.TestCase):
                     rpc = PublicPages(fixture.parent, ORIGINAL)
                     filler = "x" * (512 * 1024)
                     rpc.rows.extend(dict(item, text=filler) for item in messages(34))
+                    rpc.rows.insert(0, legacy_wait(senderThreadId=fixture.parent))
                     fixture.turns = {A:A, B:B}
                     base_factory = fixture.flow.factory
                     class Bridge:
@@ -445,7 +523,7 @@ class DispatchPageTests(unittest.TestCase):
                         reviewer_ids=["/root/a", "/root/b"]), _meta=fixture.metadata), fixture.flow.session)
                     body = json.loads(result["content"][0]["text"])
                     self.assertEqual([r.get("initial_observation",{}).get("item_count")
-                                      for r in fixture.selection.service().repository.read()], [36,36], body)
+                                      for r in fixture.selection.service().repository.read()], [37,37], body)
                     if state == "running":
                         self.assertEqual(body.get("status"), "waiting", body)
                         self.assertEqual(fixture.flow.effects, ["create","arm"])

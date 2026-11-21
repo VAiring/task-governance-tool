@@ -63,7 +63,29 @@ def initial_observation(parent_turn, count, last_id):
                 last_item_digest="sha256:" + sha256(last_id.encode("ascii")).hexdigest())
 
 
-def _item_ids(turn):
+def _require_empty_wait(item, parent):
+    """Only the observed no-recipient, no-send legacy operation is admissible."""
+    _content_complete(item)
+    allowed = {"id", "type", "tool", "status", "senderThreadId", "receiverThreadIds",
+               "prompt", "model", "reasoningEffort", "agentsStates", "complete",
+               "truncated", "isTruncated", "textTruncated", "contentTruncated", "missingContent", "hasMoreContent"}
+    if (not item.keys() <= allowed or item.get("tool") != "wait" or item.get("status") != "completed"
+            or item.get("senderThreadId") != parent or item.get("receiverThreadIds") != []
+            or item.get("agentsStates", {}) != {}
+            or any(item.get(key) is not None for key in ("prompt", "model", "reasoningEffort"))):
+        _fail("incomplete")
+
+
+def _check_wait_order(items, children):
+    started = False
+    for item in items:
+        if item["type"] == "subAgentActivity" and item.get("kind") == "started" and item.get("agentThreadId") in children:
+            started = True
+        elif started and item["type"] == "collabAgentToolCall":
+            _fail("incomplete")
+
+
+def _item_prefix(turn, parent, children):
     items = turn["items"]
     if not 1 <= len(items) <= 3072:
         _fail("bound")
@@ -71,15 +93,18 @@ def _item_ids(turn):
     for item in items:
         _content_complete(item)
         kind = item.get("type")
-        if type(kind) is not str or kind != "subAgentActivity" and kind not in _NON_ACTIVITY:
-            _fail("incomplete")
-        if item["type"] == "subAgentActivity":
+        if kind == "collabAgentToolCall":
+            _require_empty_wait(item, parent)
+        elif kind == "subAgentActivity":
             _uuid(item.get("agentThreadId"))
             if item.get("kind") not in ("started", "completed", "interacted", "failed", "interrupted"):
                 _fail("incomplete")
-        ids.append(_host_id(item.get("id")))
-    if len(ids) != len(set(ids)):
+        elif type(kind) is not str or kind not in _NON_ACTIVITY:
+            _fail("incomplete")
+        ids.append((_host_id(item.get("id")), kind))
+    if len(ids) != len({identifier for identifier, _ in ids}):
         _fail("conflict", "binding_mismatch")
+    _check_wait_order(items, children)
     return ids
 
 
@@ -201,21 +226,9 @@ class PublicAnswerHost:
             if fact.pop("dispatch_id") != dispatch_id:
                 _fail("conflict", "binding_mismatch")
             return fact
-        _page_info, turns = _page(self._read(self.parent_session_id, 1), self.parent_session_id, 1)
-        if turns[0]["id"] != self.parent_turn_id:
-            _fail("identity", "binding_mismatch")
-        _content_complete(turns[0])
-        if turns[0]["error"] is not None:
-            _fail("incomplete")
-        _dispatch_activity(turns[0]["items"], child, dispatch_id)
-        child_page, child_turns = _page(self._read(child, 1), child, 1)
-        if child_page["hasMore"] is not False or child_page["nextCursor"] is not None or len(child_turns) != 1:
-            _fail()
-        _content_complete(child_turns[0])
-        if child_turns[0]["error"] is not None and child_turns[0]["status"] not in ("failed", "interrupted"):
-            _fail("incomplete")
-        return dict(parent_session_id=self.parent_session_id, reviewer_session_id=child,
-                    initial_turn_id=child_turns[0]["id"], source=source("dispatch_binding"))
+        fact, = self._bind_whole((child,), expected_dispatch=dispatch_id)
+        fact.pop("dispatch_id")
+        return fact
 
     def _sole_child_turn(self, child):
         page, turns = _page(self._read(child, 1), child, 1)
@@ -248,16 +261,26 @@ class PublicAnswerHost:
                 # read. Never discard a page or restart after the tail changed.
                 if observation is not None and observation.pages:
                     _fail("incomplete")
+        return self._bind_whole(children)
+
+    def _bind_whole(self, children, *, expected_dispatch=None):
         _page_info, turns = _page(self._read(self.parent_session_id, 1), self.parent_session_id, 1)
         parent = turns[0]
         _content_complete(parent)
-        if parent["id"] != self.parent_turn_id or parent["error"] is not None:
+        if parent["id"] != self.parent_turn_id:
             _fail("identity", "binding_mismatch")
+        if parent["error"] is not None:
+            if expected_dispatch is not None:
+                _fail("incomplete")
+            _fail("identity", "binding_mismatch")
+        verify_tail = self.verify_whole_turn_tail or self.item_reader is not None or any(
+            isinstance(item, dict) and item.get("type") == "collabAgentToolCall" for item in parent["items"])
+        before = _item_prefix(parent, self.parent_session_id, children) if verify_tail and parent["items"] else []
         dispatches = []
         missing_dispatch = False
         for child in children:
             try:
-                dispatches.append(_dispatch_activity(parent["items"], child))
+                dispatches.append(_dispatch_activity(parent["items"], child, expected_dispatch))
             except AnswerError as error:
                 if error.failure["reason"] != "initial_dispatch_unobserved":
                     raise
@@ -272,14 +295,13 @@ class PublicAnswerHost:
         for child, dispatch in zip(children, dispatches):
             results.append(dict(dispatch_id=dispatch, parent_session_id=self.parent_session_id,
                 reviewer_session_id=child, initial_turn_id=self._sole_child_turn(child), source=source("dispatch_binding")))
-        if self.verify_whole_turn_tail or self.item_reader is not None:
-            before = _item_ids(parent)
+        if verify_tail:
             _, final_turns = _page(self._read(self.parent_session_id, 1), self.parent_session_id, 1)
             final = final_turns[0]
             _content_complete(final)
             if final["id"] != self.parent_turn_id or final["error"] is not None:
                 _fail("identity", "binding_mismatch")
-            after = _item_ids(final)
+            after = _item_prefix(final, self.parent_session_id, children)
             if after[:len(before)] != before:
                 _fail("conflict", "binding_mismatch")
             for child, dispatch, result in zip(children, dispatches, results):
@@ -292,7 +314,7 @@ class PublicAnswerHost:
                                       and item.get("kind") in ("started", "interacted")}
                         if identities != {child}:
                             _fail("conflict", "binding_mismatch")
-                result["initial_observation"] = initial_observation(self.parent_turn_id, len(after), after[-1])
+                result["initial_observation"] = initial_observation(self.parent_turn_id, len(after), after[-1][0])
         return tuple(results)
 
     def _bound_turn(self, reviewer_session_id, turn_id):

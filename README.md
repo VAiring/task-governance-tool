@@ -328,11 +328,11 @@ uncertain outcomes before retrying only the remaining step; never repeat target
 setting or Receipt registration merely to recover a Packet. `ok=true` on a
 Receipt means it was saved, not that verification passed.
 
-The staged snapshot excludes unstaged and untracked content. Taskgov records
-only the caller's bounded verification facts; it never executes the command or
-stores its body, arguments, exit code, output, logs, or environment. The
-verification subject is derived from the locked capture-version-1 target; no
-caller label or replacement subject input exists. Native Review Receipts carry
+The staged snapshot excludes unstaged and untracked content. On the manual
+verification route, the caller runs the check. Its Verification Receipt records
+bounded facts and excludes the command, arguments, exit code, output, logs and
+environment. The verification subject is derived from the locked capture-version-1
+target; no caller label or replacement subject input exists. Native Review Receipts carry
 the declared v1 provenance fields or the explicit
 [collected v2 arm](docs/evidence-specification.md#collected-answer-evidence);
 migrated receipts project v0 absence, and `not_required` projects null. Provenance never upgrades the
@@ -424,15 +424,18 @@ Omitted options preserve an existing policy. Supported ranges are 1-1,440
 minutes and 1-20 generations. Backup policy stays in SQLite and creates no
 configuration file.
 
-After opt-in, each eligible successful state mutation closes its SQLite write
-before running bounded same-process maintenance. Due Evidence projection runs
-first, the canonical Viewer second when relevant, followed by at most one due backup attempt. Viewer maintenance
-renders at most twice to absorb one concurrent change. Backup and Viewer
-failures preserve the primary command result, keep maintenance due, and are
-reported only as bounded sanitized warnings.
+After opt-in, an eligible successful mutation closes its SQLite write before
+refreshing due Evidence and then the Viewer when relevant. The Viewer renders
+at most twice to absorb one concurrent change. A deferred or failed refresh
+leaves the projection due and preserves the mutation's result. When a backup is due or needs recovery,
+the command can then publish one request to the existing compatible project MCP
+service. A service-owned worker creates the backup asynchronously. If the service
+is absent or incompatible, the mutation still succeeds with
+`backup_request_deferred`. A later eligible mutation can request the backup
+again. Check the last confirmed backup with `doctor`.
+See [asynchronous backup](docs/setup-state-specification.md#asynchronous-backup).
 
-This maintenance starts no daemon, timer, background process, queue, service,
-browser, or maintenance command. Generated Evidence JSON, Viewer, and managed backups
+Generated Evidence JSON, Viewer, and managed backups
 remain runtime artifacts under the ignored project `.taskgov/` directory. Evidence
 projection failure keeps the mutation successful and the last-good index,
 leaves work due, and emits only its fixed warning. Viewer snapshot v4 reads
@@ -490,11 +493,15 @@ Contracts, checkpoints, bounded maintenance facts, and exact allow-listed
 Verification Receipt facts. A native Receipt contains only its closed result,
 duration, full/partial coverage, ownership, tool-owned
 verification subject, current Contract and target basis, and recording time.
-Native schema-v18+ Receipts accept no caller label. Taskgov stores no verification
-command body or arguments, exit code, stdout/stderr, stack trace, environment,
-logs, exceptions, prompts, diffs, credentials, arbitrary coverage prose, or
-debug variant. Native Bundles and Evidence JSON contain only the same bounded
-allow-listed ledger facts and safe relative artifact identities.
+Native schema-v18+ Verification Receipts accept no caller label. They exclude
+command bodies and arguments, exit codes, stdout/stderr, stack traces,
+environment data, logs, exceptions, prompts, diffs, credentials and arbitrary
+coverage prose. An explicitly configured [Runner Plan](#explicit-runner-plan-authoring)
+stores its entrypoint and arguments. Enabled [local diagnostic logs](docs/specification.md#local-development-debug-and-performance-logs)
+can record exception types and bounded stack frames. With review answer
+collection enabled, [v2 Review provenance](docs/evidence-specification.md#collected-answer-evidence)
+retains the sanitized verdict, summary, findings, checks and limitations in
+SQLite and includes them in the sealed completion Evidence.
 
 New task input strictly rejects both `dispatch_authorization=<value>` and the
 JSON key `"dispatch_authorization":<value>`. For future external-operation

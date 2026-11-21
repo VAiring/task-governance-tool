@@ -599,8 +599,10 @@ python .agents/skills/task-governance-tool/scripts/taskgov.py review receipt add
 For independent/self-review Receipts, reviewer class, model state, Skill state,
 and context relation are conditionally required; declared identifiers are
 optional only when their states require them, while profile, lens, and method
-flags are repeatable bounded sets. Native Receipts project v1 provenance,
-migrated pre-v18 Receipts project v0 absence, and `not_required` projects null.
+flags are repeatable bounded sets. These manually declared Review Receipts
+project v1 provenance. Collected independent answers use
+[v2 provenance](evidence-specification.md#collected-answer-evidence).
+Migrated pre-v18 Receipts project v0 absence, and `not_required` projects null.
 These attestations never authenticate reviewer identity or prove actual
 model/Skill execution, competence, independence, diversity, quality, or truth.
 
@@ -686,8 +688,8 @@ and every unexpected route/code pair stop instead of being overridden by a
 Receipt. Use the ready Packet returned by qualifying Receipt registration or
 Receiptless target setting; `review prepare` remains preparation-only recovery,
 not another normal call. Unstaged and untracked files remain
-outside that target. Taskgov never stores the verification command or its
-arguments. The packet adds one deterministic target-kind instruction so
+outside that target. A Verification Receipt excludes the verification command
+and its arguments. The packet adds one deterministic target-kind instruction so
 reviewers inspect the exact stored index, commit, fingerprint-bound material,
 or external revision rather than ambient content. The independent reviewer
 returns the versioned structured result; the trusted parent/orchestrator submits
@@ -727,11 +729,18 @@ migrated subject-v0 Receipt preserves its old caller label only as legacy
 read-only lineage; a new subject-v1 Receipt accepts none. It
 never stores the verification command body or arguments, exit code, output,
 logs, exception, prompt, diff, credential, arbitrary coverage prose, or debug
-variant. Review provenance retains only the closed scalar/code declarations,
-bounded declared identifiers, binding metadata, assurance/producer values, and
-digest. It does not upgrade the parent Receipt's assurance. The Viewer and
-diagnostic envelopes expose bounded allow-listed
-projections only. Completion cycles copy only already accepted bounded fields
+variant. An explicitly configured [Runner Plan](runner-plan-authoring-specification.md#closed-draft-and-actions)
+stores its entrypoint and arguments. Enabled [local diagnostic logs](specification.md#local-development-debug-and-performance-logs)
+can record exception types and bounded stack frames.
+
+[Version-one Review provenance](evidence-specification.md#versioned-review-provenance-and-bundle-boundary)
+retains bounded declarations, identifiers, binding metadata, assurance and
+producer values, and a digest. With review answer collection enabled,
+[version two](evidence-specification.md#collected-answer-evidence) stores the
+sanitized verdict, summary, findings, checks and limitations in SQLite and
+includes them in sealed completion Evidence. Both versions preserve the parent
+Receipt's assurance. The Viewer and diagnostic envelopes expose bounded
+allow-listed projections only. Completion cycles copy only already accepted bounded fields
 and the selected Receipt ID or Runner-observation pointer and never satisfy a
 current gate by historical projection alone.
 

@@ -425,11 +425,14 @@ minutes and 1-20 generations. Backup policy stays in SQLite and creates no
 configuration file.
 
 After opt-in, an eligible successful mutation closes its SQLite write before
-refreshing due Evidence and then the Viewer when relevant. The Viewer renders
-at most twice to absorb one concurrent change. A deferred or failed refresh
-leaves the projection due and preserves the mutation's result. When a backup
-is due or needs recovery, the CLI can publish one request to the existing
-project MCP service. If the CLI detects an absent or incompatible service at
+the CLI runs bounded same-process maintenance. It refreshes due Evidence first
+and then the Viewer when relevant. Both projections run without a background
+worker. The Viewer renders at most twice to absorb one concurrent change. A
+deferred or failed refresh leaves the projection due and preserves the
+mutation's result.
+
+When a backup is due or needs recovery, the CLI can publish one request to the
+existing project MCP service. If the CLI detects an absent or incompatible service at
 request time, the mutation succeeds with `backup_request_deferred`. After a
 request is published, the service checks its runtime before starting the backup
 worker. A later eligible mutation can request the backup again. Check the last

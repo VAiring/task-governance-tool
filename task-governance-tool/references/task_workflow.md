@@ -1548,6 +1548,7 @@ remainder Task when both are clear.
 - Use concise summaries, reasons, notes, checkpoints, findings, and receipts.
 - Do not let inspection authorize target-file, Git, Issue, PR, network, or
   external-service mutation.
-- Leave Evidence JSON, Viewer, and backup maintenance to setup and bounded
-  same-process post-commit processing. Do not make an LLM choose, schedule, or
-  monitor it.
+- Leave Evidence JSON and Viewer refresh to setup and bounded same-process
+  post-commit maintenance. An eligible mutation can request an asynchronous
+  backup from the existing project MCP service. No LLM action is needed to
+  schedule or monitor maintenance.
